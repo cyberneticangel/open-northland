@@ -7,6 +7,7 @@ import {
   Position,
   Settler,
   setSettlerJob,
+  Weapon,
 } from '../../../../src/components/index.js';
 import type { Command } from '../../../../src/core/commands/index.js';
 import type { Entity } from '../../../../src/ecs/world.js';
@@ -77,6 +78,7 @@ function settler(
 // sawmill doesn't offer - proving the building-doesn't-offer entry is skipped, not bound).
 const WOODCUTTER = 1;
 const CARRIER = 36; // the twin mill's transport slot - the hauler fallback in the priority list
+const SOLDIER_UNARMED = 31; // `jobtypes.ini` soldier_unarmed, a soldier trade in the fixture
 const TWIN_MILL = 8; // building type: two carpenter slots + one carrier slot
 const WOOD_TRACK = 1; // the woodcutter-wood experience track (factor 10)
 const WOOD_FACTOR = 10;
@@ -282,6 +284,25 @@ describe('assignWorker - bind an owned settler to a chosen building', () => {
     assignWorker(sim.world, ctxOf(sim), assign(worker, mill));
 
     expect(sim.world.get(worker, Settler).jobType).toBe(CARPENTER);
+  });
+
+  it('keeps a soldier in his trade and gear when the order names only a civilian slot', () => {
+    const sim = new Simulation({ seed: 1, content: testContent() });
+    const mill = placeBuilding(sim, TWIN_MILL, 5, 5);
+    const soldier = settler(sim);
+    setSettlerJob(sim.world, soldier, SOLDIER_UNARMED);
+    sim.world.add(soldier, Weapon, { weaponTypeId: 7 });
+
+    assignWorker(sim.world, ctxOf(sim), {
+      kind: 'assignWorker',
+      entity: soldier,
+      building: mill,
+      jobPriority: [CARRIER],
+    });
+
+    expect(sim.world.get(soldier, Settler).jobType).toBe(SOLDIER_UNARMED);
+    expect(sim.world.get(soldier, Weapon).weaponTypeId).toBe(7);
+    expect(sim.world.has(soldier, JobAssignment)).toBe(false);
   });
 
   it('skips a non-building target (a stale/hostile command)', () => {

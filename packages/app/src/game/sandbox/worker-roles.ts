@@ -62,14 +62,10 @@ export function assignmentPriority(slots: readonly { readonly jobType: number }[
 }
 
 /** Keyed on the settler's fighting class rather than on the archer ids alone, so a swordsman aimed at a
- *  tower is refused instead of re-traded. */
-function isFighterJobType(
-  currentJob: number,
-  slots: readonly { readonly jobType: number }[] | undefined,
-): boolean {
+ *  tower, or any soldier aimed at a storehouse, is refused instead of re-traded. */
+function isFighterJobType(currentJob: number): boolean {
   const soldier = canonicalJobType(currentJob);
-  if (soldier < SOLDIER_JOB_MIN || soldier > SOLDIER_JOB_MAX) return false;
-  return (slots ?? []).some((slot) => workerRoleOf(slot.jobType) === 'garrison');
+  return soldier >= SOLDIER_JOB_MIN && soldier <= SOLDIER_JOB_MAX;
 }
 
 function gathererSlots(slots: readonly { readonly jobType: number }[] | undefined): number[] {
@@ -100,9 +96,9 @@ export function assignmentPriorityFor(
     return [...crafts, ...ordered, ...base.filter((jobType) => !crafts.includes(jobType))];
   }
   const offered = (slots ?? []).some((slot) => slot.jobType === currentJob);
-  // A fighter gets his own post or nothing: falling through to the tower's hauler slot would leave the
-  // fighter band, and `applyTradeChange` disarms a settler that does.
-  if (isFighterJobType(currentJob, slots)) return offered ? [currentJob] : [];
+  // A fighter gets his own post or nothing: falling through to a tower's or storehouse's hauler slot would
+  // leave the fighter band, and `applyTradeChange` disarms a settler that does.
+  if (isFighterJobType(currentJob)) return offered ? [currentJob] : [];
   if (!offered || base[0] === currentJob) return base;
   return [currentJob, ...base.filter((jobType) => jobType !== currentJob)];
 }

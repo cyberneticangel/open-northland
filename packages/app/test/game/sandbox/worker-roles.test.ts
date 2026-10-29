@@ -111,6 +111,14 @@ describe('assignmentPriorityFor keeps the settler`s current trade', () => {
     expect(assignmentPriorityFor(REAL_JOB.carrier, FARM_SLOTS)).toEqual([REAL_JOB.carrier, REAL_JOB.farmer]);
   });
 
+  it('a soldier sent to the headquarters or a storehouse gets no slot, whatever his class', () => {
+    // stock_00..02 and the headquarters share these slots in the pack; none is a soldier post.
+    const soldiers = [31, 35, 40, 41]; // soldier_unarmed, soldier_sword_long, soldier_bow_short/long
+    expect(soldiers.map((job) => assignmentPriorityFor(job, WAREHOUSE_SLOTS))).toEqual(
+      soldiers.map(() => []),
+    );
+  });
+
   it('a current trade the building does not offer leaves the default order untouched', () => {
     // A hunter right-clicking a mill: the mill has no hunter slot, so it falls through to the default.
     expect(assignmentPriorityFor(REAL_JOB.hunter, MILL_SLOTS)).toEqual([REAL_JOB.miller, REAL_JOB.carrier]);

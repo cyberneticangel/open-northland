@@ -10,7 +10,7 @@ import {
   settlerMeetsNeed,
   workplaceStaffable,
 } from '../../progression/index.js';
-import { isFighterJob } from '../../readviews/index.js';
+import { isFighterJob, isSoldierJob } from '../../readviews/index.js';
 import { assignedWorkers } from '../../stores/assigned-workers.js';
 import { buildingWorkerJobs } from '../../stores/index.js';
 
@@ -118,10 +118,13 @@ export function workerOpening(
  * Whether a garrison slot admits the querying settler. A worker slot naming a fighting class - the towers'
  * `logicworker 40 3` / `41 3` short/long-bow posts - is manned, not trained into: it takes only a settler
  * who already fights in exactly that class, since taking up a weapon good is what sets a soldier's class.
- * Authored: the readable data says only that the posts exist, not who may take one.
+ * A soldier likewise takes no slot but his own class's: any other trade would disarm him
+ * (`applyTradeChange`). Authored: the readable data says only that the posts exist, not who may take one.
  */
 function garrisonPostOpenTo(query: OpeningsQuery, jobType: number): boolean {
-  return !isFighterJob(query.ctx.content, jobType) || query.jobType === jobType;
+  const { content } = query.ctx;
+  if (isSoldierJob(content, query.jobType)) return query.jobType === jobType;
+  return !isFighterJob(content, jobType) || query.jobType === jobType;
 }
 
 /**

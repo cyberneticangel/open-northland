@@ -9,6 +9,7 @@ import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import { buildingDoorwayNodes } from '../footprint/building-blocked-cache.js';
 import { walkBlockMask } from '../footprint/walk-block-mask.js';
 import { routeStartCell } from '../movement/route-start.js';
+import { clickSides } from '../movement/structure-route.js';
 import { commandedVehicleOf } from '../vehicles/commander.js';
 import { landingOf } from '../vehicles/crew.js';
 
@@ -59,8 +60,20 @@ const settlersStanding: Occupancy = (world, terrain, movers) => {
   return (node) => occupied.has(node);
 };
 
-/** One open slot around `target` per member, on the land component the member stands on and off the
- *  nodes `occupancy` names. */
+/** Members sharing a land component and the sides of the walls around the click they reach. */
+interface SlotGroup {
+  readonly component: number;
+  /** A member's standable start node, standing in for every member of the group; null for members
+   *  starting on a blocked node, which group by land component alone. */
+  readonly anchor: NodeId | null;
+  readonly key: string;
+  readonly members: Entity[];
+  readonly slots: HalfCellNode[];
+  remaining: number;
+}
+
+/** One open slot around `target` per member, on the land component and the side of every closed gate or
+ *  wall the member stands on, and off the nodes `occupancy` names. */
 export function formationSlotGroups(
   world: World,
   content: ContentSet,
@@ -74,8 +87,12 @@ export function formationSlotGroups(
     hx: Math.max(0, Math.min(terrain.width - 1, target.hx)),
     hy: Math.max(0, Math.min(terrain.height - 1, target.hy)),
   };
+  const ctx = { content };
+  const blocked = walkBlockMask(world, ctx, terrain).levelled();
+  const clicked = terrain.nodeAt(seat.hx, seat.hy);
+  const sides = clickSides(world, ctx, terrain, clicked, blocked);
   const result: FormationSlotGroup[] = [];
-  const groups = new Map<number, { members: Entity[]; slots: HalfCellNode[]; remaining: number }>();
+  const groups: SlotGroup[] = [];
   const movers = new Set<Entity>();
   for (const entity of [...new Set(members)].sort((a, b) => a - b)) {
     if (!Number.isSafeInteger(entity) || entity <= 0 || !world.has(entity, Settler)) continue;
@@ -95,13 +112,16 @@ export function formationSlotGroups(
     if (position === undefined) continue;
     const { hx, hy } = nodeOfPosition(position.x, position.y);
     if (!terrain.inBounds(hx, hy)) continue;
-    const start = routeStartCell(terrain, position.x, position.y);
+    // With `blocked`, a member mid-step beside a wall starts from the open node on its own side.
+    const start = routeStartCell(terrain, position.x, position.y, 'land', blocked);
     if (!terrain.isWalkable(start)) continue;
     const component = terrain.componentOf(start);
-    let group = groups.get(component);
+    const anchor = blocked.has(start) ? null : start;
+    const key = anchor === null ? 'blocked' : sides.keyOf(anchor);
+    let group = groups.find((g) => g.component === component && g.key === key);
     if (group === undefined) {
-      group = { members: [], slots: [], remaining: 0 };
-      groups.set(component, group);
+      group = { component, anchor, key, members: [], slots: [], remaining: 0 };
+      groups.push(group);
       result.push({ members: group.members, slots: group.slots });
     }
     group.members.push(entity);
@@ -110,20 +130,22 @@ export function formationSlotGroups(
   }
   if (movers.size === 0) return result;
   const occupied = occupancy(world, terrain, movers);
-  const blocked = walkBlockMask(world, { content }, terrain).levelled();
-  const doorways = buildingDoorwayNodes(world, { content }, terrain);
-  const chosen = new Set<NodeId>();
-  const clicked = terrain.nodeAt(seat.hx, seat.hy);
+  const doorways = buildingDoorwayNodes(world, ctx, terrain);
+  const chosen = new Map<NodeId, SlotGroup>();
   const unavailable = (hx: number, hy: number): boolean => {
     const node = terrain.nodeAt(hx, hy);
     if (chosen.has(node) || !terrain.isWalkable(node) || blocked.has(node) || occupied(node)) return true;
-    // The clicked node is the player's own stand; a slot fanned out around it never takes a doorway or
-    // seals a member in. Source basis: authored.
+    // The clicked node is the player's own stand, unless a wall beside it parts it from the group; a slot
+    // fanned out around it never takes a doorway or seals a member in. Source basis: authored.
     if (node !== clicked && (doorways.has(node) || !hasOpenSide(terrain, node, blocked))) return true;
-    const group = groups.get(terrain.componentOf(node));
-    if (group === undefined || group.remaining === 0) return true;
+    const component = terrain.componentOf(node);
+    const group = groups.find(
+      (g) =>
+        g.component === component && g.remaining > 0 && (g.anchor === null || sides.reaches(g.anchor, node)),
+    );
+    if (group === undefined) return true;
     group.remaining--;
-    chosen.add(node);
+    chosen.set(node, group);
     return false;
   };
   const slots = formationNodes(seat, movers.size, terrain.width, terrain.height, unavailable, rowSpacing);
@@ -134,7 +156,6 @@ export function formationSlotGroups(
       ...formationNodes(seat, movers.size - slots.length, terrain.width, terrain.height, unavailable),
     );
   }
-  for (const slot of slots)
-    groups.get(terrain.componentOf(terrain.nodeAt(slot.hx, slot.hy)))?.slots.push(slot);
+  for (const slot of slots) chosen.get(terrain.nodeAt(slot.hx, slot.hy))?.slots.push(slot);
   return result;
 }

@@ -163,15 +163,16 @@ function fresh(content: ContentSet = wallBreakingContent()): Simulation {
   return new Simulation({ seed: 1, content, map: routesMap() });
 }
 
-/** A finished wall row across the whole map, owned by `owner`, with an open gate at {@link GATE_X}. */
-function wallRow(sim: Simulation, owner: number): Entity {
+/** A finished wall row across the whole map on half-row `hy`, owned by `owner`, with an open gate at
+ *  {@link GATE_X}. */
+function wallRow(sim: Simulation, owner: number, hy = WALL_ROW): Entity {
   for (let hx = 0; hx < WIDTH; hx++) {
     if (Math.abs(hx - GATE_X) <= 2) continue;
     sim.enqueueSetup({
       kind: 'placePalisade',
       gfxIndex: WALL.typeId,
       x: hx,
-      y: WALL_ROW,
+      y: hy,
       tribe: VIKING,
       owner,
     });
@@ -180,7 +181,7 @@ function wallRow(sim: Simulation, owner: number): Entity {
     kind: 'placePalisade',
     gfxIndex: OPEN_GATE.typeId,
     x: GATE_X,
-    y: WALL_ROW,
+    y: hy,
     tribe: VIKING,
     owner,
   });
@@ -375,6 +376,38 @@ describe('walls that start blocking a route', () => {
       sim.step();
       for (const walker of walkers) expect(nodeRow(sim, walker).hy).toBeLessThan(row);
     }
+  });
+
+  it("sends a walker ordered onto a closed gate between two open halves to the gate's near side", () => {
+    // Each half holds about 750 nodes, past ROUTE_REGION_POCKET_CAP, so no pocket proof covers either.
+    const height = 64;
+    const row = 32;
+    const sim = new Simulation({
+      seed: 1,
+      content: wallBreakingContent(),
+      map: { ...routesMap(), ...grassNodeMap(WIDTH, height) },
+    });
+    const gate = wallRow(sim, P0, row);
+    sim.enqueueSetup({ kind: 'setPalisadeGate', palisade: gate, open: false });
+    sim.step();
+    expect(sealed(sim, { hx: GATE_X, hy: 4 }, { hx: GATE_X, hy: height - 4 })).toBe(true);
+    const north = fighter(sim, { hx: GATE_X, hy: 4 }, P0);
+    const south = fighter(sim, { hx: GATE_X, hy: height - 4 }, P0);
+    for (const walker of [north, south])
+      moveUnit(sim.world, ctxOf(sim), { kind: 'moveUnit', entity: walker, x: GATE_X, y: row });
+
+    let lost = 0;
+    for (let tick = 0; tick < 400 && [north, south].some((w) => sim.world.has(w, PlayerOrder)); tick++) {
+      sim.step();
+      lost += sim.events.current().filter((ev) => ev.kind === 'settlerLost').length;
+    }
+    expect(lost).toBe(0);
+    expect(sim.world.has(north, PlayerOrder) || sim.world.has(south, PlayerOrder)).toBe(false);
+    // Each stops beside the gate on its own side.
+    expect(row - nodeRow(sim, north).hy).toBeGreaterThan(0);
+    expect(row - nodeRow(sim, north).hy).toBeLessThanOrEqual(2);
+    expect(nodeRow(sim, south).hy - row).toBeGreaterThan(0);
+    expect(nodeRow(sim, south).hy - row).toBeLessThanOrEqual(2);
   });
 });
 

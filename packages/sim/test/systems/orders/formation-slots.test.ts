@@ -7,6 +7,7 @@ import {
   nodeOfPosition,
   pairBySpace,
   positionOfNode,
+  type ScriptLandscapeType,
   Simulation,
 } from '../../../src/index.js';
 import {
@@ -85,6 +86,65 @@ describe('fresh formation slots', () => {
     expect(sim.formationSlots(target, [member])?.[0]?.slots).not.toContainEqual(target);
     unstampResourceFootprint(sim.world, obstacle);
     expect(sim.formationSlots(target, [member])?.[0]?.slots).toEqual([target]);
+  });
+
+  it('gives each member a slot on its own side of a closed gate between two large regions', () => {
+    // Each half holds about 750 nodes, past the route-region pocket cap.
+    const width = 24;
+    const row = 32;
+    const gateX = 12;
+    const wall = { maxHitpoints: 100, repairPerStrike: 1, construction: [{ goodType: 5, amount: 1 }] };
+    const span = [-2, -1, 0, 1, 2].map((dx) => ({ dx, dy: 0 }));
+    const post: ScriptLandscapeType = {
+      typeId: 691,
+      walk: [{ dx: 0, dy: 0 }],
+      build: [{ dx: 0, dy: 0 }],
+      groups: [],
+      wall,
+    };
+    const closedGate: ScriptLandscapeType = {
+      typeId: 696,
+      walk: span,
+      build: span,
+      groups: [],
+      wall: { ...wall, gate: { open: false, counterpartGfxIndex: 700 } },
+    };
+    const sim = new Simulation({
+      seed: 1,
+      content: testContent(),
+      map: { ...grassNodeMap(width, 64), landscapes: { types: [post, closedGate], placements: [] } },
+    });
+    for (let hx = 0; hx < width; hx++) {
+      if (Math.abs(hx - gateX) <= 2) continue;
+      sim.enqueueSetup({ kind: 'placePalisade', gfxIndex: post.typeId, x: hx, y: row, tribe: 1, owner: 0 });
+    }
+    sim.enqueueSetup({
+      kind: 'placePalisade',
+      gfxIndex: closedGate.typeId,
+      x: gateX,
+      y: row,
+      tribe: 1,
+      owner: 0,
+    });
+    sim.step();
+    const north = person(sim, gateX, 4);
+    const south = person(sim, gateX, 60);
+    // Pressed halfway into the gate from the node south of it, nearer the gate than any open node.
+    const pressed = person(sim, gateX, row + 1);
+    const below = positionOfNode(gateX, row + 1);
+    const onGate = positionOfNode(gateX, row);
+    sim.world.add(pressed, Position, {
+      x: ((below.x + onGate.x) / 2) as typeof below.x,
+      y: ((below.y + onGate.y) / 2) as typeof below.y,
+    });
+    const groups = sim.formationSlots({ hx: gateX, hy: row }, [north, south, pressed]);
+    const slotOf = (member: Entity) => {
+      const group = groups?.find((g) => g.members.includes(member));
+      return group?.slots[group.members.indexOf(member)];
+    };
+    expect(slotOf(north)?.hy).toBeLessThan(row);
+    expect(slotOf(south)?.hy).toBeGreaterThan(row);
+    expect(slotOf(pressed)?.hy).toBeGreaterThan(row);
   });
 
   it('ignores duplicate, unknown and positionless members and bounds malformed requests', () => {

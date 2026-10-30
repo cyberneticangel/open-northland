@@ -86,3 +86,33 @@ export interface BuildTimeSheet {
   /** The sheet's R channel, `width * height` bytes. */
   readonly values: Uint8Array;
 }
+
+const timedFrames = new WeakMap<BuildTimeSheet, WeakMap<AtlasFrame, boolean>>();
+
+/**
+ * Whether a frame's region of the time sheet holds any nonzero threshold. Some mod sheets are zero
+ * under every pixel of a construction stage, which carries no reveal order and would draw the whole
+ * stage at 0% progress, so such a frame reveals as if it had no time data.
+ */
+export function frameHasBuildTimes(times: BuildTimeSheet, frame: AtlasFrame): boolean {
+  let byFrame = timedFrames.get(times);
+  if (byFrame === undefined) {
+    byFrame = new WeakMap();
+    timedFrames.set(times, byFrame);
+  }
+  let timed = byFrame.get(frame);
+  if (timed === undefined) {
+    timed = false;
+    for (let y = frame.y; y < frame.y + frame.height && !timed; y++) {
+      const row = y * times.width;
+      for (let x = frame.x; x < frame.x + frame.width; x++) {
+        if ((times.values[row + x] ?? 0) !== 0) {
+          timed = true;
+          break;
+        }
+      }
+    }
+    byFrame.set(frame, timed);
+  }
+  return timed;
+}

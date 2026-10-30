@@ -326,6 +326,43 @@ describe('dockVehicle', () => {
     expect(distanceTo(anchorOf(s, ship), point)).toBe(DOOR_DISTANCE);
   });
 
+  it('a queued unload waits for the dock ahead and lands the crew on the far shore once moored', () => {
+    const s = sim();
+    const { ship, riders } = crewedShip(s, 20, MID_ROW);
+    const point = { hx: EAST_SHORE_X + 1, hy: MID_ROW };
+    dock(s, ship, point.hx, point.hy);
+    const mooring = { x: point.hx, y: point.hy };
+    s.enqueue(playerCommand(P0, { kind: 'unloadPeople', vehicle: ship, queued: true, mooring }));
+    s.step();
+    expect(s.world.get(ship, VehicleOrderQueue).orders).toHaveLength(1); // still sailing
+    sailOut(s, ship);
+    s.step();
+    expect(vehiclePassengers(s.world.get(ship, Vehicle))).toEqual([]);
+    for (const rider of riders) {
+      expect(s.world.has(rider, Rider)).toBe(false);
+      expect(nodeOfPosition(s.world.get(rider, Position).x, s.world.get(rider, Position).y)).toEqual(point);
+    }
+  });
+
+  it('keeps the crew aboard when the unload names another shore than the one the ship lies at', () => {
+    const s = sim();
+    const { ship, riders } = crewedShip(s, 20, MID_ROW);
+    const point = { hx: EAST_SHORE_X + 1, hy: MID_ROW };
+    dock(s, ship, point.hx, point.hy);
+    s.step();
+    sailOut(s, ship);
+    // A dock refused elsewhere leaves the ship at this shore: the unload naming the far one must not
+    // land the crew here.
+    const elsewhere = { x: WEST_SHORE_X, y: MID_ROW };
+    s.enqueue(playerCommand(P0, { kind: 'unloadPeople', vehicle: ship, mooring: elsewhere }));
+    s.step();
+    expect(riders.every((rider) => s.world.has(rider, Rider))).toBe(true);
+    const here = { x: point.hx, y: point.hy };
+    s.enqueue(playerCommand(P0, { kind: 'unloadPeople', vehicle: ship, mooring: here }));
+    s.step();
+    expect(riders.some((rider) => s.world.has(rider, Rider))).toBe(false);
+  });
+
   it('sails on and moors on the shore when its last rider is removed at sea', () => {
     const s = sim();
     const { ship, riders } = crewedShip(s, 20, MID_ROW);
@@ -436,6 +473,85 @@ describe('dockVehicle', () => {
     expect(s.world.get(ship, Vehicle).moored).toBe(true);
     expect(distanceTo(anchorOf(s, ship), point)).toBe(DOOR_DISTANCE);
     expect(refusals(s)).toEqual([]);
+  });
+
+  /** The dock nodes of `point`'s ring the ship's probe names, in scan order. */
+  function namedDocks(s: Simulation, ship: Entity, point: HalfCellNode): HalfCellNode[] {
+    const probe = s.mooringProbe(ship);
+    if (probe === null) throw new Error('no mooring probe');
+    const out: HalfCellNode[] = [];
+    for (let hy = point.hy - DOOR_DISTANCE; hy <= point.hy + DOOR_DISTANCE; hy++) {
+      for (let hx = point.hx - DOOR_DISTANCE; hx <= point.hx + DOOR_DISTANCE; hx++) {
+        if (distanceTo({ hx, hy }, point) === DOOR_DISTANCE && probe.canDock(hx, hy)) out.push({ hx, hy });
+      }
+    }
+    return out;
+  }
+
+  it('lies at the ring node the order names, held through the crew boarding first', () => {
+    const point = { hx: EAST_SHORE_X + 1, hy: MID_ROW };
+    const crewed = sim();
+    const { ship } = crewedShip(crewed, 20, MID_ROW);
+    const named = namedDocks(crewed, ship, point).at(-1);
+    if (named === undefined) throw new Error('no dock node');
+    crewed.enqueue(
+      playerCommand(P0, {
+        kind: 'dockVehicle',
+        vehicle: ship,
+        x: point.hx,
+        y: point.hy,
+        dock: { x: named.hx, y: named.hy },
+      }),
+    );
+    crewed.step();
+    sailOut(crewed, ship);
+    expect(anchorOf(crewed, ship)).toEqual(named);
+    expect(crewed.world.get(ship, Vehicle).moored).toBe(true);
+
+    const boarding = sim();
+    const moored = spawn(boarding, SHIP_SMALL, WEST_SHORE_X + 3, MID_ROW);
+    const scout = spawnSettler(boarding, 4, MID_ROW);
+    boarding.enqueue(playerCommand(P0, { kind: 'attachToVehicle', entity: scout, vehicle: moored }));
+    boarding.step();
+    boarding.enqueue(
+      playerCommand(P0, {
+        kind: 'dockVehicle',
+        vehicle: moored,
+        x: point.hx,
+        y: point.hy,
+        dock: { x: named.hx, y: named.hy },
+      }),
+    );
+    boarding.step();
+    expect(boarding.world.get(moored, Vehicle).heldDock).toEqual(named);
+    let cast = 0;
+    while (boarding.world.get(moored, Vehicle).moored) {
+      boarding.step();
+      if (++cast > SAIL_TICKS) throw new Error('the ship never cast off');
+    }
+    expect(boarding.world.get(moored, Vehicle).heldDock).toBeNull();
+    sailOut(boarding, moored);
+    expect(anchorOf(boarding, moored)).toEqual(named);
+  });
+
+  it('takes the ring order when the named node is no node of the ring', () => {
+    const s = sim();
+    const { ship } = crewedShip(s, 20, MID_ROW);
+    const point = { hx: EAST_SHORE_X + 1, hy: MID_ROW };
+    s.enqueue(
+      playerCommand(P0, {
+        kind: 'dockVehicle',
+        vehicle: ship,
+        x: point.hx,
+        y: point.hy,
+        dock: { x: 0, y: 0 },
+      }),
+    );
+    s.step();
+    expect(refusals(s)).toEqual([]);
+    sailOut(s, ship);
+    expect(s.world.get(ship, Vehicle).moored).toBe(true);
+    expect(distanceTo(anchorOf(s, ship), point)).toBe(DOOR_DISTANCE);
   });
 
   it('lets a goto cast off, which closes the door on the crew until the next mooring', () => {

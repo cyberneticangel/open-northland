@@ -1,6 +1,6 @@
 import type { GameSession } from '@open-northland/lockstep';
 import type { DisputeRecord, TickDigest } from '@open-northland/net-client';
-import type { ClosingCode, RelayReason, ServerMessage } from '@open-northland/net-protocol';
+import type { ClosingCode, PlayerFlag, RelayReason, ServerMessage } from '@open-northland/net-protocol';
 import { errorText } from '../diag/error-text.js';
 import { diag } from '../diag/index.js';
 import { workerReports } from '../entries/map/worker-reports.js';
@@ -111,8 +111,9 @@ export class NetworkConnection {
 
   constructor(
     readonly url: string,
-    /** The token and nick this connection says `hello` with; another connection on them is this client. */
-    readonly identity: { readonly token: string; readonly nick: string },
+    /** The token, nick and flag this connection says `hello` with; another connection on the token is
+     *  this client. */
+    readonly identity: { readonly token: string; readonly nick: string; readonly flag?: PlayerFlag },
     openPort: () => SessionPort = networkWorkerPort,
   ) {
     this.worldPort = new Promise((resolve) => {

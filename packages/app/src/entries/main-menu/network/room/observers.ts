@@ -1,6 +1,7 @@
-import type { RoomView } from '@open-northland/net-protocol';
+import type { PlayerFlag, RoomView } from '@open-northland/net-protocol';
 import { messages } from '../../../../i18n/index.js';
 import { node } from '../../dom.js';
+import { nickWithFlag } from '../flags/catalog.js';
 import { button } from './controls.js';
 import { moveMemberControl } from './move-member.js';
 import type { NetworkRoomDeps } from './types.js';
@@ -20,13 +21,14 @@ export function roomObservers(deps: NetworkRoomDeps) {
   // Rows are kept by nick and moved only when the order changes: a detached row would close the
   // creator's open move menu.
   const rows = new Map<string, ReturnType<typeof observerRow>>();
-  function observerRow(nick: string) {
+  // A member keeps its flag for as long as it is in the room, so its row takes the flag once.
+  function observerRow(nick: string, flag: PlayerFlag | undefined) {
     const row = node('div', 'network-room__observer');
     const you = node('span', 'network-room__badge network-room__badge--you', copy.you);
     const away = node('span', 'network-room__muted', copy.disconnected);
     const move = moveMemberControl(deps);
     you.hidden = nick !== client.nick;
-    row.append(node('strong', '', nick), you, away, move.root);
+    row.append(nickWithFlag('strong', '', nick, flag), you, away, move.root);
     return {
       row,
       update(room: RoomView, connected: boolean, interactive: boolean): void {
@@ -48,7 +50,7 @@ export function roomObservers(deps: NetworkRoomDeps) {
       observers.forEach((member, index) => {
         let row = rows.get(member.nick);
         if (row === undefined) {
-          row = observerRow(member.nick);
+          row = observerRow(member.nick, member.flag);
           rows.set(member.nick, row);
         }
         row.update(room, member.connected, interactive);

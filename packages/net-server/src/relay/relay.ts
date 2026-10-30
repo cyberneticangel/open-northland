@@ -7,6 +7,7 @@ import {
   MAX_CLIENT_MESSAGE_BYTES,
   MAX_REASON_LENGTH,
   type OnlinePlayer,
+  type PlayerFlag,
   PROTOCOL_VERSION,
   parseClientMessage,
   parseRelayBuild,
@@ -14,6 +15,7 @@ import {
   type RoomSummary,
   type ServerMessage,
   TICK_MS,
+  withFlag,
 } from '@open-northland/net-protocol';
 import { saveOrdersRequestId } from './game/save-orders.js';
 import { ChatAllowance, Hall } from './hall/hall.js';
@@ -76,6 +78,7 @@ class Client {
   token: string | null = null;
   /** The nick `welcome` last named: unique among the connected on `hello`, then the room's. */
   nick = '';
+  flag: PlayerFlag | undefined;
   /** The client heard the whole hall since it last arrived outside a room. */
   hallSynced = false;
   /** What it last heard of the room list and of presence, and how many hall lines (`Hall.said`);
@@ -488,7 +491,8 @@ export class Relay {
   private onlinePlayers(): OnlinePlayer[] {
     const online: OnlinePlayer[] = [];
     for (const client of this.clients) {
-      if (client.token !== null) online.push({ nick: client.nick, room: client.room?.id ?? null });
+      if (client.token !== null)
+        online.push({ nick: client.nick, ...withFlag(client.flag), room: client.room?.id ?? null });
     }
     return online;
   }
@@ -534,6 +538,8 @@ export class Relay {
     const member = room?.memberOf(message.token) ?? null;
     // Outside a room the hall tells players apart by nick alone, so two connections never share one.
     client.nick = member?.nick ?? uniqueNick(message.nick, this.takenNicks(client));
+    // A member keeps the flag it joined with, none included.
+    client.flag = member === null ? message.flag : member.flag;
     this.welcome(client);
     if (room !== undefined && member !== null) {
       client.room = room;
@@ -573,7 +579,7 @@ export class Relay {
         if (client.room !== null) return { code: 'alreadyInRoom' };
         const now = this.now();
         if (!client.chatAllowance.take(now)) return { code: 'retryTooSoon' };
-        const line = this.hall.say(client.nick, message.text, this.wallClock());
+        const line = this.hall.say(client.nick, message.text, this.wallClock(), client.flag);
         for (const other of this.clients) {
           if (other.token === null || other.room !== null || !other.hallSynced) continue;
           other.connection.send(line);
@@ -708,12 +714,13 @@ export class Relay {
   private newMember(client: Client, nick: string): Member {
     if (client.token === null) throw new Error('a member needs an introduced client');
     const { ticks: delayTicks, roundTripMs, jitterMs, samples } = client.probe.delay;
-    return createMember(client.token, nick, this.now(), {
-      delayTicks,
-      roundTripMs,
-      jitterMs,
-      measured: samples > 0,
-    });
+    return createMember(
+      client.token,
+      nick,
+      this.now(),
+      { delayTicks, roundTripMs, jitterMs, measured: samples > 0 },
+      client.flag,
+    );
   }
 
   private enter(client: Client, room: Room, member: Member): void {

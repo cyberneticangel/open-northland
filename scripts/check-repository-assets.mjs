@@ -44,6 +44,10 @@ const reviewedBinaryAssets = new Set([
   'packages/app/src/assets/markers/plan-road-blocked.png',
   'packages/app/src/assets/markers/plan-road-claimed.png',
   'packages/app/src/assets/markers/plan-road-open.png',
+  // The dock cursor's mooring post: generated for this project with gpt-image-1.5, with the project's own
+  // plan stake as its style reference, reduced to the game's sprite scale and remapped to the colours of
+  // the plan markers above.
+  'packages/app/src/assets/markers/berth-post.png',
   // The app's typefaces: Cinzel, Alegreya Sans and Alegreya Sans SC, subset from Google Fonts
   // releases; SIL OFL texts sit beside them as LICENSE-*.txt.
   'packages/app/public/fonts/alegreyasans-cyrillic-400.woff2',

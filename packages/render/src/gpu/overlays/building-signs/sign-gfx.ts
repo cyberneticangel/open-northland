@@ -51,8 +51,8 @@ export interface SignGfx extends BuildingSignGfx {
   readonly textures: TextureCache;
 }
 
-/** The sheet a marker draws for a resolved colour slot: its own recolour, else slot 0's - the fallback a
- *  slot beyond the original's 10, or a failed atlas load, lands on. */
+/** The sheet a marker draws for a resolved colour slot: its own recolour, else slot 0's when its atlas
+ *  failed to load. */
 export function sheetFor(gfx: SignGfx, colour: number): BuildingSignSheet | undefined {
   return gfx.byPlayer[colour] ?? gfx.byPlayer[0];
 }

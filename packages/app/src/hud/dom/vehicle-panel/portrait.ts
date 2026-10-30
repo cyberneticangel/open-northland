@@ -42,15 +42,21 @@ function orderKey(order: VehicleOrder, vehicleClass: VehicleClass): keyof OrderC
   return order === 'goTo' && vehicleClass === 'ship' ? 'sail' : order;
 }
 
-/** The order's name, and what its tooltip says: the refusal, the armed pick's prompt, or the name. */
+/** The order's name, and what its tooltip says: the refusal, the armed pick's prompt, or the name; the
+ *  dock order also names its key (`dockKey`) and the Ctrl press that lands the crew. */
 export function orderTexts(
   model: VehicleOrderModel,
   vehicleClass: VehicleClass,
   armed: boolean,
+  dockKey: string,
 ): { label: string; tooltip: string } {
   const copy = messages().hud.vehiclePanel;
   const label = copy.orders[orderKey(model.order, vehicleClass)];
   if (model.control !== true) return { label, tooltip: model.control };
+  if (model.order === 'dock') {
+    const tooltip = armed ? copy.dockArmedTooltip : copy.dockTooltip;
+    return { label, tooltip: formatMessage(tooltip, { order: label, key: dockKey }) };
+  }
   return { label, tooltip: armed ? formatMessage(copy.armedTooltip, { order: label }) : label };
 }
 
@@ -144,7 +150,7 @@ export function createPortraitSection(
       const node = buttons[index]?.element;
       if (node === undefined) return;
       const lit = armed === order.order;
-      const texts = orderTexts(order, model.vehicleClass, lit);
+      const texts = orderTexts(order, model.vehicleClass, lit, deps.keyLabel('dockShips'));
       setAttribute(node, 'aria-label', texts.label);
       setTip(node, texts.tooltip);
       setDisabled(node, order.control !== true);

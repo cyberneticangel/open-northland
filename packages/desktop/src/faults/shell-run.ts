@@ -2,10 +2,11 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, wri
 import { dirname, join } from 'node:path';
 
 /**
- * How the shell's previous run ended when it did not quit: the system ended the session, a native
- * crash left a minidump, or neither (killed from outside, or the power went).
+ * How the shell's previous run ended when it did not quit: the system ended the session, it went to
+ * sleep and never woke (the power went while asleep), a native crash left a minidump, or none of
+ * these (killed from outside, or the power went while awake).
  */
-export type ShellEnd = 'shutdown' | 'crash' | 'unknown';
+export type ShellEnd = 'shutdown' | 'asleep' | 'crash' | 'unknown';
 
 /** The shape `packages/app/src/view/platform/desktop-faults.ts` declares as `PreviousShellRun`. */
 export interface PreviousShellRun {
@@ -13,7 +14,7 @@ export interface PreviousShellRun {
   readonly from: string;
   readonly until: string;
   readonly end: ShellEnd;
-  /** When the session ended or the dump was written; null for `unknown`. */
+  /** When the session ended, the system went to sleep or the dump was written; null for `unknown`. */
   readonly endedAt: string | null;
 }
 
@@ -24,13 +25,16 @@ export interface ShellRun {
   childGone(): void;
   /** The system is ending the session: the end that follows is no crash. */
   shuttingDown(): void;
+  /** The system goes to sleep: an end before it wakes is a power loss, no crash. */
+  suspended(): void;
+  resumed(): void;
   /** The shell quits normally: no run is left behind. */
   quit(): void;
 }
 
 /** Under Electron's `userData`. */
 export const SHELL_RUN_FILE = 'shell-run.json';
-const RUN_FILE_VERSION = 1;
+const RUN_FILE_VERSION = 2;
 const DUMP_SUFFIX = '.dmp';
 const STAGED_SUFFIX = '.tmp';
 /** A child process's dump is written a moment after the shell hears it died. */
@@ -40,6 +44,7 @@ interface RunFile {
   readonly startedAt: string;
   readonly childGoneAt: string | null;
   readonly shutdownAt: string | null;
+  readonly suspendedAt: string | null;
 }
 
 function isTime(value: unknown): value is string {
@@ -50,11 +55,12 @@ function readRun(file: string): RunFile | null {
   try {
     const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (typeof raw !== 'object' || raw === null) return null;
-    const { version, startedAt, childGoneAt, shutdownAt } = raw as Record<string, unknown>;
+    const { version, startedAt, childGoneAt, shutdownAt, suspendedAt } = raw as Record<string, unknown>;
     if (version !== RUN_FILE_VERSION || !isTime(startedAt)) return null;
     if (childGoneAt !== null && !isTime(childGoneAt)) return null;
     if (shutdownAt !== null && !isTime(shutdownAt)) return null;
-    return { startedAt, childGoneAt, shutdownAt };
+    if (suspendedAt !== null && !isTime(suspendedAt)) return null;
+    return { startedAt, childGoneAt, shutdownAt, suspendedAt };
   } catch {
     return null;
   }
@@ -79,23 +85,25 @@ function dumps(root: string): { readonly path: string; readonly atMs: number }[]
   });
 }
 
-/** A dump wins over a shutdown notice: a shutdown another app cancelled leaves the shell running. */
+/** A dump wins over a shutdown or sleep notice: a shutdown another app cancelled leaves the shell
+ *  running. A shutdown wins over sleep: the system may end a sleeping session. */
 function endOf(run: RunFile, dumpsRoot: string): Pick<PreviousShellRun, 'end' | 'endedAt'> {
   const childDumpsUntil =
     run.childGoneAt === null ? Number.NEGATIVE_INFINITY : Date.parse(run.childGoneAt) + CHILD_DUMP_GRACE_MS;
   const after = Math.max(Date.parse(run.startedAt), childDumpsUntil);
   const newest = Math.max(...dumps(dumpsRoot).map((dump) => dump.atMs));
   if (newest > after) return { end: 'crash', endedAt: new Date(newest).toISOString() };
-  return run.shutdownAt === null
-    ? { end: 'unknown', endedAt: null }
-    : { end: 'shutdown', endedAt: run.shutdownAt };
+  if (run.shutdownAt !== null) return { end: 'shutdown', endedAt: run.shutdownAt };
+  if (run.suspendedAt !== null) return { end: 'asleep', endedAt: run.suspendedAt };
+  return { end: 'unknown', endedAt: null };
 }
 
 /**
- * The shell's run file: written at start, rewritten when a child process dies or the system ends the
- * session, removed on quit. One left behind at the next start is a run that ended without quitting.
+ * The shell's run file: written at start, rewritten when a child process dies, the system ends the
+ * session, sleeps or wakes, removed on quit. One left behind at the next start is a run that ended
+ * without quitting.
  * Dumps are only evidence of a crash, never sent anywhere, so the start deletes them once judged.
- * Synchronous, because the system may end the process right after `shuttingDown`.
+ * Synchronous, because the system may end the process right after `shuttingDown` or `suspended`.
  */
 export function startShellRun(file: string, dumpsRoot: string, now: () => Date = () => new Date()): ShellRun {
   const left = readRun(file);
@@ -110,7 +118,7 @@ export function startShellRun(file: string, dumpsRoot: string, now: () => Date =
     }
   }
 
-  let run: RunFile = { startedAt, childGoneAt: null, shutdownAt: null };
+  let run: RunFile = { startedAt, childGoneAt: null, shutdownAt: null, suspendedAt: null };
   const write = (): void => {
     try {
       mkdirSync(dirname(file), { recursive: true });
@@ -130,6 +138,14 @@ export function startShellRun(file: string, dumpsRoot: string, now: () => Date =
     },
     shuttingDown() {
       run = { ...run, shutdownAt: now().toISOString() };
+      write();
+    },
+    suspended() {
+      run = { ...run, suspendedAt: now().toISOString() };
+      write();
+    },
+    resumed() {
+      run = { ...run, suspendedAt: null };
       write();
     },
     quit() {

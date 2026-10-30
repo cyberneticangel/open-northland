@@ -1,4 +1,4 @@
-import type { OnlinePlayer, RoomSummary } from '@open-northland/net-protocol';
+import { type OnlinePlayer, type PlayerFlag, type RoomSummary, withFlag } from '@open-northland/net-protocol';
 import { compareLabels } from '../../../../i18n/index.js';
 
 const MS_PER_SECOND = 1000;
@@ -32,6 +32,7 @@ export type PlayerWhereabouts =
 
 export interface OnlineRow {
   readonly nick: string;
+  readonly flag?: PlayerFlag;
   readonly self: boolean;
   readonly where: PlayerWhereabouts;
 }
@@ -50,7 +51,7 @@ export function onlineRows(
       room === undefined
         ? { kind: 'hall' }
         : { kind: room.state === 'lobby' ? 'lobby' : 'playing', room: room.name };
-    return { nick: player.nick, self: player.nick === self, where };
+    return { nick: player.nick, ...withFlag(player.flag), self: player.nick === self, where };
   });
   const rank = (row: OnlineRow): number => (row.self ? 0 : row.where.kind === 'hall' ? 1 : 2);
   return rows.sort((a, b) => rank(a) - rank(b) || compare(a.nick, b.nick));

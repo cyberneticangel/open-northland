@@ -7,7 +7,7 @@
 import type { BuildingFootprint, FootprintCell } from '@open-northland/data';
 import type { RuleSection } from '../grammar.js';
 import { tallyIds } from '../ir-fields.js';
-import { findProps } from '../props.js';
+import { findProps, getStr } from '../props.js';
 import { gfxHouseLogicRecords } from './shared.js';
 
 /**
@@ -170,16 +170,22 @@ function canonicalCells(cells: Iterable<FootprintCell>): FootprintCell[] {
   return [...byKey.values()].sort((a, b) => a.dy - b.dy || a.dx - b.dx);
 }
 
+/** One house record's footprint at one size level: the candidate both footprint tables rank. */
+interface RecordFootprintRow {
+  readonly typeId: number;
+  readonly tribeType: number;
+  readonly sizeIdx: number;
+  readonly editName: string | undefined;
+  readonly footprint: BuildingFootprint;
+}
+
 /**
- * Extracts each building type's ground footprint per tribe from three key families joined by the record's
- * `LogicType <sizeIdx> <typeId>` table: `LogicWalkBlockArea <sizeIdx> <x> <y> <run>`,
+ * Reads every house record's ground footprint per size level from three key families joined by the
+ * record's `LogicType <sizeIdx> <typeId>` table: `LogicWalkBlockArea <sizeIdx> <x> <y> <run>`,
  * `LogicDoorPoint <sizeIdx> <x> <y>`, and `LogicBuildBlockArea <x> <y> <run>`, which is defined once per
  * record with no level index, so every level's typeId gets the same build-exclusion zone.
  */
-export function extractBuildingFootprints(
-  sections: readonly RuleSection[],
-): Map<number, ByTribe<BuildingFootprint>> {
-  const winners = new TribeGfxHouseWinners<BuildingFootprint>();
+function* recordFootprintRows(sections: readonly RuleSection[]): Generator<RecordFootprintRow> {
   for (const { rec, tribeType, typeByLevel } of gfxHouseLogicRecords(sections)) {
     if (typeByLevel.size === 0) continue;
 
@@ -210,16 +216,101 @@ export function extractBuildingFootprints(
     // expanded cells rather than on the raw line or level count.
     if (reserved.length === 0) continue;
 
+    const editName = getStr(rec, 'EditName');
     for (const [sizeIdx, typeId] of typeByLevel) {
-      winners.offer(typeId, tribeType, sizeIdx, () => ({
-        blocked: canonicalCells(blockedByLevel.get(sizeIdx) ?? []),
-        familyBody,
-        reserved,
-        door: doorByLevel.get(sizeIdx),
-      }));
+      yield {
+        typeId,
+        tribeType,
+        sizeIdx,
+        editName,
+        footprint: {
+          blocked: canonicalCells(blockedByLevel.get(sizeIdx) ?? []),
+          familyBody,
+          reserved,
+          door: doorByLevel.get(sizeIdx),
+        },
+      };
     }
   }
+}
+
+/** Extracts each building type's ground footprint per tribe: the {@link GfxHouseWinners} pick over every
+ *  record's {@link recordFootprintRows}. */
+export function extractBuildingFootprints(
+  sections: readonly RuleSection[],
+): Map<number, ByTribe<BuildingFootprint>> {
+  const winners = new TribeGfxHouseWinners<BuildingFootprint>();
+  for (const row of recordFootprintRows(sections)) {
+    winners.offer(row.typeId, row.tribeType, row.sizeIdx, () => row.footprint);
+  }
   return widenAcrossUpgradeChains(winners.collapse(), extractUpgradeTargets(sections));
+}
+
+/** One named house record's own footprint for a building type and tribe. */
+export interface RecordFootprint {
+  readonly tribe: number;
+  readonly editName: string;
+  readonly footprint: BuildingFootprint;
+}
+
+/**
+ * Extracts every named house record's own footprint by building `typeId`, at the record's lowest size
+ * level for that type, one per `(tribe, EditName)`. Several records can draw one type for one tribe (the
+ * viking headquarters' beached ship and its hall); a map names the record it places. The family body and
+ * reserved zone are the record's own: {@link widenRecordFootprints} extends them over the upgrade chain
+ * once every source is merged.
+ */
+export function extractRecordFootprints(sections: readonly RuleSection[]): Map<number, RecordFootprint[]> {
+  const lowest = new Map<string, RecordFootprintRow>();
+  for (const row of recordFootprintRows(sections)) {
+    if (row.editName === undefined || !Number.isFinite(row.tribeType)) continue;
+    const key = `${row.typeId}\u0000${row.tribeType}\u0000${row.editName}`;
+    const standing = lowest.get(key);
+    if (standing === undefined || row.sizeIdx < standing.sizeIdx) lowest.set(key, row);
+  }
+  const out = new Map<number, RecordFootprint[]>();
+  for (const { typeId, tribeType, editName, footprint } of lowest.values()) {
+    if (editName === undefined) continue;
+    const records = out.get(typeId) ?? [];
+    records.push({ tribe: tribeType, editName, footprint });
+    out.set(typeId, records);
+  }
+  return out;
+}
+
+/**
+ * Widens each record's family body and reserved zone with the tribe's default footprints of the other
+ * members of its type's upgrade chain, so a record house keeps the ground its chain grows into. Those
+ * defaults are already chain-wide, so a record never reserves less than the type's default does.
+ */
+export function widenRecordFootprints(
+  records: ReadonlyMap<number, readonly RecordFootprint[]>,
+  defaults: ReadonlyMap<number, ByTribe<BuildingFootprint>>,
+  upgradeTargets: ReadonlyMap<number, number>,
+): Map<number, RecordFootprint[]> {
+  const chainOf = upgradeChains(upgradeTargets);
+  const out = new Map<number, RecordFootprint[]>();
+  for (const [typeId, list] of records) {
+    out.set(
+      typeId,
+      list.map(({ tribe, editName, footprint }) => {
+        const others = (chainOf.get(typeId) ?? [])
+          .filter((member) => member !== typeId)
+          .flatMap((member) => defaults.get(member)?.get(tribe) ?? []);
+        const members = [footprint, ...others];
+        return {
+          tribe,
+          editName,
+          footprint: {
+            ...footprint,
+            familyBody: canonicalCells(members.flatMap((m) => m.familyBody)),
+            reserved: canonicalCells(members.flatMap((m) => m.reserved)),
+          },
+        };
+      }),
+    );
+  }
+  return out;
 }
 
 /**

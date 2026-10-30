@@ -1,7 +1,9 @@
 import { MAX_NICK_LENGTH, MAX_RELAY_BUILD_LENGTH, MAX_TOKEN_LENGTH, MIN_TOKEN_LENGTH } from '../limits.js';
+import type { PlayerFlag } from '../messages.js';
 import { asNonNegativeNumber, asString } from '../untrusted.js';
 
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]+$/;
+const FLAG_SHAPE = /^[A-Z]{2}$/;
 /** Unicode line and paragraph separators are outside the control-character categories. */
 const PRINTABLE = /^[^\p{C}\p{Zl}\p{Zp}]+$/u;
 
@@ -15,6 +17,17 @@ export function parseToken(value: unknown, at: string): string {
 
 export function parseNick(value: unknown, at: string): string {
   return parseLine(value, at, MAX_NICK_LENGTH);
+}
+
+/** `raw.flag` when it is there: two capital letters. Which codes a client can draw is its own concern. */
+export function parseFlag(
+  raw: Readonly<Record<string, unknown>>,
+  at: string,
+): { readonly flag?: PlayerFlag } {
+  if (raw.flag === undefined) return {};
+  if (typeof raw.flag !== 'string' || !FLAG_SHAPE.test(raw.flag))
+    throw new Error(`${at}: expected two capital letters`);
+  return { flag: raw.flag };
 }
 
 export function parseRelayBuild(value: unknown, at: string): string {

@@ -173,6 +173,7 @@ export function enqueuePlacements(sim: Simulation, placements: readonly Authored
         ...(p.goods !== undefined ? { initialGoods: p.goods } : {}),
         ...(p.missionId !== undefined ? { missionId: p.missionId } : {}),
         ...(p.level !== undefined ? { level: p.level } : {}),
+        ...(p.graphics?.[0] !== undefined ? { record: p.graphics[0].editName } : {}),
       });
     } else {
       // A warrior placement carries its class weapon in the equipment slot, so its drawn weapon and its

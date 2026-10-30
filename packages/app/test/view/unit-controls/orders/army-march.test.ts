@@ -4,8 +4,8 @@ import { expect, it } from 'vitest';
 import { createAnsweredOrders } from '../../../../src/view/unit-controls/orders/answered.js';
 import { createUnitOrderController } from '../../../../src/view/unit-controls/orders/controller.js';
 import { createPendingGroundOrders } from '../../../../src/view/unit-controls/orders/pending-ground.js';
-import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
 import { COUNT, geometry, HEIGHT, makeArmy, report, WIDTH } from '../../../support/army-march.js';
+import { withPointHits } from '../../../support/point-hits.js';
 
 it.each(['move', 'redirect'] as const)(
   'moves a 1000-soldier real app %s formation without stacking',
@@ -14,7 +14,7 @@ it.each(['move', 'redirect'] as const)(
     const selected = new Set(members.map(({ entity }) => entity));
     const issued: PlayerCommand[] = [];
     const pending = createPendingGroundOrders();
-    const targets: UnitTargets = {
+    const targets = withPointHits({
       owned: () => [],
       buildings: () => [],
       flags: () => [],
@@ -32,7 +32,7 @@ it.each(['move', 'redirect'] as const)(
             const p = sim.world.get(entity, components.Position);
             return { ref: entity, ...tileToScreen(fx.toFloat(p.x), fx.toFloat(p.y)) };
           }),
-    };
+    });
     const orders = createUnitOrderController({
       answered: createAnsweredOrders(),
       pendingGroundOrders: pending,

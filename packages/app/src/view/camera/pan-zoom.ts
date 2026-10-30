@@ -16,6 +16,11 @@ export const MAX_ZOOM = 8;
 export const DEBUG_MIN_ZOOM = 0.1;
 /** CSS px from a canvas edge within which the pointer edge-scrolls. */
 export const EDGE_SCROLL_MARGIN = 24;
+/**
+ * Approximation: CSS px from the edge within which the pointer still edge-scrolls over HUD chrome, so
+ * hovering a top-bar item stays put while a cursor pushed against the screen edge keeps scrolling.
+ */
+export const HUD_EDGE_SCROLL_REACH = 4;
 
 /** The interactive camera's speed knobs, read each frame by the controller. */
 export interface CameraTuning {
@@ -37,7 +42,8 @@ export const DEFAULT_CAMERA_TUNING: CameraTuning = {
 
 /**
  * The edge-scroll pan velocity in screen px/s for a pointer at canvas CSS position `(x, y)`. Ramps
- * linearly from 0 at the margin's inner boundary to `speed` at the edge, and is zero deeper inside.
+ * linearly from 0 at the margin's inner boundary to `speed` at the edge, and is zero deeper inside or
+ * deeper than `reach`, which cuts the band short without changing its speed near the edge.
  * Scroll convention: a pointer at the left edge reveals the world leftward, giving a positive `vx`.
  */
 export function edgePanVelocity(
@@ -46,12 +52,31 @@ export function edgePanVelocity(
   width: number,
   height: number,
   speed: number,
+  reach: number = EDGE_SCROLL_MARGIN,
 ): { vx: number; vy: number } {
   const depth = (into: number): number =>
-    into >= EDGE_SCROLL_MARGIN ? 0 : (EDGE_SCROLL_MARGIN - Math.max(0, into)) / EDGE_SCROLL_MARGIN;
+    into >= Math.min(reach, EDGE_SCROLL_MARGIN)
+      ? 0
+      : (EDGE_SCROLL_MARGIN - Math.max(0, into)) / EDGE_SCROLL_MARGIN;
   return {
     vx: (depth(x) - depth(width - x)) * speed,
     vy: (depth(y) - depth(height - y)) * speed,
+  };
+}
+
+/**
+ * Where a pointer that left the window through `(x, y)` keeps edge-scrolling: pinned to every edge it
+ * was within the margin of, or to the nearest edge after a flick that left from deeper inside. Canvas
+ * CSS px in and out, so {@link edgePanVelocity} reads it like a cursor pressed against that edge.
+ */
+export function edgeExitPoint(x: number, y: number, width: number, height: number): { x: number; y: number } {
+  const distances = [x, width - x, y, height - y];
+  const nearest = Math.min(...distances);
+  const pinned = (distance: number): boolean => distance < EDGE_SCROLL_MARGIN || distance === nearest;
+  const [left, right, top, bottom] = distances.map(pinned);
+  return {
+    x: left ? 0 : right ? width : Math.min(width, Math.max(0, x)),
+    y: top ? 0 : bottom ? height : Math.min(height, Math.max(0, y)),
   };
 }
 

@@ -16,6 +16,8 @@ export const chsNetwork = {
   source: '游戏来源',
   server: '服务器地址',
   nick: '昵称',
+  flag: '旗帜',
+  noFlag: '不显示旗帜',
   connect: '连接',
   disconnect: '断开连接',
   connecting: '正在连接…',

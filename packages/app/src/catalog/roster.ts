@@ -26,8 +26,8 @@ export const DEFAULT_CHARACTER_PALETTE = 'test_human_00';
 export const INDEXED_CHARACTER_PALETTE = 'indexed';
 
 /**
- * The 16 player (team) colour names, slot order = player id, mirroring the pipeline's `PLAYER_COLORS`:
- * the original's 10 (`playerNN.pcx`) then 6 hue-rotated extras. Blue is the human player's default.
+ * The 24 player (team) colour names, slot order = player id, mirroring the pipeline's `PLAYER_COLORS`:
+ * the original's 10 (`playerNN.pcx`) then 14 toned extras. Blue is the human player's default.
  */
 export const PLAYER_COLOR_NAMES = [
   'blue',
@@ -46,6 +46,14 @@ export const PLAYER_COLOR_NAMES = [
   'indigo',
   'magenta',
   'pink',
+  'maroon',
+  'navy',
+  'olive',
+  'brown',
+  'forest',
+  'plum',
+  'white',
+  'lavender',
 ] as const;
 
 export const PLAYER_COLOR_COUNT = PLAYER_COLOR_NAMES.length;
@@ -53,7 +61,7 @@ export const PLAYER_COLOR_COUNT = PLAYER_COLOR_NAMES.length;
 /**
  * One flat `0xRRGGBB` per player id for UI swatches, slot order = {@link PLAYER_COLOR_NAMES}. An
  * approximation: the real team colours exist only as band-limited ramps in the player palette recipes,
- * so each name gets one hand-picked representative at its `playerNN.pcx` or rotation hue.
+ * so each name gets one hand-picked representative at its `playerNN.pcx` or tone.
  */
 export const PLAYER_SWATCH_COLORS: readonly number[] = [
   0x2f62d8, // blue
@@ -72,7 +80,22 @@ export const PLAYER_SWATCH_COLORS: readonly number[] = [
   0x5a46e0, // indigo (hue 250)
   0xd92cb0, // magenta (hue 312)
   0xe64887, // pink (hue 336)
+  0x731726, // maroon
+  0x172e73, // navy
+  0x7e7b28, // olive
+  0x734829, // brown
+  0x207327, // forest
+  0x78327e, // plum
+  0xf5f5f5, // white
+  0xbc99ee, // lavender
 ];
+
+/** The `ls_temp` atlas a player colour's signs, flags and markers draw from: the original's own
+ *  `human_playerNN` (one-based) for 0-9, after that the one the pipeline's `convertSignPlayerAtlases`
+ *  tones under the same name. */
+export function playerSignAtlasStem(colorId: number): string {
+  return `ls_temp.human_player${String(colorId + 1).padStart(2, '0')}`;
+}
 
 /** A player swatch as a CSS hex colour; unknown ids fall to black. */
 export function playerSwatchHex(colorId: number): string {

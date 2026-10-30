@@ -5,7 +5,7 @@ import type { CountedCells } from '../../nav/block-overlay.js';
 import { nodeHxOfPosition, nodeHyOfPosition } from '../../nav/halfcell.js';
 import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import type { ContentContext } from '../context.js';
-import { buildingFootprintOf, countsMatchCells, doorNodeOf, sameCells, translatedCells } from './geometry.js';
+import { countsMatchCells, doorNodeOf, houseFootprintOf, sameCells, translatedCells } from './geometry.js';
 import { standingWallCells } from './standing-walls.js';
 
 // The memoized per-world cache of cells standing buildings make unwalkable, plus its coherence verifier -
@@ -180,7 +180,7 @@ function deriveBuildingCells(world: World, content: ContentSet, terrain: Terrain
   const doorways = new Set<NodeId>();
   for (const e of world.query(Building, Position)) {
     const b = world.get(e, Building);
-    const footprint = buildingFootprintOf(content, b.buildingType, b.tribe);
+    const footprint = houseFootprintOf(content, b);
     if (footprint === undefined || footprint.blocked.length === 0) continue;
     const p = world.get(e, Position);
     const walk = walkBodyOf(terrain, footprint, nodeHxOfPosition(p.x, p.y), nodeHyOfPosition(p.x, p.y));
@@ -334,7 +334,7 @@ class BuildingCellsIndex implements BuildingCells {
       this.placed.delete(e);
       return;
     }
-    const footprint = buildingFootprintOf(this.content, b.buildingType, b.tribe);
+    const footprint = houseFootprintOf(this.content, b);
     const hx = nodeHxOfPosition(p.x, p.y);
     const hy = nodeHyOfPosition(p.x, p.y);
     if (held !== undefined && held.footprint === footprint && held.hx === hx && held.hy === hy) {

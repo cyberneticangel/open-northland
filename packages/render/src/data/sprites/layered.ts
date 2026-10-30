@@ -306,6 +306,7 @@ function loopFrameAt(loop: ResourceLoopRef, item: DrawItem, tick: number | undef
 export function resolvePalisadeDraw(
   binding: number | PalisadeBinding,
   item: Pick<DrawItem, 'gfxIndex' | 'builtPct'> & { readonly variantStep?: number },
+  player?: number,
 ): BuildingDraw {
   if (typeof binding === 'number') return { bob: binding };
   let gfxIndex = item.gfxIndex;
@@ -314,7 +315,8 @@ export function resolvePalisadeDraw(
     const at = order.indexOf(gfxIndex);
     if (at >= 0) gfxIndex = order[(at + item.variantStep) % order.length];
   }
-  const frames = gfxIndex === undefined ? undefined : binding.byGfxIndex[gfxIndex];
+  const own = player === undefined ? undefined : binding.byPlayer?.[player];
+  const frames = gfxIndex === undefined ? undefined : (own?.[gfxIndex] ?? binding.byGfxIndex[gfxIndex]);
   if (frames === undefined || frames.length === 0) return unwrapBobRef(binding.default);
   const index =
     item.builtPct === undefined

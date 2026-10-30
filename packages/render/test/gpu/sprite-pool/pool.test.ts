@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { type Camera, ONE, tileToScreen, type Viewport } from '../../../src/data/projection/index.js';
 import type { ElevationField } from '../../../src/data/terrain/index.js';
 import { SelectionGraphics } from '../../../src/gpu/selection/sprite-effect.js';
+import type { TargetTone } from '../../../src/gpu/selection/style.js';
 import { type PoolFrame, SpritePool } from '../../../src/gpu/sprite-pool/index.js';
 import { SNAP_DISTANCE } from '../../../src/gpu/sprite-pool/presentation/motion.js';
 import type { SpriteSheet } from '../../../src/gpu/textures/sprite-sheet.js';
@@ -621,6 +622,27 @@ it('outlines the entity the frame names as hovered and clears it once the hover 
   pool.reconcile(poolFrame(snapshot, FRAMES_EVERYTHING));
   expect(outline?.destroyed).toBe(true);
   expect(body?.children).toHaveLength(1);
+  pool.destroy();
+  textures.clear();
+});
+
+it("outlines a pick's candidates in sky-blue, and leaves the refused and any other hovered entity plain", () => {
+  const layer = new Container();
+  const textures = new TextureCache();
+  const pool = new SpritePool(layer, textures, undefined);
+  const snapshot = snapshotOf(BUILDINGS);
+  const marks = new Map<number, TargetTone>([
+    [1, 'candidate'],
+    [2, 'refused'],
+  ]);
+  pool.reconcile({ ...poolFrame(snapshot, FRAMES_EVERYTHING), marks, hovered: 3 });
+  const outlineOf = (index: number) =>
+    layer.children[index]?.children.find((c) => c.constructor === Container);
+  const core = outlineOf(0)?.children[8];
+  if (!(core instanceof SelectionGraphics)) throw new Error('Missing candidate outline');
+  expect(core.tint).toBe(0x7ee0ff);
+  expect(outlineOf(1)).toBeUndefined();
+  expect(outlineOf(2)).toBeUndefined();
   pool.destroy();
   textures.clear();
 });

@@ -57,6 +57,8 @@ function voicePlayer(playing: BriefingVoice | null) {
     stop: () => stops.push(stops.length),
     toggle: () => undefined,
     seek: () => undefined,
+    rate: () => 1,
+    setRate: () => undefined,
     state: () => ({ voice: playing, status: 'playing', positionS: 0, durationS: 0 }),
   };
   return { player, stops };

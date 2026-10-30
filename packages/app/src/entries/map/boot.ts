@@ -1,4 +1,4 @@
-import { type MapScript, mapLobbySlots } from '@open-northland/data';
+import { isMultiplayerMapType, type MapScript, mapLobbySlots } from '@open-northland/data';
 import { type GameSession, seatColourOf } from '@open-northland/lockstep';
 import {
   createWindowPixiApp,
@@ -90,6 +90,8 @@ export interface HostedMapWorld {
 /** What the boot reads of the save a world restores from; the host holds the save itself. */
 export interface RestoredSave {
   readonly header: Pick<SaveGameHeader, 'tick' | 'mapId' | 'view'>;
+  /** The saving client's presentation memory (`SaveGame.presentation`). */
+  readonly presentation: string | null;
   /** The mission save a sub-mission's save continues. */
   readonly parent?: SaveGame;
 }
@@ -364,6 +366,9 @@ export async function assembleMapWorld<H extends HostedMapWorld>(
       }
     }
     renderer.setWeatherSeed(hosted.seed);
+    // Known terrain on a multiplayer map shows its start buildings; a restored or joined world is past
+    // its start, where they could be ones raised since.
+    if (isMultiplayerMapType(meta?.mapTypes ?? []) && stagedSave === null) renderer.knowStartFogBuildings();
     setDiagGameSession({
       entry: 'map',
       worldId: mapId,

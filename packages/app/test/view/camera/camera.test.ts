@@ -8,6 +8,7 @@ import {
   DEBUG_MIN_ZOOM,
   DEFAULT_CAMERA_TUNING,
   EDGE_SCROLL_MARGIN,
+  edgeExitPoint,
   edgePanVelocity,
   integerZoomLevels,
   MAX_ZOOM,
@@ -271,6 +272,20 @@ describe('edgePanVelocity', () => {
     const shallow = edgePanVelocity(EDGE_SCROLL_MARGIN * 0.75, H / 2, W, H, SPEED).vx;
     const deep = edgePanVelocity(EDGE_SCROLL_MARGIN * 0.25, H / 2, W, H, SPEED).vx;
     expect(deep).toBeCloseTo(shallow * 3);
+  });
+});
+
+describe('edgeExitPoint', () => {
+  const W = 800;
+  const H = 600;
+
+  it('pins every edge the exit lay within the band of', () => {
+    expect(edgeExitPoint(W - 3, 300, W, H)).toEqual({ x: W, y: 300 });
+    expect(edgeExitPoint(5, -2, W, H)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('pins a flick from deeper inside to the nearest edge only', () => {
+    expect(edgeExitPoint(400, H - EDGE_SCROLL_MARGIN * 3, W, H)).toEqual({ x: 400, y: H });
   });
 });
 

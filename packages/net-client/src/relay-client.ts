@@ -9,6 +9,7 @@ import {
   DESCRIPTOR_WORLD,
   type GovernedClock,
   MAX_ENVELOPE_BYTES,
+  type PlayerFlag,
   parseServerMessage,
   RelayTransport,
   type ResponsivenessMode,
@@ -82,6 +83,8 @@ export interface WorldPort {
 export interface RelayClientOptions {
   readonly token: string;
   readonly nick: string;
+  /** The flag shown beside the nick; none when absent. */
+  readonly flag?: PlayerFlag;
   readonly world: WorldPort;
   /** Relay messages after applying them, plus local command refusals: how a display follows the session. */
   readonly onMessage?: (message: ServerMessage) => void;
@@ -182,7 +185,7 @@ export class RelayClient extends RelayLobby implements SessionDriver, RelayClien
   private readonly now: () => number;
 
   constructor(options: RelayClientOptions) {
-    super(options.token, options.nick);
+    super(options.token, options.nick, options.flag);
     this.options = options;
     this.now = options.now ?? (() => performance.now());
     this.latency = new CommandLatency();

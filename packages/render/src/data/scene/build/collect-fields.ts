@@ -30,6 +30,7 @@ import {
   readProjectileSiege,
   readScriptedLook,
   readSettlerTribe,
+  readsCartLift,
   readUpgradePct,
   readUpgradeTypeId,
 } from '../snapshot-readers/index.js';
@@ -50,6 +51,7 @@ export function assignSettlerFields(
     if (elapsed !== null) item.elapsed = elapsed;
     const duration = readAtomicDuration(components);
     if (duration !== null) item.atomicDuration = duration;
+    if (readsCartLift(components)) item.atomicStretched = true;
   }
   if (readEngaged(components)) item.engaged = true;
   if ('AnimalRunning' in components) item.running = true;

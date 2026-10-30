@@ -3,21 +3,16 @@ import {
   CALM_FADE_IN_S,
   CALM_PASSES_MAX,
   CALM_PASSES_MIN,
-  CALM_SILENCE_MAX_S,
-  CALM_SILENCE_MIN_S,
-  LONG_SESSION_OWN_STEM_EVERY_MAX,
-  LONG_SESSION_OWN_STEM_EVERY_MIN,
-  LONG_SESSION_S,
-  LONG_SESSION_SILENCE_MAX_S,
-  LONG_SESSION_SILENCE_MIN_S,
-  type MusicClock,
+  CUE_GAP_S,
+  choosePlaylistMusic,
+  culturePools,
+  MAP_PASSES,
   type MusicCue,
   type MusicManifest,
   MusicPlaylist,
+  type MusicPools,
   type MusicRandom,
-  mapMusicFor,
-  OWN_STEM_EVERY_MAX,
-  OWN_STEM_EVERY_MIN,
+  mapVariantsFor,
   type PlaylistMood,
   parseMusicManifest,
   TENSE_FADE_IN_S,
@@ -26,16 +21,15 @@ import {
 import { manifestDocument, musicTrack } from '../../support/music-manifest.js';
 
 /**
- * The in-game rotation: the map's own stem first and every second or third calm cue, shuffle-bag
- * picks with silence between them otherwise, a fight cutting in on the own tense stem and holding
- * each tense stem for several passes. Everything is drawn from the injected source, so a seed pins it.
+ * The two soundtracks: a map's own stem looped unbroken and switched by mood, and a nation's stems
+ * shuffled back to back with its tense stems for a fight. Every draw comes from the injected source,
+ * so a seed pins it.
  */
 
 const THEME_VIKING = 2;
+const ATTACK_VIKING = 6;
 const MISSION_FRANKEN1 = 11;
 const MISSION_MIDGARD1 = 20;
-const MISSION_ADDON_FRANKEN2 = 34;
-const MISSION_ADDON_UNDERWORLD = 37;
 const SEED = 7;
 const LONG_RUN = 200;
 
@@ -94,15 +88,17 @@ const MANIFEST = fixture();
 const CALM: PlaylistMood = { intensity: 'calm', stance: 'neutral', wealthy: false };
 const TENSE: PlaylistMood = { ...CALM, intensity: 'tense' };
 
-/** A playlist on a session clock that stands still at its start unless `sessionS` moves it. */
-function playlistFor(
-  musicType: number,
-  random: MusicRandom = seeded(SEED),
-  sessionS: MusicClock = () => 0,
-): MusicPlaylist {
-  const music = mapMusicFor(musicType, MANIFEST);
-  if (music === null) throw new Error(`no music for ${musicType}`);
-  return new MusicPlaylist(music, MANIFEST, random, sessionS);
+const FRANK = culturePools(MANIFEST).get('frank') as MusicPools;
+const NORSE = culturePools(MANIFEST).get('norse') as MusicPools;
+
+function mapPlaylist(musicType: number): MusicPlaylist {
+  const variants = mapVariantsFor(musicType, MANIFEST);
+  if (variants === null) throw new Error(`no music for ${musicType}`);
+  return new MusicPlaylist({ source: 'map', variants }, MANIFEST, seeded(SEED));
+}
+
+function nationPlaylist(pools: MusicPools, random: MusicRandom = seeded(SEED)): MusicPlaylist {
+  return new MusicPlaylist({ source: 'nation', pools }, MANIFEST, random);
 }
 
 function take(playlist: MusicPlaylist, count: number): MusicCue[] {
@@ -117,191 +113,150 @@ function take(playlist: MusicPlaylist, count: number): MusicCue[] {
 
 const stemOf = (cue: MusicCue): string => cue.track.file.replace(/\.ogg$/, '');
 
-describe('calm rotation', () => {
-  it('opens on the map’s own stem at once, for one or two passes', () => {
-    const [first] = take(playlistFor(MISSION_FRANKEN1), 1);
-    expect(first?.track.file).toBe('mission_franken1_standard.ogg');
-    expect(first?.gapBeforeS).toBe(0);
-    expect(first?.fadeInS).toBe(CALM_FADE_IN_S);
-    expect(first?.passes).toBeGreaterThanOrEqual(CALM_PASSES_MIN);
-    expect(first?.passes).toBeLessThanOrEqual(CALM_PASSES_MAX);
+describe('choosing the music', () => {
+  const variants = mapVariantsFor(MISSION_FRANKEN1, MANIFEST);
+
+  it('plays the source asked for when it has music', () => {
+    expect(choosePlaylistMusic('map', variants, FRANK)?.source).toBe('map');
+    expect(choosePlaylistMusic('nation', variants, FRANK)?.source).toBe('nation');
+  });
+
+  it('falls back to the nation for a map without music and to the map for a seat without a nation', () => {
+    expect(choosePlaylistMusic('map', null, FRANK)?.source).toBe('nation');
+    expect(choosePlaylistMusic('nation', variants, null)?.source).toBe('map');
+    expect(choosePlaylistMusic('nation', variants, { calm: [], tense: [] })?.source).toBe('map');
+    expect(choosePlaylistMusic('map', null, null)).toBeNull();
+  });
+});
+
+describe('map music', () => {
+  it('loops the map’s own stem unbroken, cue after cue', () => {
+    const cues = take(mapPlaylist(MISSION_FRANKEN1), 3);
+    expect(cues.map(stemOf)).toEqual(Array(3).fill('mission_franken1_standard'));
+    expect(cues[0]).toMatchObject({ passes: MAP_PASSES, gapBeforeS: CUE_GAP_S, fadeInS: CALM_FADE_IN_S });
+  });
+
+  it('cuts to the Danger stem at once and returns to Standard at a pass end', () => {
+    const playlist = mapPlaylist(MISSION_FRANKEN1);
+    take(playlist, 1);
+    expect(playlist.update(CALM)).toBe('none');
+    expect(playlist.update(TENSE)).toBe('now');
+    expect(take(playlist, 1).map(stemOf)).toEqual(['mission_franken1_danger']);
+    expect(playlist.update(TENSE)).toBe('none');
+    expect(playlist.update(CALM)).toBe('afterFight');
+    expect(playlist.update(TENSE)).toBe('keep');
+    expect(playlist.update(CALM)).toBe('afterFight');
+    expect(take(playlist, 1).map(stemOf)).toEqual(['mission_franken1_standard']);
+  });
+
+  it('follows the standing into the Wealthy stem at a pass end', () => {
+    const playlist = mapPlaylist(MISSION_FRANKEN1);
+    take(playlist, 1);
+    expect(playlist.update({ ...CALM, wealthy: true })).toBe('atPassEnd');
+    expect(playlist.update({ ...CALM, wealthy: true })).toBe('none');
+    expect(playlist.upcoming()?.file).toBe('mission_franken1_wealthy.ogg');
+    expect(take(playlist, 1).map(stemOf)).toEqual(['mission_franken1_wealthy']);
+  });
+
+  it('follows a theme’s stance and stays on the hostile stem when a fight starts against an enemy', () => {
+    const playlist = mapPlaylist(THEME_VIKING);
+    playlist.update({ ...CALM, stance: 'enemy' });
+    expect(take(playlist, 1).map(stemOf)).toEqual(['theme_viking_hostile']);
+    expect(playlist.update({ ...TENSE, stance: 'enemy' })).toBe('none');
+  });
+
+  it('keeps a map with no Danger segment on its own stem through a fight', () => {
+    const playlist = mapPlaylist(MISSION_MIDGARD1);
+    take(playlist, 1);
+    expect(playlist.update(TENSE)).toBe('none');
+    expect(take(playlist, 1).map(stemOf)).toEqual(['mission_midgard1_standard']);
+    expect(playlist.standby()).toBeNull();
+  });
+
+  it('plays an attack code’s one stem whatever the mood', () => {
+    const playlist = mapPlaylist(ATTACK_VIKING);
+    expect(take(playlist, 1).map(stemOf)).toEqual(['attack_viking']);
+    expect(playlist.update(TENSE)).toBe('none');
+  });
+
+  it('stands by with the Danger stem', () => {
+    expect(mapPlaylist(MISSION_FRANKEN1).standby()?.file).toBe('mission_franken1_danger.ogg');
+  });
+
+  it('ends once its only stem is dropped', () => {
+    const playlist = mapPlaylist(MISSION_MIDGARD1);
+    playlist.drop('mission_midgard1_standard.ogg');
+    expect(playlist.next()).toBeNull();
+  });
+});
+
+describe('nation music', () => {
+  it('plays every calm stem of the nation back to back, one or two passes each', () => {
+    const cues = take(nationPlaylist(FRANK), LONG_RUN);
+    expect(cues).toHaveLength(LONG_RUN);
+    for (const cue of cues) {
+      expect(cue.gapBeforeS).toBe(CUE_GAP_S);
+      expect(cue.passes).toBeGreaterThanOrEqual(CALM_PASSES_MIN);
+      expect(cue.passes).toBeLessThanOrEqual(CALM_PASSES_MAX);
+    }
+    expect(new Set(cues.map(stemOf))).toEqual(new Set(FRANK.calm));
   });
 
   it('never plays the same audio twice in a row', () => {
-    const cues = take(playlistFor(MISSION_FRANKEN1), LONG_RUN);
-    expect(cues).toHaveLength(LONG_RUN);
+    const cues = take(nationPlaylist(FRANK), LONG_RUN);
     for (let i = 1; i < cues.length; i++) {
       expect(cues[i]?.track.segmentSha256).not.toBe(cues[i - 1]?.track.segmentSha256);
     }
   });
 
-  it('returns to the own stem every second or third cue', () => {
-    const cues = take(playlistFor(MISSION_FRANKEN1), LONG_RUN);
-    const ownAt = cues.flatMap((cue, i) => (stemOf(cue) === 'mission_franken1_standard' ? [i] : []));
-    expect(ownAt[0]).toBe(0);
-    for (let i = 1; i < ownAt.length; i++) {
-      const every = (ownAt[i] ?? 0) - (ownAt[i - 1] ?? 0);
-      expect(every).toBeGreaterThanOrEqual(OWN_STEM_EVERY_MIN);
-      expect(every).toBeLessThanOrEqual(OWN_STEM_EVERY_MAX);
-    }
-  });
-
-  it('puts silence before every cue after the first and plays every calm stem in turn', () => {
-    const cues = take(playlistFor(MISSION_FRANKEN1), LONG_RUN);
-    for (const cue of cues.slice(1)) {
-      expect(cue.gapBeforeS).toBeGreaterThanOrEqual(CALM_SILENCE_MIN_S);
-      expect(cue.gapBeforeS).toBeLessThanOrEqual(CALM_SILENCE_MAX_S);
-    }
-    const audioOf = (stem: string) => MANIFEST.tracks[stem]?.segmentSha256;
-    expect(new Set(cues.map((cue) => cue.track.segmentSha256))).toEqual(
-      new Set(mapMusicFor(MISSION_FRANKEN1, MANIFEST)?.pools.calm.map(audioOf)),
-    );
-  });
-
-  it('never picks a stem that is the own stem’s audio under another name', () => {
-    const cues = take(playlistFor(MISSION_ADDON_FRANKEN2), LONG_RUN);
-    const stems = new Set(cues.map(stemOf));
-    expect(stems.has('mission_addon_franken2_standard')).toBe(true);
-    expect(stems.has('mission_franken1_standard')).toBe(false);
-  });
-
-  it('follows the standing into the Wealthy stem at the next own slot', () => {
-    const playlist = playlistFor(MISSION_FRANKEN1);
+  it('opens a fight on its standby, holds tense stems for several passes and calms at a pass end', () => {
+    const playlist = nationPlaylist(NORSE);
     take(playlist, 1);
-    playlist.update({ ...CALM, wealthy: true });
-    const own = take(playlist, OWN_STEM_EVERY_MAX).map(stemOf);
-    expect(own).toContain('mission_franken1_wealthy');
-    expect(own).not.toContain('mission_franken1_standard');
-  });
-
-  it('rotates Underworld through its own stem and the borrowed Norse ones', () => {
-    const stems = new Set(take(playlistFor(MISSION_ADDON_UNDERWORLD), LONG_RUN).map(stemOf));
-    expect(stems).toEqual(
-      new Set([
-        'mission_addon_underworld_standard',
-        'mission_addon_nordland_standard',
-        'mission_addon_asgard_standard',
-      ]),
-    );
-  });
-});
-
-describe('long sessions', () => {
-  /** Positions of the own stem in a run of cues. */
-  const ownSlots = (cues: readonly MusicCue[]): number[] =>
-    cues.flatMap((cue, i) => (stemOf(cue) === 'mission_franken1_standard' ? [i] : []));
-
-  it('lengthens the silences as the session runs, up to their long-session range', () => {
-    let nowS = 0;
-    const playlist = playlistFor(MISSION_FRANKEN1, seeded(SEED), () => nowS);
-    take(playlist, 1);
-    const HALF = 0.5;
-    nowS = LONG_SESSION_S * HALF;
-    for (const cue of take(playlist, LONG_RUN)) {
-      expect(cue.gapBeforeS).toBeGreaterThanOrEqual((CALM_SILENCE_MIN_S + LONG_SESSION_SILENCE_MIN_S) * HALF);
-      expect(cue.gapBeforeS).toBeLessThanOrEqual((CALM_SILENCE_MAX_S + LONG_SESSION_SILENCE_MAX_S) * HALF);
-    }
-    const TWICE_LONG = 2;
-    nowS = LONG_SESSION_S * TWICE_LONG;
-    for (const cue of take(playlist, LONG_RUN)) {
-      expect(cue.gapBeforeS).toBeGreaterThanOrEqual(LONG_SESSION_SILENCE_MIN_S);
-      expect(cue.gapBeforeS).toBeLessThanOrEqual(LONG_SESSION_SILENCE_MAX_S);
-    }
-  });
-
-  it('brings the own stem back less often once the session is long', () => {
-    const playlist = playlistFor(MISSION_FRANKEN1, seeded(SEED), () => LONG_SESSION_S);
-    const slots = ownSlots(take(playlist, LONG_RUN));
-    expect(slots[0]).toBe(0);
-    for (let i = 1; i < slots.length; i++) {
-      const every = (slots[i] ?? 0) - (slots[i - 1] ?? 0);
-      expect(every).toBeGreaterThanOrEqual(LONG_SESSION_OWN_STEM_EVERY_MIN);
-      expect(every).toBeLessThanOrEqual(LONG_SESSION_OWN_STEM_EVERY_MAX);
-    }
-  });
-});
-
-describe('fights', () => {
-  it('keeps a tense cue still running out its pass when the fight flares up again', () => {
-    const playlist = playlistFor(MISSION_FRANKEN1);
-    take(playlist, 1);
-    playlist.update(TENSE);
-    const [danger] = take(playlist, 1);
-    expect(playlist.update(CALM)).toBe('atPassEnd');
-    expect(playlist.update(TENSE)).toBe('keep');
-    // When the kept cue ends, the fight rotates on rather than restarting the same stem.
-    expect(take(playlist, 1)[0]?.track.segmentSha256).not.toBe(danger?.track.segmentSha256);
-  });
-
-  it('keeps the own tense stem when it is already playing as the calm one', () => {
-    const playlist = playlistFor(THEME_VIKING);
-    playlist.update({ ...CALM, stance: 'enemy' });
-    expect(take(playlist, 1).map(stemOf)).toEqual(['theme_viking_hostile']);
-    expect(playlist.update({ ...TENSE, stance: 'enemy' })).toBe('keep');
-    expect(take(playlist, 1).map(stemOf)).not.toContain('theme_viking_hostile');
-  });
-
-  it('cuts in at once and calms at a pass end, saying nothing while the mood holds', () => {
-    const playlist = playlistFor(MISSION_FRANKEN1);
-    expect(playlist.update(CALM)).toBe('none');
-    expect(playlist.update(TENSE)).toBe('now');
-    expect(playlist.update(TENSE)).toBe('none');
-    expect(playlist.update(CALM)).toBe('atPassEnd');
-  });
-
-  it('opens a fight on the map’s own tense stem, held for several passes with no silence', () => {
-    const playlist = playlistFor(MISSION_FRANKEN1);
-    take(playlist, 1);
-    playlist.update(TENSE);
-    const [first, second] = take(playlist, 2);
-    expect(first).toMatchObject({ passes: TENSE_PASSES, gapBeforeS: 0, fadeInS: TENSE_FADE_IN_S });
-    expect(first?.track.file).toBe('mission_franken1_danger.ogg');
-    // Only after those passes does the fight rotate, to another tense stem.
-    expect(second).toMatchObject({ passes: TENSE_PASSES, gapBeforeS: 0 });
-    expect(mapMusicFor(MISSION_FRANKEN1, MANIFEST)?.pools.tense).toContain(stemOf(second as MusicCue));
-    expect(second?.track.segmentSha256).not.toBe(first?.track.segmentSha256);
-  });
-
-  it('stands by with the stem a fight opens on, its culture’s first for a map with no Danger segment', () => {
-    expect(playlistFor(MISSION_FRANKEN1).standby()?.file).toBe('mission_franken1_danger.ogg');
-    const playlist = playlistFor(MISSION_MIDGARD1);
     const opener = playlist.standby();
-    expect(opener?.file).toBe(`${mapMusicFor(MISSION_MIDGARD1, MANIFEST)?.pools.tense[0]}.ogg`);
-    take(playlist, 1);
-    playlist.update(TENSE);
-    expect(take(playlist, 1)[0]?.track).toEqual(opener);
-  });
-
-  it('fights a map with no Danger segment to its culture’s tense music, never its calm stem', () => {
-    const playlist = playlistFor(MISSION_MIDGARD1);
-    take(playlist, 1);
-    playlist.update(TENSE);
-    const cues = take(playlist, LONG_RUN);
-    expect(
-      cues.every((cue) => mapMusicFor(MISSION_MIDGARD1, MANIFEST)?.pools.tense.includes(stemOf(cue))),
-    ).toBe(true);
-  });
-
-  it('goes back to the calm rotation with silence once the fight is over', () => {
-    const playlist = playlistFor(MISSION_FRANKEN1);
-    take(playlist, 1);
-    playlist.update(TENSE);
-    take(playlist, 1);
+    expect(playlist.update(TENSE)).toBe('now');
+    const [first, second] = take(playlist, 2);
+    expect(first?.track).toEqual(opener);
+    expect(first).toMatchObject({ passes: TENSE_PASSES, fadeInS: TENSE_FADE_IN_S });
+    expect(NORSE.tense).toContain(stemOf(second as MusicCue));
+    expect(second?.track.segmentSha256).not.toBe(first?.track.segmentSha256);
+    expect(playlist.update(CALM)).toBe('afterFight');
+    // The calm cue that follows the fight is named ahead, for the player to decode before the handover.
+    expect(NORSE.calm.map((stem) => `${stem}.ogg`)).toContain(playlist.upcoming()?.file);
+    expect(playlist.update(TENSE)).toBe('keep');
     playlist.update(CALM);
-    const [calm] = take(playlist, 1);
-    expect(calm?.gapBeforeS).toBeGreaterThanOrEqual(CALM_SILENCE_MIN_S);
-    expect(mapMusicFor(MISSION_FRANKEN1, MANIFEST)?.pools.calm).toContain(stemOf(calm as MusicCue));
+    expect(NORSE.calm).toContain(stemOf(take(playlist, 1)[0] as MusicCue));
   });
-});
 
-describe('dropped tracks', () => {
+  it('names the next calm cue ahead, so the player can decode it before the handover', () => {
+    const playlist = nationPlaylist(FRANK);
+    take(playlist, 1);
+    for (let i = 0; i < LONG_RUN; i++) {
+      const upcoming = playlist.upcoming();
+      expect(take(playlist, 1)[0]?.track).toEqual(upcoming);
+    }
+    const looping = mapPlaylist(MISSION_FRANKEN1);
+    take(looping, 1);
+    expect(looping.upcoming()).toBeNull();
+  });
+
+  it('opens on the current fight when a rebuilt playlist is told the mood first', () => {
+    const playlist = nationPlaylist(NORSE);
+    playlist.update(TENSE);
+    expect(NORSE.tense).toContain(stemOf(take(playlist, 1)[0] as MusicCue));
+  });
+
+  it('stays calm through a fight when the nation has no tense stem', () => {
+    const playlist = nationPlaylist({ calm: NORSE.calm, tense: [] });
+    take(playlist, 1);
+    expect(playlist.update(TENSE)).toBe('none');
+  });
+
   it('never offers a dropped file again and ends once every stem is gone', () => {
-    const playlist = playlistFor(MISSION_ADDON_UNDERWORLD);
-    playlist.drop('mission_addon_nordland_standard.ogg');
-    const stems = new Set(take(playlist, LONG_RUN).map(stemOf));
-    expect(stems.has('mission_addon_nordland_standard')).toBe(false);
-    playlist.drop('mission_addon_underworld_standard.ogg');
-    playlist.drop('mission_addon_asgard_standard.ogg');
+    const playlist = nationPlaylist(NORSE);
+    const [dropped, ...kept] = NORSE.calm;
+    playlist.drop(`${dropped}.ogg`);
+    expect(new Set(take(playlist, LONG_RUN).map(stemOf)).has(dropped ?? '')).toBe(false);
+    for (const stem of kept) playlist.drop(`${stem}.ogg`);
     expect(playlist.next()).toBeNull();
   });
 });

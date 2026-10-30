@@ -74,13 +74,12 @@ describe('FogGhostStore', () => {
     const site = (built: number) =>
       entity(1, 5, 4, { Building: { buildingType: 7, tribe: 1, built, level: 0 }, UnderConstruction: {} });
     const store = new FogGhostStore();
-    store.update(snapshotOf([site(0)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 1));
-    store.adopt(1);
-    store.update(snapshotOf([site(0)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 1));
+    store.update(snapshotOf([site(0)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.VISIBLE]]), 1));
+    store.update(snapshotOf([site(0)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 2));
     expect(drawn(store)[0]?.builtPct).toBe(0);
-    store.update(snapshotOf([site(0)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.VISIBLE]]), 2));
-    store.update(snapshotOf([site(ONE / 2)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.VISIBLE]]), 3));
-    store.update(snapshotOf([site(ONE / 2)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 4));
+    store.update(snapshotOf([site(0)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.VISIBLE]]), 3));
+    store.update(snapshotOf([site(ONE / 2)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.VISIBLE]]), 4));
+    store.update(snapshotOf([site(ONE / 2)]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 5));
     expect(drawn(store)[0]?.builtPct).toBe(50);
   });
 
@@ -132,6 +131,59 @@ describe('FogGhostStore', () => {
       viewOf(new Map(), 4, FOG_MODE.RECON_FOG_OF_WAR),
     );
     expect(drawn(store).map((g) => g.ref)).toEqual([2, 3, 4, 5]);
+  });
+
+  it("knows a multiplayer start's buildings and walls on known terrain, once, at the first view", () => {
+    const wall = entity(6, 13, 4, { Palisade: {}, Owner: { player: 2 } });
+    const foeHouse = entity(1, 5, 4, {
+      Building: { buildingType: 7, tribe: 1, built: ONE, level: 0 },
+      Owner: { player: 2 },
+    });
+    const store = new FogGhostStore();
+    store.knowStartBuildings();
+    // Before the fog's first view the store is cleared each frame; the start knowledge waits.
+    store.clear();
+    store.update(snapshotOf([foeHouse, TREE, wall]), viewOf(new Map(), 1, FOG_MODE.RECON));
+    expect(drawn(store).map((g) => g.ref)).toEqual([1, 2, 6]);
+    expect(drawn(store).find((g) => g.ref === 1)).toMatchObject({ kind: 'building', owner: 2 });
+    // The minimap marks the remembered building alone, never the wall or the nature beside it.
+    expect(store.markers([]).map((g) => g.ref)).toEqual([1]);
+    // Spent: a building raised later stays intel to see, even across a new known-terrain stretch.
+    const late = entity(7, 15, 4, { Building: { buildingType: 7, tribe: 1, built: ONE, level: 0 } });
+    store.update(snapshotOf([foeHouse, TREE, wall, late]), viewOf(new Map(), 2, FOG_MODE.CLASSIC));
+    store.update(snapshotOf([foeHouse, TREE, wall, late]), viewOf(new Map(), 3, FOG_MODE.RECON));
+    expect(drawn(store).map((g) => g.ref)).toEqual([1, 2, 6]);
+  });
+
+  it('spends the start knowledge on a black map without remembering a building', () => {
+    const store = new FogGhostStore();
+    store.knowStartBuildings();
+    store.update(snapshotOf([HOUSE]), viewOf(new Map(), 1, FOG_MODE.CLASSIC));
+    store.update(snapshotOf([HOUSE]), viewOf(new Map(), 2, FOG_MODE.RECON));
+    expect(drawn(store)).toEqual([]);
+  });
+
+  it("restores a saved memory into its own seat's first view, and nothing into another seat's", () => {
+    const store = new FogGhostStore();
+    store.update(snapshotOf([HOUSE]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.VISIBLE]]), 1));
+    store.update(snapshotOf([HOUSE]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 2));
+    const saved = store.memory();
+    if (saved === null) throw new Error('expected a memory after a view');
+    expect(saved.ghosts.map((g) => g.ref)).toEqual([HOUSE.id]);
+
+    // The house burnt down out of sight before the save: the loaded memory still shows it.
+    const restored = new FogGhostStore();
+    restored.restore(saved);
+    restored.update(snapshotOf([]), viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 1));
+    expect(drawn(restored).map((g) => g.ref)).toEqual([HOUSE.id]);
+
+    const otherSeat = new FogGhostStore();
+    otherSeat.restore(saved);
+    otherSeat.update(snapshotOf([]), {
+      ...viewOf(new Map([[HOUSE_CELL, FOG_STATE.EXPLORED]]), 1),
+      player: 1,
+    });
+    expect(drawn(otherSeat)).toEqual([]);
   });
 
   it('seeds nothing on watched ground: the live entity draws there', () => {
@@ -240,16 +292,6 @@ describe('FogGhostStore', () => {
     const chest = entity(5, 15, 4, { OpenedChest: { gfxIndex: 846 } });
     const scene = collectSpriteScene(snapshotOf([chest]));
     expect(scene.items[0]).toMatchObject({ ref: 5, kind: 'chest', gfxIndex: 846 });
-  });
-
-  it('adopt() captures a ref sight-unseen on the next update (the map handover seam)', () => {
-    const store = new FogGhostStore();
-    store.update(snapshotOf([TREE]), viewOf(new Map([[TREE_CELL, FOG_STATE.EXPLORED]]), 1));
-    store.update(snapshotOf([TREE]), viewOf(new Map([[TREE_CELL, FOG_STATE.EXPLORED]]), 2));
-    expect(drawn(store)).toEqual([]); // never seen by the pool path, so nothing was remembered
-    store.adopt(TREE.id);
-    store.update(snapshotOf([TREE]), viewOf(new Map([[TREE_CELL, FOG_STATE.EXPLORED]]), 2));
-    expect(drawn(store).map((g) => g.ref)).toEqual([2]);
   });
 
   it('forgets one seat’s memory when the view changes seat', () => {

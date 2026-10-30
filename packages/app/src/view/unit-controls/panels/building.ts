@@ -1,14 +1,18 @@
 import type { UiCue } from '@open-northland/audio';
+import type { ContentSet } from '@open-northland/data';
 import { type Entity, entityById, type PlayerCommand, type WorldSnapshot } from '@open-northland/sim';
+import { ownerPlayerOf } from '../../../game/snapshot/index.js';
 import type { ViewerSeat } from '../../../game/viewer-seat.js';
 import { buildingPeersOf } from '../../../hud/details-panel/model/index.js';
 import type { BuildingPanelActions } from '../../../hud/dom/building-panel/actions.js';
 import type { SystemConfirmCopy } from '../../../hud/dom/system/confirm.js';
 import { formatMessage, messages } from '../../../i18n/index.js';
+import { globalDefenceOrders } from '../keyboard-picks.js';
 import { ownedOrder } from '../orders/owned.js';
 
 export interface BuildingPanelHost {
   readonly snapshot: () => WorldSnapshot;
+  readonly content: ContentSet;
   readonly viewer: ViewerSeat;
   readonly enqueue: (command: PlayerCommand) => void;
   readonly cue: (cue: UiCue) => void;
@@ -43,6 +47,13 @@ export function buildingPanelActions(host: BuildingPanelHost): BuildingPanelActi
     setAlarm: order((id, enabled: boolean) =>
       send({ kind: 'setDefenceMode', building: id as Entity, enabled }),
     ),
+    setAlarmEverywhere: order((id, enabled: boolean) => {
+      const snapshot = host.snapshot();
+      const ent = entityById(snapshot, id);
+      const owner = ent === undefined ? undefined : ownerPlayerOf(ent);
+      if (owner === undefined) return;
+      for (const command of globalDefenceOrders(snapshot, host.content, owner, enabled)) send(command);
+    }),
     releaseGarrison: order((_id, garrison: readonly number[]) => {
       for (const entity of garrison) send({ kind: 'unassignWorker', entity: entity as Entity });
       host.selectGroup(garrison);

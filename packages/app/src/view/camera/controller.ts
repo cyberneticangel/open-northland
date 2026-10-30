@@ -7,7 +7,9 @@ import {
   clampCameraToBounds,
   DEBUG_MIN_ZOOM,
   DEFAULT_CAMERA_TUNING,
+  edgeExitPoint,
   edgePanVelocity,
+  HUD_EDGE_SCROLL_REACH,
   integerZoomLevels,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -68,8 +70,8 @@ export interface CameraController {
   /** Suspend camera gestures and discard held, dragged, edge-pan, and glide state. */
   setSuspended(suspended: boolean): void;
   /**
-   * Claim a client point for the HUD so wheel zoom and middle dragging yield to its controls.
-   * `null` clears the guard.
+   * Claim a client point for the HUD so wheel zoom and middle dragging yield to its controls and
+   * edge scrolling narrows to {@link HUD_EDGE_SCROLL_REACH}. `null` clears the guard.
    */
   setPointerGuard(guard: ((clientX: number, clientY: number) => boolean) | null): void;
   /** Hold edge scrolling while a HUD gesture steers the camera itself; `null` clears. */
@@ -85,6 +87,18 @@ export interface CameraInputSettings {
   readonly invertDragScroll: boolean;
   /** Zoom only to {@link integerZoomLevels}, jumping instead of gliding. */
   readonly integerScaling: boolean;
+}
+
+/** CSS px a display-covering window may fall short of the screen by, for page-zoom rounding. */
+const DISPLAY_FIT_SLACK = 1;
+
+/** True when the window fills its display, as in browser or desktop fullscreen, so no other window
+ *  borders it on this display. */
+function windowCoversDisplay(): boolean {
+  return (
+    window.innerWidth >= window.screen.width - DISPLAY_FIT_SLACK &&
+    window.innerHeight >= window.screen.height - DISPLAY_FIT_SLACK
+  );
 }
 
 /** `resolution` reads the owning renderer's live device px per screen px, needed to map mouse deltas on
@@ -150,8 +164,8 @@ export function createCameraController(
     return zoomCameraAt(next, level / scale, canvas.width / res / 2, canvas.height / res / 2, minZoom);
   };
   // The edge-scroll probe: the last `mousemove` sample in client px, whatever element it hit, so HUD
-  // chrome along a screen edge still scrolls. Null once the cursor leaves the window or before any
-  // move, so a parked cursor waits.
+  // chrome along a screen edge still scrolls. Pinned to the edge a cursor left a display-covering window
+  // through, and null after a blur, after leaving a smaller window or before any move.
   let pointerSample: { readonly x: number; readonly y: number } | null = null;
   let suspended = false;
   const endMiddleDrag = (): void => {
@@ -167,11 +181,27 @@ export function createCameraController(
     dragCapture.begin(e.clientX, e.clientY);
     e.preventDefault(); // suppress the middle-click autoscroll widget
   };
+  // The page cannot hold the cursor inside the window. One that leaves a window covering its display
+  // went to another display, so it keeps scrolling as if pressed against the edge it crossed until it
+  // returns or focus moves; leaving a smaller window lands on another application and disarms.
+  const pinToExitEdge = (clientX: number, clientY: number): void => {
+    if (!windowCoversDisplay()) {
+      pointerSample = null;
+      return;
+    }
+    const { rect } = screenScale(canvas, resolution());
+    const exit = edgeExitPoint(clientX - rect.left, clientY - rect.top, rect.width, rect.height);
+    pointerSample = { x: exit.x + rect.left, y: exit.y + rect.top };
+  };
   const onMouseMove = (e: MouseEvent): void => {
     if (suspended) return;
     // Every move re-arms the probe, because `mouseenter` fires only on a boundary crossing and a refocus
-    // gets none.
-    pointerSample = { x: e.clientX, y: e.clientY };
+    // gets none. A held button keeps moves coming from beyond the window, which pin like an exit.
+    if (e.clientX < 0 || e.clientY < 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+      pinToExitEdge(e.clientX, e.clientY);
+    } else {
+      pointerSample = { x: e.clientX, y: e.clientY };
+    }
     if (!dragging) return;
     const { sx, sy } = screenScale(canvas, resolution());
     const direction = activeInputSettings.invertDragScroll ? -1 : 1;
@@ -187,10 +217,10 @@ export function createCameraController(
   const onMouseUp = (e: MouseEvent): void => {
     if (e.button === 1) endMiddleDrag();
   };
-  // Leaving the browser window disarms, because the cursor lands no further `mousemove` there. A null
-  // `relatedTarget` marks that crossing; moves between page elements carry one.
+  // A null `relatedTarget` marks leaving the window; moves between page elements carry one.
   const onMouseOut = (e: MouseEvent): void => {
-    if (e.relatedTarget === null) pointerSample = null;
+    if (e.relatedTarget !== null || pointerSample === null) return;
+    pinToExitEdge(e.clientX, e.clientY);
   };
   const onWheel = (e: WheelEvent): void => {
     if (suspended) return;
@@ -214,7 +244,8 @@ export function createCameraController(
     zoomAnchorY = y;
   };
   const onKeyDown = (e: KeyboardEvent): void => {
-    if (suspended || isFieldKey(e)) return;
+    // A focused control that took the key (a tab strip's arrows) keeps it from the camera.
+    if (suspended || e.defaultPrevented || isFieldKey(e)) return;
     const action = panActionFor(e);
     if (action !== undefined) held.add(action);
     else if (numpadPans(e)) heldNumpad.add(e.code);
@@ -340,8 +371,9 @@ export function createCameraController(
       if (panning('panUp')) desiredY += keyboardSpeed;
       if (panning('panDown')) desiredY -= keyboardSpeed;
       // Edge scroll is suppressed while the window is unfocused and while a drag steers the camera (a
-      // middle-drag or an edge hold), never by HUD surfaces over the margin. A left-drag marquee is
-      // deliberately not suppressed, so dragging a selection box into the margin pans under it.
+      // middle-drag or an edge hold). HUD surfaces over the margin only narrow it, so chrome along an
+      // edge never blocks scrolling. A left-drag marquee is deliberately not suppressed, so dragging a
+      // selection box into the margin pans under it.
       if (
         activeInputSettings.edgeScrollEnabled &&
         pointerSample &&
@@ -353,7 +385,18 @@ export function createCameraController(
         const x = pointerSample.x - rect.left;
         const y = pointerSample.y - rect.top;
         if (x >= 0 && y >= 0 && x <= rect.width && y <= rect.height) {
-          const edge = edgePanVelocity(x, y, rect.width, rect.height, tuning.edgeScrollSpeed);
+          let edge = edgePanVelocity(x, y, rect.width, rect.height, tuning.edgeScrollSpeed);
+          // The guard hit-tests the page, so it runs only for a pointer already inside the margin.
+          if ((edge.vx !== 0 || edge.vy !== 0) && pointerGuard?.(pointerSample.x, pointerSample.y) === true) {
+            edge = edgePanVelocity(
+              x,
+              y,
+              rect.width,
+              rect.height,
+              tuning.edgeScrollSpeed,
+              HUD_EDGE_SCROLL_REACH,
+            );
+          }
           desiredX += edge.vx * sx * activeInputSettings.edgeScrollSpeed; // CSS px/s to screen px/s
           desiredY += edge.vy * sy * activeInputSettings.edgeScrollSpeed;
         }

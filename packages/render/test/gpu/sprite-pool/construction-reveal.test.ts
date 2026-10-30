@@ -33,7 +33,7 @@ const frame = (
 // A scaffold stage (bob 85) over the lower window and a finished body (bob 70) revealing across [20,100]:
 // the overlapping-window shape the real viking houses use, where the scaffold hands off partway up.
 const atlas: SpriteAtlas = { width: 100, height: 10, frames: new Map([frame(70), frame(85), frame(90)]) };
-const times = { width: 100, height: 10, values: new Uint8Array(100 * 10) };
+const times = { width: 100, height: 10, values: new Uint8Array(100 * 10).fill(1) };
 const SCAFFOLD_TO_PCT = 60;
 const sheet: SpriteSheet = {
   source,

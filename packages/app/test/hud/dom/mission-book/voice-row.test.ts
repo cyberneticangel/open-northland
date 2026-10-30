@@ -25,6 +25,8 @@ function player(shipped: readonly number[]): BriefingVoicePlayer {
     stop: () => undefined,
     toggle: () => undefined,
     seek: () => undefined,
+    rate: () => 1,
+    setRate: () => undefined,
     state: () => ({ voice: null, status: 'idle', positionS: 0, durationS: 0 }),
   };
 }

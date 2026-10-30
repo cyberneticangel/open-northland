@@ -1,6 +1,5 @@
 import { isIndoorSettler } from '@open-northland/render/data';
 import {
-  components,
   entityById,
   ONE,
   systems,
@@ -278,8 +277,8 @@ function raiseDying(raiser: MessageRaiser, e: SnapshotEntity): void {
  * A settler that held a workplace once and holds none now, with no flag yard standing in for it: what a
  * razed or released post leaves behind. Reading the loss rather than the bare absence keeps the note off
  * everyone no workplace ever employed, since the sim stamps every grown woman and civilian with a trade.
- * A trader works its route from a cart and never a workplace, so the post it held in an earlier trade is
- * no loss to tell of. Approximation: the original raises this from a task that went looking for a work
+ * A trader works its route and never a workplace, so the post it held in an earlier trade is no loss to
+ * tell of. Approximation: the original raises this from a task that went looking for a work
  * point and found none. One note per settler, so razing a whole district fills the strip with the crews
  * it put out of work.
  */
@@ -290,20 +289,6 @@ function lostItsWorkplace(e: SnapshotEntity, everEmployed: boolean): boolean {
 function isTrader(e: SnapshotEntity): boolean {
   const job = settlerJobType(e);
   return job !== undefined && canonicalJobType(job) === JOB_TRADER;
-}
-
-/**
- * A trader with a full route and no vehicle to command it from: the original's trader task idles
- * there with the `noVehicleForWork` note; this sim leaves the
- * trader on foot and the sweep reads the state off the route and the missing `Rider` marker.
- */
-export function lacksTradeCart(e: SnapshotEntity): boolean {
-  const route = e.components.TradeRoute as { stops?: unknown } | undefined;
-  return (
-    Array.isArray(route?.stops) &&
-    route.stops.length >= components.TRADE_ROUTE_HOUSES &&
-    e.components.Rider === undefined
-  );
 }
 
 /** A soldier stands between orders by trade, and one taken off a tower lost no work to speak of. */
@@ -359,7 +344,7 @@ interface IdleNoteContext {
 
 /** The note an idle adult earns: with a post to work at it has nothing to do, and names why, or its trade
  *  finds nothing to work; a field worker at its own flag speaks only for that; having lost a post it has
- *  nowhere to go, and a trader without a cart cannot work its route. The diagnosis is first asked the
+ *  nowhere to go. The diagnosis is first asked the
  *  sweep before the note, so the note's first text already has its answer, and never while the player has
  *  the note dismissed. */
 function raiseIdleNote(
@@ -387,7 +372,6 @@ function raiseIdleNote(
       raiser.idle(e, reason);
   } else if (!due) return;
   else if (lostItsWorkplace(e, everEmployed)) raiser.settler(USER_MESSAGE_TYPE.workplaceNotFound, e);
-  else if (lacksTradeCart(e)) raiser.settler(USER_MESSAGE_TYPE.noVehicleForWork, e);
 }
 
 /** A gatherer, hunter or fisher working around its own flag rather than from a workplace. */

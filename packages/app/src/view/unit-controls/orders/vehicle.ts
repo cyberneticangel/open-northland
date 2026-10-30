@@ -1,25 +1,47 @@
 import type { ContentSet } from '@open-northland/data';
-import type { ElevationField, OrderMarkerKind, TargetFlashTone } from '@open-northland/render';
+import type { OrderMarkerKind, TargetFlashTone } from '@open-northland/render';
 import {
   type Entity,
   entityById,
+  hexDistanceBetween,
   MAX_UNIT_ORDER_MEMBERS,
+  nodeOfPosition,
+  ONE,
   type PlayerCommand,
+  positionedWithin,
+  positionOfNode,
   systems,
+  type TileBox,
   type WorldSnapshot,
 } from '@open-northland/sim';
+import { isVehicle, positionOf, type SnapshotEntity } from '../../../game/snapshot/index.js';
+import type { ViewerSeat } from '../../../game/viewer-seat.js';
+import { clampTile, nodeBounds, type Tile } from '../../picking.js';
+import { enemyAt, ownSettlerAt, ownVehicleAt } from '../pick-targets.js';
 import {
-  commandedVehicleOf,
-  isVehicle,
-  num,
-  ownerPlayerOf,
-  positionOf,
-  type SnapshotEntity,
-} from '../../../game/snapshot/index.js';
-import { pickableSeat, type ViewerSeat } from '../../../game/viewer-seat.js';
-import { clampTile, nodeBounds, pickTopAt, type Tile, worldToTile } from '../../picking.js';
+  type AttachPlan,
+  isMooredShip,
+  rightClickShips as rightClickShipsOf,
+  selectedVehicle as selectedVehicleOf,
+  selectedVehicles as selectedVehiclesOf,
+  isShip as shipIn,
+  isSiege as siegeIn,
+  type VehicleGroup,
+  type VehiclePlan,
+  vehicleTypeOf as vehicleTypeIn,
+} from '../right-click/vehicles.js';
 import type { UnitTargetKind, UnitTargets } from '../unit-targets.js';
 import type { AnsweredOrders } from './answered.js';
+import {
+  type Berth,
+  type BerthShip,
+  berthReach,
+  DOCK_PICK_SNAP_NODES,
+  type Hull,
+  type MooringRule,
+  planBerths,
+  RIGHT_CLICK_SNAP_NODES,
+} from './berths.js';
 import { formationTiles } from './formation.js';
 import { enqueueArmyOrder, enqueueUnitSelection } from './group.js';
 import { afterClickAnswer, type PendingGroundOrders } from './pending-ground.js';
@@ -35,7 +57,6 @@ export interface VehicleOrderDeps {
   readonly snapshot: () => WorldSnapshot;
   readonly content: ContentSet;
   readonly mapSize: { readonly width: number; readonly height: number };
-  readonly elevation?: ElevationField | undefined;
   /** Whose vehicles the orders command: the viewer seat's, or any when the viewer watches the whole map. */
   readonly viewer: ViewerSeat;
   readonly toWorld: (clientX: number, clientY: number) => { x: number; y: number };
@@ -43,9 +64,12 @@ export interface VehicleOrderDeps {
   /** The sim's attach rule, asked as the click lands; absent, every own vehicle under the cursor takes
    *  the attach click. */
   readonly askAttachToVehicle?: ((settler: number, vehicle: number) => Promise<boolean>) | undefined;
-  /** The sim's mooring rule (`SessionHost.mooringProbe`), asked as the click lands; absent, every spot
-   *  takes the dock click and a ship's right-click is always a goto. */
-  readonly askMoorAt?: ((vehicle: number, x: number, y: number) => Promise<boolean>) | undefined;
+  /** A ship's mooring rule (`SessionHost.mooringProbe`), asked as the click lands; absent, the dock
+   *  click moors where it lands and a ship's right-click is always a goto. */
+  readonly askMooring?: ((vehicle: number) => Promise<MooringRule | null>) | undefined;
+  /** The same rule's last answer, which the berth preview under the cursor reads; undefined while it is
+   *  being answered. */
+  readonly mooring?: ((vehicle: number) => MooringRule | null | undefined) | undefined;
   /** Where the orders a host answer decides wait for it. */
   readonly answered: AnsweredOrders;
   /** Puts a mooring answer's order in click order among the vehicle's other orders: a Shift click waits
@@ -65,27 +89,13 @@ export interface VehicleOrderDeps {
  * caller's click feedback.
  */
 export interface VehicleOrderController {
-  /** The one owned vehicle the selection holds, itself or through its commander aboard it, when it
-   *  holds nothing else that takes orders. */
-  selectedVehicle(): number | null;
   /** The owned siege vehicles selected themselves, the ones an attack-move marches. */
   selectedSiegeVehicles(): number[];
   /** The owned vehicles selected themselves, the ones a right click drives. */
   selectedOwnVehicles(): number[];
-  /**
-   * The original's default right-click for a vehicle: an enemy human, vehicle or house is attacked, an
-   * own moored ship is boarded by a land vehicle, anything else is driven to. Named approximations: the
-   * attack defaults apply to an armed vehicle only, since the sim drops an unarmed one's attack order
-   * silently, the original's per-vehicle gate not being read; a ship's right-click on a shore its
-   * mooring rule accepts docks there, where the original's goto is refused.
-   *
-   * A marquee's group of vehicles, or vehicles selected beside settlers, is an addition: the armed ones
-   * attack the enemy under the cursor and the rest drive to their own slots of a spaced formation
-   * there. A group neither boards nor docks.
-   *
-   * Shift queues the attack, the load, the drive or the dock behind each vehicle's current order.
-   */
-  issueRightClick(event: MouseEvent): boolean;
+  /** Issues the vehicles' part of a resolved right click (`resolveVehicleRightClick`). A `queued` attack,
+   *  load, drive or dock waits behind each vehicle's current order. */
+  issueVehiclePlan(plan: VehiclePlan, queued: boolean): boolean;
   /** A `queued` order waits behind the vehicle's current one (`VehicleOrderQueue`). */
   issueMoveTo(vehicle: number, target: Tile, queued?: boolean): boolean;
   /** Drive the selection's vehicles to `target` as a right-click on open ground does: one vehicle drives
@@ -94,9 +104,15 @@ export interface VehicleOrderController {
   /** March `vehicles` to `target`, each to its own slot of a spaced formation around it, fighting
    *  whatever they meet on the way. */
   issueAttackMove(vehicles: readonly number[], target: Tile, queued?: boolean): boolean;
-  /** Moor `vehicle` at `target` once the mooring rule accepts the spot; a spot it rejects orders
-   *  nothing. */
-  issueDock(vehicle: number, target: Tile, queued?: boolean): boolean;
+  /** Moor `ships` along the shore their mooring rules accept nearest `target`, each at its own berth,
+   *  within the dock pick's loose aim; a spot with no such shore near it orders nothing. `lands` lands
+   *  each ship's crew once it moors. */
+  issueDock(ships: readonly number[], target: Tile, queued?: boolean, lands?: boolean): boolean;
+  /** Where `ships` would moor for a dock order aimed at `target` within `snap` nodes, read off the
+   *  mooring rules' last answers: the berths the cursor previews. Empty while a rule is being answered. */
+  previewBerths(ships: readonly number[], target: Tile, snap: number): readonly Berth[];
+  /** The selection's ships a right-click docks: the one selected ship, or a group's ships. */
+  rightClickShips(): number[];
   issueAttackPosition(vehicle: number, target: Tile, queued?: boolean): boolean;
   /** Aim `vehicle` at the enemy of `kind` under the cursor; a click that hits none orders nothing. */
   issueAttackTarget(event: MouseEvent, vehicle: number, kind: UnitTargetKind, queued?: boolean): boolean;
@@ -111,77 +127,117 @@ export interface VehicleOrderController {
   issueSeatRider(event: MouseEvent, vehicle: number, queued?: boolean): boolean;
   /** Drive the own land vehicle under the cursor onto `ship`'s deck. */
   issueDeckLoad(event: MouseEvent, ship: number, queued?: boolean): boolean;
-  /** The selected settlers' right-click on an own vehicle: each one the attach rule admits is assigned
-   *  to it (approximation, owner's choice: the original assigns through the ring's pick only). False when
-   *  no vehicle lies under the cursor, an own settler or an enemy drawn there takes the click first (a
-   *  crew waiting by the door stands over the hull), or nobody is selected. `onNoneBoards` runs once the
-   *  rule refused every selected settler, so the click can take its usual order instead. Shift queues
-   *  each attach behind the settler's current order. */
-  issueAttachSelected(event: MouseEvent, onNoneBoards: () => void): boolean;
+  /** Whether `vehicle` may be loaded into `carrier`: one of our moored ships other than itself. */
+  loadsInto(vehicle: number, carrier: number): boolean;
+  /** Issues the selected settlers' resolved boarding (`resolveAttachSelected`), each one the attach rule
+   *  admits taking a seat. `onNoneBoards` runs once the rule refused every one, so the click can take its
+   *  usual order instead. A `queued` attach waits behind each settler's current order. */
+  issueAttachPlan(plan: AttachPlan, queued: boolean, onNoneBoards: () => void): boolean;
 }
 
 export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrderController {
-  const ours = (e: SnapshotEntity): boolean => {
-    const owner = ownerPlayerOf(e);
-    const seat = pickableSeat(deps.viewer);
-    return owner !== undefined && (seat === null || owner === seat);
-  };
-
-  const vehicleTypeOf = (e: SnapshotEntity): ContentSet['vehicles'][number] | undefined => {
-    const typeId = num((e.components.Vehicle as { vehicleType?: unknown } | undefined)?.vehicleType);
-    return typeId === undefined ? undefined : deps.content.vehicles.find((v) => v.typeId === typeId);
-  };
-
-  const selectedVehicle = (): number | null => {
-    const snapshot = deps.snapshot();
-    let found: number | null = null;
-    for (const id of deps.selected()) {
-      const e = entityById(snapshot, id);
-      if (e === undefined) continue;
-      let vehicle = id;
-      if (!isVehicle(e)) {
-        if (e.components.Settler === undefined) continue; // a building or signpost takes no orders
-        // A settler standing on the map takes the click itself (the sim hands a commander's walk order
-        // to its vehicle); one aboard the vehicle it commands stands for that vehicle, so the click
-        // drives it either way. Any other settler aboard is nobody's to order from here.
-        const commanded = positionOf(e) === undefined ? commandedVehicleOf(snapshot, e) : undefined;
-        if (commanded === undefined) return null;
-        vehicle = commanded;
-      }
-      const self = entityById(snapshot, vehicle);
-      if (self === undefined || !ours(self) || (found !== null && found !== vehicle)) return null;
-      found = vehicle;
-    }
-    return found;
-  };
-
-  /** The owned vehicles selected themselves, in id order. */
-  const selectedVehicles = (): SnapshotEntity[] => {
-    const snapshot = deps.snapshot();
-    const vehicles: SnapshotEntity[] = [];
-    for (const id of deps.selected()) {
-      const e = entityById(snapshot, id);
-      if (e !== undefined && isVehicle(e) && ours(e)) vehicles.push(e);
-    }
-    return vehicles.sort((a, b) => a.id - b.id);
-  };
-
-  const isSiege = (e: SnapshotEntity): boolean => {
-    const type = vehicleTypeOf(e);
-    return type !== undefined && systems.isSiegeVehicle(type);
-  };
-
+  const context = () => ({ snapshot: deps.snapshot(), content: deps.content, viewer: deps.viewer });
+  const vehicleTypeOf = (e: SnapshotEntity) => vehicleTypeIn(deps.content, e);
+  const isShip = (e: SnapshotEntity): boolean => shipIn(deps.content, e);
+  const selectedVehicle = (): number | null => selectedVehicleOf(context(), deps.selected());
+  const selectedVehicles = (): SnapshotEntity[] => selectedVehiclesOf(context(), deps.selected());
   const selectedOwnVehicles = (): number[] => selectedVehicles().map((e) => e.id);
-
   const selectedSiegeVehicles = (): number[] =>
     selectedVehicles()
-      .filter(isSiege)
+      .filter((e) => siegeIn(deps.content, e))
       .map((e) => e.id);
 
   const clampNode = (target: Tile): Tile => {
     const { width, height } = nodeBounds(deps.mapSize);
     return clampTile(target, width, height);
   };
+
+  /** `ships` as the berth planner reads them, each with its rule; a ship off the map, or one whose rule
+   *  has no answer or takes no dock order, is left out. */
+  const berthShips = (
+    ships: readonly number[],
+    rules: readonly (MooringRule | null | undefined)[],
+  ): BerthShip[] => {
+    const snapshot = deps.snapshot();
+    const out: BerthShip[] = [];
+    ships.forEach((vehicle, i) => {
+      const rule = rules[i];
+      const e = entityById(snapshot, vehicle);
+      const position = e === undefined ? undefined : positionOf(e);
+      const type = e === undefined ? undefined : vehicleTypeOf(e);
+      const doorDistance = type?.passengerVector?.distance;
+      if (rule === null || rule === undefined || position === undefined || type === undefined) return;
+      if (doorDistance === undefined) return;
+      const { hx, hy } = nodeOfPosition(position.x, position.y);
+      out.push({ vehicle, at: { col: hx, row: hy }, logicSize: type.logicSize, doorDistance, rule });
+    });
+    return out;
+  };
+
+  /** The ships outside `fleet` within `radius` nodes of `around`, whose hulls a berth keeps clear of. */
+  const hullsNear = (fleet: readonly BerthShip[], around: Tile, radius: number): Hull[] => {
+    const low = positionOfNode(around.col - radius, around.row - radius);
+    const high = positionOfNode(around.col + radius, around.row + radius);
+    const box: TileBox = { minX: low.x / ONE, minY: low.y / ONE, maxX: high.x / ONE, maxY: high.y / ONE };
+    const hulls: Hull[] = [];
+    for (const e of positionedWithin(deps.snapshot(), box, [])) {
+      if (!isVehicle(e) || !isShip(e) || fleet.some((ship) => ship.vehicle === e.id)) continue;
+      const position = positionOf(e);
+      const type = vehicleTypeOf(e);
+      if (position === undefined || type === undefined) continue;
+      const { hx, hy } = nodeOfPosition(position.x, position.y);
+      if (hexDistanceBetween(around.col, around.row, hx, hy) <= radius)
+        hulls.push({ at: { col: hx, row: hy }, logicSize: type.logicSize });
+    }
+    return hulls;
+  };
+
+  /** The hulls outside `fleet` in the water its berths around `at` may spread over. */
+  const othersAround = (fleet: readonly BerthShip[], at: Tile, snap: number): Hull[] => {
+    const door = Math.max(0, ...fleet.map((ship) => ship.doorDistance + ship.logicSize));
+    return hullsNear(fleet, at, snap + berthReach(fleet) + door);
+  };
+
+  const planFor = (fleet: readonly BerthShip[], target: Tile, snap: number): Berth[] => {
+    const at = clampNode(target);
+    return planBerths(fleet, at, snap, othersAround(fleet, at, snap));
+  };
+
+  /** Ask every ship's mooring rule as the click lands, then plan their berths around `target`. */
+  const afterBerths = (
+    ask: NonNullable<VehicleOrderDeps['askMooring']>,
+    ships: readonly number[],
+    target: Tile,
+    snap: number,
+    queued: boolean,
+    then: (berths: readonly Berth[], current: (actor: number) => boolean) => void,
+  ): void =>
+    afterAnswer(ships, queued, Promise.all(ships.map((ship) => ask(ship))), (rules, current) =>
+      then(planFor(berthShips(ships, rules), target, snap), current),
+    );
+
+  let previewKey = '';
+  let preview: readonly Berth[] = [];
+  const previewBerths = (fleet: readonly number[], target: Tile, snap: number): readonly Berth[] => {
+    const read = deps.mooring;
+    if (read === undefined || fleet.length === 0) return [];
+    const rules = fleet.map(read);
+    // Planned once every rule has answered, for the ships whose rule takes a dock order, as the click is.
+    if (rules.includes(undefined)) return [];
+    const planned = berthShips(fleet, rules);
+    const at = clampNode(target);
+    const others = othersAround(planned, at, snap);
+    const ships = planned.map((ship) => `${ship.vehicle}@${ship.at.col},${ship.at.row}/${ship.rule.key}`);
+    const hulls = others.map((hull) => `${hull.at.col},${hull.at.row}`);
+    const key = `${at.col},${at.row}:${snap}:${ships.join(';')}:${hulls.join(';')}`;
+    if (key !== previewKey) {
+      previewKey = key;
+      preview = planBerths(planned, at, snap, others);
+    }
+    return preview;
+  };
+
+  const rightClickShips = (): number[] => rightClickShipsOf(context(), deps.selected());
 
   const issueMoveTo = (vehicle: number, target: Tile, queued = false): boolean => {
     const node = clampNode(target);
@@ -195,18 +251,6 @@ export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrd
     deps.markOrder?.(node, 'move');
     return true;
   };
-
-  /** Ask the mooring rule about `node` as the click lands and run `then` on its answer in click order. */
-  const afterMooring = (
-    ask: NonNullable<VehicleOrderDeps['askMoorAt']>,
-    vehicle: number,
-    node: Tile,
-    queued: boolean,
-    then: (moors: boolean) => void,
-  ): void =>
-    afterAnswer([vehicle], queued, ask(vehicle, node.col, node.row), (moors, current) => {
-      if (current(vehicle)) then(moors);
-    });
 
   const afterAnswer = <T>(
     actors: readonly number[],
@@ -266,25 +310,46 @@ export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrd
   const issueAttackMove = (vehicles: readonly number[], target: Tile, queued = false): boolean =>
     driveInFormation(vehicles, target, true, queued);
 
-  const dock = (vehicle: number, node: Tile, queued: boolean): void => {
+  /** `at`, a dock node of the point's ring, is where the hull lies; absent, the sim takes its ring's first.
+   *  `lands` queues the ship's unload behind the dock, so the crew steps ashore once it moors. */
+  const dock = (vehicle: number, node: Tile, queued: boolean, lands: boolean, at?: Tile): void => {
     deps.enqueue({
       kind: 'dockVehicle',
       vehicle: vehicle as Entity,
       x: node.col,
       y: node.row,
+      ...(at === undefined ? {} : { dock: { x: at.col, y: at.row } }),
       ...(queued ? { queued } : {}),
     });
+    if (lands) {
+      const mooring = { x: node.col, y: node.row };
+      deps.enqueue({ kind: 'unloadPeople', vehicle: vehicle as Entity, queued: true, mooring });
+    }
     deps.markOrder?.(node, 'move');
   };
 
-  const issueDock = (vehicle: number, target: Tile, queued = false): boolean => {
-    const node = clampNode(target);
-    const ask = deps.askMoorAt;
-    if (ask === undefined) dock(vehicle, node, queued);
+  const dockAt = (
+    berths: readonly Berth[],
+    current: (actor: number) => boolean,
+    queued: boolean,
+    lands = false,
+  ): void => {
+    for (const berth of berths)
+      if (current(berth.vehicle)) dock(berth.vehicle, berth, queued, lands, berth.dock);
+  };
+
+  const issueDock = (ships: readonly number[], target: Tile, queued = false, lands = false): boolean => {
+    if (ships.length === 0) return false;
+    if (ships.length > MAX_UNIT_ORDER_MEMBERS) {
+      deps.onOrderLimit?.();
+      return false;
+    }
+    const ask = deps.askMooring;
+    if (ask === undefined) for (const ship of ships) dock(ship, clampNode(target), queued, lands);
     else
-      afterMooring(ask, vehicle, node, queued, (moors) => {
-        if (moors) dock(vehicle, node, queued);
-      });
+      afterBerths(ask, ships, target, DOCK_PICK_SNAP_NODES, queued, (berths, current) =>
+        dockAt(berths, current, queued, lands),
+      );
     return true;
   };
 
@@ -317,26 +382,15 @@ export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrd
     kind: UnitTargetKind,
     queued = false,
   ): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const enemy = pickTopAt(
-      deps.targets.enemies().filter((p) => p.kind === kind),
-      world.x,
-      world.y,
-    );
+    const enemy = enemyAt(deps.targets, deps.toWorld(event.clientX, event.clientY), [kind]);
     return enemy !== null && strike(vehicle, enemy, queued);
   };
 
-  /** Whether `carrier` is one of our moored ships, the only thing a land vehicle may be loaded into. */
-  const isMooredShip = (carrier: number): boolean => {
-    const e = entityById(deps.snapshot(), carrier);
-    if (e === undefined || !isVehicle(e) || !ours(e)) return false;
-    const type = vehicleTypeOf(e);
-    if (type === undefined || !systems.isShipVehicle(type)) return false;
-    return (e.components.Vehicle as { moored?: unknown } | undefined)?.moored === true;
-  };
+  const loadsInto = (vehicle: number, carrier: number): boolean =>
+    vehicle !== carrier && isMooredShip(context(), carrier);
 
   const loadInto = (vehicle: number, carrier: number, queued = false): boolean => {
-    if (vehicle === carrier || !isMooredShip(carrier)) return false;
+    if (!loadsInto(vehicle, carrier)) return false;
     deps.enqueue({
       kind: 'loadIntoVehicle',
       vehicle: vehicle as Entity,
@@ -348,14 +402,12 @@ export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrd
   };
 
   const issueLoadInto = (event: MouseEvent, vehicle: number, queued = false): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const carrier = pickTopAt(deps.targets.owned('vehicle'), world.x, world.y);
+    const carrier = ownVehicleAt(deps.targets, deps.toWorld(event.clientX, event.clientY));
     return carrier !== null && loadInto(vehicle, carrier, queued);
   };
 
   const issueAttach = (event: MouseEvent, settler: number, queued = false): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const vehicle = pickTopAt(deps.targets.owned('vehicle'), world.x, world.y);
+    const vehicle = ownVehicleAt(deps.targets, deps.toWorld(event.clientX, event.clientY));
     if (vehicle === null) return false;
     return attachWhenAdmitted([settler], vehicle, () => undefined, queued);
   };
@@ -405,107 +457,86 @@ export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrd
   };
 
   const issueSeatRider = (event: MouseEvent, vehicle: number, queued = false): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const settler = pickTopAt(deps.targets.owned('settler'), world.x, world.y);
+    const settler = ownSettlerAt(deps.targets, deps.toWorld(event.clientX, event.clientY));
     if (settler === null) return false;
     return attachWhenAdmitted([settler], vehicle, () => undefined, queued);
   };
 
   const issueDeckLoad = (event: MouseEvent, ship: number, queued = false): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const vehicle = pickTopAt(
-      deps.targets.owned('vehicle').filter((target) => target.ref !== ship),
-      world.x,
-      world.y,
-    );
+    const vehicle = ownVehicleAt(deps.targets, deps.toWorld(event.clientX, event.clientY), ship);
     return vehicle !== null && loadInto(vehicle, ship, queued);
   };
 
-  const issueAttachSelected = (event: MouseEvent, onNoneBoards: () => void): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const vehicle = pickTopAt(deps.targets.owned('vehicle'), world.x, world.y);
-    if (vehicle === null) return false;
-    if (pickTopAt(deps.targets.owned('settler'), world.x, world.y) !== null) return false;
-    if (pickTopAt(deps.targets.enemies(), world.x, world.y) !== null) return false;
-    const settlers = deps.targets.ownedSettlersIn(deps.selected()).map((target) => target.ref);
-    if (settlers.length === 0) return false;
-    return attachWhenAdmitted(settlers, vehicle, onNoneBoards, event.shiftKey);
-  };
+  const issueAttachPlan = (plan: AttachPlan, queued: boolean, onNoneBoards: () => void): boolean =>
+    attachWhenAdmitted(plan.settlers, plan.vehicle, onNoneBoards, queued);
 
-  /** A group's right-click (see {@link VehicleOrderController.issueRightClick}). An own settler under
-   *  the cursor is left to the settlers' click, which selects it. */
-  const issueGroupRightClick = (event: MouseEvent): boolean => {
-    const group = selectedVehicles();
-    if (group.length === 0) return false;
-    if (group.length > MAX_UNIT_ORDER_MEMBERS) {
+  const issueVehiclePlan = (plan: VehiclePlan, queued: boolean): boolean => {
+    if (plan.kind === 'none') return false;
+    if (plan.kind === 'orderLimit') {
       deps.onOrderLimit?.();
       return false;
     }
-    const world = deps.toWorld(event.clientX, event.clientY);
-    if (pickTopAt(deps.targets.owned('settler'), world.x, world.y) !== null) return false;
-    const enemy = pickTopAt(deps.targets.enemies(), world.x, world.y);
-    const striking = enemy === null ? [] : group.filter(isSiege);
-    if (
-      enemy !== null &&
-      striking.length > 0 &&
-      enqueueArmyOrder(
-        {
-          kind: 'attackWithVehicleGroup',
-          members: striking.map((e) => ({ entity: e.id as Entity })),
-          target: { kind: 'entity', entity: enemy as Entity },
-          ...(event.shiftKey ? { queued: true } : {}),
-        },
-        deps.enqueue,
-        deps.onOrderLimit,
-      )
-    )
-      deps.flashTarget?.(enemy, 'attack');
-    const driving = group.filter((e) => !striking.includes(e)).map((e) => e.id);
-    driveInFormation(driving, worldToTile(world.x, world.y, deps.elevation), false, event.shiftKey);
+    for (const group of plan.groups) issueGroup(group, queued);
     return true;
   };
 
-  const issueRightClick = (event: MouseEvent): boolean => {
-    const vehicle = selectedVehicle();
-    if (vehicle === null) return issueGroupRightClick(event);
-    const self = entityById(deps.snapshot(), vehicle);
-    const type = self === undefined ? undefined : vehicleTypeOf(self);
-    const queued = event.shiftKey;
-    const armed = type !== undefined && systems.isSiegeVehicle(type);
-    const land = type !== undefined && !systems.isShipVehicle(type);
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const enemies = deps.targets.enemies();
-    if (armed) {
-      const human = pickTopAt(
-        enemies.filter((p) => p.kind === 'settler'),
-        world.x,
-        world.y,
-      );
-      if (human !== null) return strike(vehicle, human, queued);
+  const issueGroup = ({ vehicles, intent }: VehicleGroup, queued: boolean): void => {
+    switch (intent.kind) {
+      case 'strike':
+        if (
+          enqueueArmyOrder(
+            {
+              kind: 'attackWithVehicleGroup',
+              members: vehicles.map((vehicle) => ({ entity: vehicle as Entity })),
+              target: { kind: 'entity', entity: intent.enemy as Entity },
+              ...(queued ? { queued: true } : {}),
+            },
+            deps.enqueue,
+            deps.onOrderLimit,
+          )
+        )
+          deps.flashTarget?.(intent.enemy, 'attack');
+        return;
+      case 'loadInto':
+        for (const vehicle of vehicles) loadInto(vehicle, intent.carrier, queued);
+        return;
+      case 'drive':
+        for (const vehicle of vehicles) driveTo(vehicle, intent.tile, queued, intent.lands);
+        return;
+      case 'driveFormation':
+        driveInFormation(vehicles, intent.tile, false, queued);
+        return;
+      case 'dock': {
+        const ask = deps.askMooring;
+        if (ask === undefined) {
+          driveInFormation(vehicles, intent.tile, false, queued);
+          return;
+        }
+        // A ship the shore there has no berth for sails with the rest.
+        afterBerths(ask, vehicles, intent.tile, RIGHT_CLICK_SNAP_NODES, queued, (berths, current) => {
+          dockAt(berths, current, queued, intent.lands);
+          const sailing = vehicles.filter(
+            (ship) => current(ship) && !berths.some((berth) => berth.vehicle === ship),
+          );
+          if (sailing.length > 0) driveInFormation(sailing, intent.tile, false, queued);
+        });
+        return;
+      }
     }
-    if (land) {
-      const carrier = pickTopAt(deps.targets.owned('vehicle'), world.x, world.y);
-      if (carrier !== null && loadInto(vehicle, carrier, queued)) return true;
-    }
-    if (armed) {
-      const enemy = pickTopAt(enemies, world.x, world.y);
-      if (enemy !== null) return strike(vehicle, enemy, queued);
-    }
-    return driveTo(vehicle, worldToTile(world.x, world.y, deps.elevation), queued);
   };
 
-  /** Drive `vehicle` to `target`: a ship docks where its mooring rule, asked as the click lands, accepts
-   *  the shore, and sails there otherwise. */
-  const driveTo = (vehicle: number, target: Tile, queued: boolean): boolean => {
+  /** Drive `vehicle` to `target`: a ship docks at the shore its mooring rule, asked as the click lands,
+   *  accepts within a right-click's reach of the target, and sails there otherwise. */
+  const driveTo = (vehicle: number, target: Tile, queued: boolean, lands = false): boolean => {
     const self = entityById(deps.snapshot(), vehicle);
     const type = self === undefined ? undefined : vehicleTypeOf(self);
-    const ask = deps.askMoorAt;
+    const ask = deps.askMooring;
     if ((type !== undefined && !systems.isShipVehicle(type)) || ask === undefined) {
       return issueMoveTo(vehicle, target, queued);
     }
-    const node = clampNode(target);
-    afterMooring(ask, vehicle, node, queued, (moors) => {
-      if (moors) dock(vehicle, node, queued);
+    afterBerths(ask, [vehicle], target, RIGHT_CLICK_SNAP_NODES, queued, (berths, current) => {
+      if (!current(vehicle)) return;
+      if (berths.length > 0) dockAt(berths, current, queued, lands);
       else issueMoveTo(vehicle, target, queued);
     });
     return true;
@@ -518,20 +549,22 @@ export function createVehicleOrderController(deps: VehicleOrderDeps): VehicleOrd
   };
 
   return {
-    selectedVehicle,
     selectedSiegeVehicles,
     selectedOwnVehicles,
-    issueRightClick,
+    issueVehiclePlan,
     issueMoveTo,
     issueDriveTo,
     issueAttackMove,
     issueDock,
+    previewBerths,
+    rightClickShips,
     issueAttackPosition,
     issueAttackTarget,
     issueLoadInto,
     issueAttach,
     issueSeatRider,
     issueDeckLoad,
-    issueAttachSelected,
+    loadsInto,
+    issueAttachPlan,
   };
 }

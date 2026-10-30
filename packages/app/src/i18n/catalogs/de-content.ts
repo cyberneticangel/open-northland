@@ -380,6 +380,16 @@ export const deContent = {
       summary:
         'Ein Händler mit Handkarren pendelt zwischen zwei deiner Lagerhäuser mit unterschiedlichen Beständen. Da keine Ware ausgewählt ist, wird nichts befördert. Wähle den Händler aus und lege im Bereich „Handel“ für eine Ware die Richtung (→ A, ⇄, → B), die Obergrenze und die zurückbleibende Reserve fest.',
     },
+    'trade-bread': {
+      title: 'Brot auf einer Handelsroute',
+      summary:
+        'Ein Händler mit Handkarren bringt Brot von einer Bäckerei zu einem Wohnhaus. Das Wohnhaus lagert kein Brot, nur Nahrung, also befördert der Karren die Laibe als Nahrung. Wähle den Händler aus und öffne das Handelsfenster: Der Pfeil für Brot von der Bäckerei zum Wohnhaus ist frei.',
+    },
+    'trade-on-foot': {
+      title: 'Händler zu Fuß und mit Karren',
+      summary:
+        'Zwei Händler tragen Holz zwischen deinen eigenen Lagerhäusern: der obere zu Fuß, eine Einheit pro Gang in der Hand, der untere mit einem Handkarren, den er als Werkzeug zieht und zum Be- und Entladen vor jeder Lagertür abstellt.',
+    },
     tribute: {
       title: 'Tribute',
       summary:
@@ -419,6 +429,11 @@ export const deContent = {
       title: 'Eine lange Seereise',
       summary:
         'Ein bemanntes Schiff am Nordende eines langen Kanals erhält den Befehl, am Ufer des Südendes anzulegen – doppelt so weit wie die frühere Fahrzeugreichweite. Es umfährt eine Insel, die den direkten Weg versperrt, durchquert den gesamten Kanal und legt am gewählten Ufer an.',
+    },
+    'vehicle-dock-fleet': {
+      title: 'Eine Flotte vor zerklüfteter Küste',
+      summary:
+        'Fünf bemannte Schiffe liegen vor einer Küste mit Bucht und Kap. Wähle eines oder mehrere und klicke rechts am Ufer, drücke Z oder nutze den Anlegeknopf im Schiffs- oder Gruppenfenster: ein abgerundeter Schein zeigt das Ufer, an dem sie anlegen können, Poller mit ihren Leinen unter dem Zeiger zeigen, wo jedes Schiff anlegt, und die Flotte verteilt sich mit freiem Wasser zwischen den Rümpfen am Ufer. Mit Strg/Cmd (Klick nach Z oder Rechtsklick am Ufer) gehen die Besatzungen nach dem Anlegen an Land, und der Knopf „Alle aussteigen lassen“ einer Gruppe nur aus Schiffen setzt die Besatzungen der angelegten Schiffe an Land.',
     },
     'ship-wakes': {
       title: 'Kielwasser',
@@ -489,6 +504,11 @@ export const deContent = {
       title: 'Ausbildung am Fundament',
       summary:
         'Ein Zivilist wird zum Fundament einer Kaserne und ein Abbauer zum Fundament einer Schule geschickt, bevor die Bauarbeiter fertig sind. Beide warten neben der Tür, gehen hinein, sobald ihr Gebäude steht, und kommen als Soldat und Schreiner heraus. Wähle den übrigen Zivilisten aus und klicke mit der rechten Maustaste auf ein Fundament, um ihn selbst dorthin zu schicken.',
+    },
+    'school-queue': {
+      title: 'Warteschlange vor der vollen Schule',
+      summary:
+        'Sieben Sammler sollen gleichzeitig das Zimmerhandwerk lernen. Die Schule hat fünf Plätze: fünf gehen hinein, die anderen zwei warten im Hof und beginnen, sobald die ersten fertig sind.',
     },
     'school-graduates': {
       title: 'Absolventen gehen an die Arbeit',
@@ -875,10 +895,20 @@ export const deContent = {
       summary:
         'Der KI-Belagerungsmarsch trifft auf einen widerstandsfähigen blauen Trupp, der den Weg versperrt. Während die Angriffswelle näher rückt, beschießen die Katapulte den Trupp. Sobald er nah genug ist, stürmt die gesamte Welle auf ihn los, bevor sie zum Wachturm weitermarschiert.',
     },
+    'home-roofs': {
+      title: 'Dächer der Wohnhäuser',
+      summary:
+        'Jede Stufe des Wikingerwohnhauses zweimal. Auf Stufe 4 und 5 gibt es die Ziegeldächer in zwei Farben, braun und blaugrau, wie bei den Werkstätten; die Stufen 1 bis 3 sehen immer gleich aus.',
+    },
     'tower-finials': {
       title: 'Turmspitzen',
       summary:
         'Ein fränkischer und ein sarazenischer Wehrturm, jeder zweimal: den linken besetzt ein Bogenschütze, der rechte steht leer. Die leeren Türme behalten ihren eigenen Dachschmuck, den fränkischen Wimpel und den sarazenischen Halbmond; auf den besetzten tritt die Besatzungsflagge an seine Stelle, statt über ihm zu wehen.',
+    },
+    'defence-wall': {
+      title: 'Verteidigungsmauern vor einem Turm',
+      summary:
+        'Der Spieler stellt zwei Verteidigungsmauern zwischen seinen besetzten Turm und den Feind, mit einer Lücke in der Mitte. Die Mauern stehen näher am Feind als der Turm, doch die feindliche Gruppe in der Haltung Angriff bleibt nicht an ihnen hängen: Eine Verteidigungsmauer wird wie eine Palisade nie auf Sicht als Ziel gewählt. Die Gruppe geht durch die Lücke und greift den Turm an, der auf sie schießt, und beide Mauern bleiben unberührt.',
     },
     'tower-garrison': {
       title: 'Turmbesatzung',

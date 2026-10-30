@@ -1,6 +1,7 @@
 import { type ContentSet, parseContentSet } from '@open-northland/data';
 import { describe, expect, it } from 'vitest';
 import {
+  ASSISTANT_ARMING_INTENTS,
   AssistantWeaponVetoes,
   Building,
   Chest,
@@ -118,7 +119,7 @@ function fuzzContent() {
   const base = testContent();
   assertFreeIds('building', base.buildings, [FOOTPRINTED_TYPE, HOME_TYPE, HOME_TIER2_TYPE, SHELTER_TYPE]);
   assertFreeIds('job', base.jobs, [WOMAN_TYPE, CATAPULT_JOB]);
-  assertFreeIds('weapon', base.weapons, [FUZZ_SWORD_WEAPON, FUZZ_CATAPULT_WEAPON]);
+  assertFreeIds('weapon', base.weapons, [FUZZ_SWORD_WEAPON, FUZZ_LONG_SWORD_WEAPON, FUZZ_CATAPULT_WEAPON]);
   assertFreeIds('landscape', base.landscape, [RESOURCE_LANDSCAPE_TYPE]);
   return parseContentSet({
     ...base,
@@ -128,8 +129,8 @@ function fuzzContent() {
       { typeId: CATAPULT_JOB, id: 'vehicle_catapult' },
     ],
     // The catapult's stone (`weapons.ini` type 21's shape), so a crewed catapult in the stream fires and
-    // its ground burst runs under the fuzzed orders; and a sword class armed with the fixture's sword
-    // good, so a weapon veto roll can land on a good some class arms with instead of the skip alone.
+    // its ground burst runs under the fuzzed orders; and a sword class armed with the fixture's two
+    // swords, so a weapon veto or order roll can land on goods some class arms with.
     weapons: [
       ...base.weapons,
       {
@@ -142,6 +143,17 @@ function fuzzContent() {
         minRange: 1,
         maxRange: 1,
         damage: { '0': 50 },
+      },
+      {
+        typeId: FUZZ_LONG_SWORD_WEAPON,
+        id: 'fuzz_long_sword',
+        tribeType: VIKING,
+        jobType: FIGHTER_JOB,
+        mainType: SWORD_MAIN_TYPE,
+        goodType: LONG_SWORD_GOOD,
+        minRange: 1,
+        maxRange: 1,
+        damage: { '0': 70 },
       },
       {
         typeId: FUZZ_CATAPULT_WEAPON,
@@ -279,10 +291,13 @@ const SHOES_GOOD = 8;
 const MEAD_GOOD = 13;
 const HEAL_POTION_GOOD = 16;
 const MAX_USE_PCT = 100;
-/** The fixture's sword good, the one weapon good the stream's veto rolls can land on. */
+/** The fixture's sword good, the weapon good the stream's veto rolls land on. */
 const SWORD_GOOD = 9;
+/** The fixture's long sword, the fuzz sword class's second good. */
+const LONG_SWORD_GOOD = 17;
 /** Weapon type ids no fixture row uses, for the sword and stone classes {@link fuzzContent} adds. */
 const FUZZ_SWORD_WEAPON = 22;
+const FUZZ_LONG_SWORD_WEAPON = 23;
 const FUZZ_CATAPULT_WEAPON = 21;
 /** The fixture's armed fighter job (`test_axe`'s), which the fuzz sword class shares. */
 const FIGHTER_JOB = 1;
@@ -307,6 +322,20 @@ const EQUIP_ORDER_GOODS = [
   UNKNOWN_EQUIP_GOOD,
   INVALID_TYPE,
 ] as const;
+/** The fixture's one armor good, leather's. */
+const LEATHER_GOOD = 1;
+/** Weapon order lists: the fuzz sword class's two goods both ways round (one is not the default, so the
+ *  carrier lives), the empty one, a repeat and an armor. */
+const WEAPON_ORDERS = [
+  [SWORD_GOOD, LONG_SWORD_GOOD],
+  [LONG_SWORD_GOOD, SWORD_GOOD],
+  [],
+  [SWORD_GOOD, SWORD_GOOD],
+  [LEATHER_GOOD],
+] as const;
+/** Armor order lists: the valid one, the empty one, a repeat and a weapon, each also tried as the
+ *  switched-off list. */
+const ARMOR_ORDERS = [[LEATHER_GOOD], [], [LEATHER_GOOD, LEATHER_GOOD], [SWORD_GOOD]] as const;
 /** Owner slots: two valid players + one out-of-range (rejects the whole command) - exercises the
  *  command system's owner-field check. */
 const OWNERS = [0, 1, 99] as const;
@@ -463,7 +492,7 @@ function nextCommand(rng: Rng): Command {
   const y = rng.int(NODE_H);
   // Every roll is an explicit case, so a modulus that drifts past the case list throws below instead
   // of silently dropping a command kind from the stream.
-  const roll = rng.int(77);
+  const roll = rng.int(79);
   switch (roll) {
     case 31:
       // An AI-seat flip: valid players (the AiControl carrier created/updated/destroyed - the
@@ -1100,6 +1129,26 @@ function nextCommand(rng: Rng): Command {
       // The well-and-hive ground waiver: flips the BioGroundRules singleton, which the placement gate and
       // its memo keys read, so it must hash and replay like any state.
       return { kind: 'setBioGroundWaived', waived: rng.int(2) === 0 };
+    case 77:
+      // A class's armor order: the fixture's one armor good kept or switched off (the AssistantArmorOrders
+      // carrier created and destroyed at default under the arming pass), and lists that are not every
+      // armor once or switch off a good outside them (skipped).
+      return {
+        kind: 'setAssistantArmorOrder',
+        player: pick(rng, OWNERS),
+        intent: pick(rng, ASSISTANT_ARMING_INTENTS),
+        order: pick(rng, ARMOR_ORDERS),
+        off: pick(rng, ARMOR_ORDERS),
+      };
+    case 78:
+      // A class's weapon order: the sword class's one fuzz weapon, and lists that are not every class
+      // weapon once (skipped).
+      return {
+        kind: 'setAssistantWeaponOrder',
+        player: pick(rng, OWNERS),
+        intent: pick(rng, ASSISTANT_ARMING_INTENTS),
+        order: pick(rng, WEAPON_ORDERS),
+      };
     default:
       throw new Error(`fuzz roll ${roll} has no case: widen the switch or the modulus above`);
   }

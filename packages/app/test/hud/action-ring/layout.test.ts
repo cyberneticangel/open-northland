@@ -104,8 +104,7 @@ describe('action-ring-layout - arm footprint', () => {
   });
 
   it('actionRingScale shrinks the shared uiscale by the ring factor after flooring it', () => {
-    // At a 1.4× HUD scale the ring draws 25% smaller: 1.4 × 0.75 = 1.05.
-    expect(actionRingScale(1.4)).toBeCloseTo(1.05);
+    expect(actionRingScale(1.4)).toBeCloseTo(1.4 * ACTION_RING_UI_FACTOR);
     // The uiscale floor still applies BEFORE the shrink (too-small uiscale → the shrunk floor, not less).
     expect(actionRingScale(0.2)).toBeCloseTo(MIN_UI_SCALE * ACTION_RING_UI_FACTOR);
   });

@@ -149,8 +149,6 @@ describe('lobby compatibility gate', () => {
     s.report();
     s.ready();
     s.b.send({ kind: 'setSeat', player: 1, color: 5 });
-    expect(s.b.last('rejected')?.reason).toEqual({ code: 'creatorOnly' });
-    s.a.send({ kind: 'setSeat', player: 1, color: 5 });
     expect(s.readiness()).toEqual([true, true]);
     s.a.send({ kind: 'start' });
     expect(s.b.last('start')?.session.seats).toEqual([

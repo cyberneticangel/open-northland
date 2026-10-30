@@ -1,6 +1,7 @@
 import { MAX_CHAT_LENGTH } from '@open-northland/net-protocol';
 import { quietTextField } from '../../hud/dom/parts/text-field.js';
 import type { Rect } from '../../hud/geometry.js';
+import { isFieldKey } from '../../hud/hotkeys.js';
 import type { NetChatLine } from '../../hud/network/model.js';
 import { formatClockTime, messages } from '../../i18n/index.js';
 import { el } from '../overlay.js';
@@ -159,8 +160,9 @@ export function mountChatPanel(deps: ChatPanelDeps): ChatPanel {
     setLineOpen(true);
   };
   input.addEventListener('keydown', (event) => {
-    // Neither key may reach the page: Escape would open the system menu, Enter reopen the line.
-    event.stopPropagation();
+    // The keys the line keeps stay off the page: Escape would open the system menu, Enter reopen the
+    // line. An arrow it has no use for scrolls the map.
+    if (isFieldKey(event)) event.stopPropagation();
     if (event.isComposing) return;
     if (event.key === 'Escape') {
       event.preventDefault();

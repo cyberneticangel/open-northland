@@ -16,6 +16,8 @@ export const chtNetwork = {
   source: '遊戲來源',
   server: '伺服器位址',
   nick: '暱稱',
+  flag: '旗幟',
+  noFlag: '不顯示旗幟',
   connect: '連線',
   disconnect: '中斷連線',
   connecting: '連線中…',

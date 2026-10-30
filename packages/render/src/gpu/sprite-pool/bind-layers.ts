@@ -52,14 +52,7 @@ const BLOODLESS_KINDS: ReadonlySet<DrawItem['kind']> = new Set<DrawItem['kind']>
 
 export type BindFrame = Pick<
   PoolFrame,
-  | 'camera'
-  | 'screenW'
-  | 'screenH'
-  | 'highlight'
-  | 'erased'
-  | 'snapResolution'
-  | 'enhancedSampling'
-  | 'shadowStyle'
+  'camera' | 'screenW' | 'screenH' | 'erased' | 'snapResolution' | 'enhancedSampling' | 'shadowStyle'
 >;
 
 /**
@@ -85,11 +78,6 @@ function hideLayers(pe: PooledEntity): void {
   if (pe.paletted) for (const s of pe.shadows) hideLayer(s);
 }
 
-/** Assign-mode candidate-building tints, pale so they wash over the building art rather than
- *  repaint it. */
-const HIGHLIGHT_OK_TINT = 0x88ff88;
-const HIGHLIGHT_NO_TINT = 0xff8888;
-
 /** A layer's opacity at the eased build progress: opaque unless it fades out towards completion. */
 function fadeAlpha(layer: ResolvedLayer, reveal: number | undefined): number {
   if (layer.fadeOutFromPct === undefined || reveal === undefined) return 1;
@@ -102,11 +90,8 @@ export function planSiteOf(item: DrawItem): DrawItem['palisadeSite'] | DrawItem[
   return item.kind === 'palisade' ? item.palisadeSite : item.kind === 'roadsite' ? item.roadSite : undefined;
 }
 
-function entityTint(ref: number, ghost: boolean, highlight?: ReadonlyMap<number, boolean>): number {
-  if (ghost) return FOG_GHOST_TINT;
-  const ok = highlight?.get(ref);
-  if (ok === undefined) return 0xffffff;
-  return ok ? HIGHLIGHT_OK_TINT : HIGHLIGHT_NO_TINT;
+function entityTint(ghost: boolean): number {
+  return ghost ? FOG_GHOST_TINT : 0xffffff;
 }
 
 export class LayerBinder {
@@ -196,7 +181,7 @@ export class LayerBinder {
     if (site !== 'claimed' && pe.siteClaimMarker !== undefined) pe.siteClaimMarker.visible = false;
     if (layers === null) {
       pe.selectionEllipse = undefined;
-      this.showPlaceholder(pe, item, frame, frameId);
+      this.showPlaceholder(pe, item, frameId);
       return;
     }
     if (pe.placeholder !== undefined) pe.placeholder.visible = false;
@@ -217,7 +202,7 @@ export class LayerBinder {
         : pe.humanRow.row(this.sheet, item);
     const human = pe.paletted && pe.palette === this.sheet?.palette;
     if (pe.paletted) pe.lutRow = bodyRow;
-    const tint = entityTint(item.ref, item.ghost === true, frame.highlight); // constant per entity
+    const tint = entityTint(item.ghost === true); // constant per entity
     this.feetX = item.x;
     this.feetY = item.y - (item.lift ?? 0);
     // Feet-local union of the drawn rects: one box for paletted and plain layers alike.
@@ -617,7 +602,7 @@ export class LayerBinder {
 
   /** Show the placeholder marker - the unbound / no-sheet fallback - and stamp the entity's bounds from
    *  its fixed body box. */
-  private showPlaceholder(pe: PooledEntity, item: DrawItem, frame: BindFrame, frameId: number): void {
+  private showPlaceholder(pe: PooledEntity, item: DrawItem, frameId: number): void {
     hideLayers(pe);
     if (pe.placeholder === undefined) {
       pe.placeholder = worldBatched(new SelectionGraphics());
@@ -625,7 +610,7 @@ export class LayerBinder {
       pe.container.addChild(pe.placeholder);
     }
     pe.placeholder.visible = true;
-    const tint = entityTint(item.ref, item.ghost === true, frame.highlight);
+    const tint = entityTint(item.ghost === true);
     if (pe.placeholder.tint !== tint) pe.placeholder.tint = tint;
     // The arrow's flight height rides the item's lift, so rotating about its own origin only aims it.
     if (pe.kind === 'projectile') pe.placeholder.rotation = pe.motion.drawRotation;

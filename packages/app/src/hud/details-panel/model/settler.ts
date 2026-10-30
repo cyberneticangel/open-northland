@@ -7,7 +7,6 @@ import {
   systems,
   type WorldSnapshot,
 } from '@open-northland/sim';
-import { JOB_SCOUT } from '../../../catalog/jobs.js';
 import { WEAPON_XP_KEY_BY_TYPE } from '../../../catalog/weapon-experience.js';
 import {
   num,
@@ -92,12 +91,11 @@ export function experienceLabel(
   }
   const weaponKey = WEAPON_XP_KEY_BY_TYPE.get(spec);
   if (weaponKey !== undefined) return messages().hud.weaponXp[weaponKey];
-  if (spec === systems.SCOUT_EXPERIENCE_TYPE) return jobDisplayName(ctx, JOB_SCOUT);
   return formatMessage(messages().hud.specialization, { id: spec });
 }
 
-/** A specialization row's percent is the effect that experience actually buys, not a raw curve read: the
- *  scout bucket its vision gain over the scout's base radius, a carrier track none. */
+/** A specialization row's percent is the effect that experience actually buys, not a raw curve read: a
+ *  carrier track buys none. */
 function experienceBonusPct(
   ctx: UnitPanelModelContext,
   spec: number,
@@ -107,9 +105,6 @@ function experienceBonusPct(
   if (track === undefined && WEAPON_XP_KEY_BY_TYPE.has(spec)) {
     return systems.withFightExperience(PERCENT, points) - PERCENT;
   }
-  if (spec === systems.SCOUT_EXPERIENCE_TYPE) {
-    return Math.round((systems.scoutVisionBonusNodes(points) / systems.SCOUT_VISION_NODES) * 100);
-  }
   if (track !== undefined && isCarrierJob(ctx, track.jobType)) return null;
   return systems.experiencePercent(systems.experiencePoints(points));
 }
@@ -118,7 +113,7 @@ function experienceBonusPct(
  * The Experience rows: the current trade's tracks first, each group most-trained first, off the
  * settler's `SettlerProgress.experience` map (`humanjobexperiencetypes` id → raw points). Raw points are
  * shown as completed-work repeats, dividing the track's accrual rate back out; a track-less bucket
- * (fight, scout) shows raw points and belongs to the fighter or scout trades.
+ * (fight) shows raw points and belongs to the fighter trades.
  */
 export function experienceRows(ctx: UnitPanelModelContext, comps: Comp): ExperienceRowModel[] {
   const jobType = num((comps.Settler as { jobType?: unknown } | undefined)?.jobType);
@@ -130,12 +125,7 @@ export function experienceRows(ctx: UnitPanelModelContext, comps: Comp): Experie
     const track = ctx.jobExperience.find((t) => t.typeId === spec);
     const repeats = track !== undefined ? systems.experienceRepeats(points, track) : points;
     if (repeats <= 0) continue; // partial credit toward the first repeat - nothing to show yet
-    const own =
-      track !== undefined
-        ? track.jobType === jobType
-        : WEAPON_XP_KEY_BY_TYPE.has(spec)
-          ? fights
-          : spec === systems.SCOUT_EXPERIENCE_TYPE && jobType === JOB_SCOUT;
+    const own = track !== undefined ? track.jobType === jobType : WEAPON_XP_KEY_BY_TYPE.has(spec) && fights;
     rows.push({
       label: experienceLabel(ctx, spec, track),
       repeats,
@@ -173,6 +163,7 @@ export type SettlerState =
   | 'walking'
   | 'awaitingWorkplace'
   | 'awaitingTraining'
+  | 'awaitingSeat'
   | 'standingTo'
   | 'lost'
   | 'idle';
@@ -200,8 +191,8 @@ const ATOMIC_STATE: Readonly<Record<AtomicEffect['kind'], SettlerState>> = {
   pickup: 'working',
   pileup: 'working',
   drop: 'working',
-  cartLoad: 'working',
-  cartUnload: 'working',
+  tradeLoad: 'working',
+  tradeUnload: 'working',
   haulLoad: 'working',
   haulUnload: 'working',
   vehicleLoad: 'working',
@@ -257,6 +248,8 @@ function liveSettlerState(
   if (awaitsItsWorkplace(snapshot, components)) return 'awaitingWorkplace';
   // Sent ahead to a barracks or school foundation, it waits beside the door until the house stands.
   if (awaitsItsTrainingHouse(snapshot, components)) return 'awaitingTraining';
+  // Sent to a full school or barracks, it waits in the yard for a seat to free.
+  if ((components.TrainingOrder as { seated?: unknown } | undefined)?.seated === false) return 'awaitingSeat';
   // A unit holding its ground under the battle alert takes no work and no rest, which without its own
   // caption reads as a soldier that has simply stopped caring about its empty bars.
   if (ctx.standsTo?.(entityId) === true) return 'standingTo';

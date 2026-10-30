@@ -126,7 +126,7 @@ function allows(
     case 'assignVehicle':
       return isAdult(e);
     // The explicit way off a vehicle, since a commander's walk order drives the vehicle instead; a posted
-    // carrier sets its hauling cart down by it.
+    // carrier or a trader sets its hauling cart down by it.
     case 'removeVehicle':
       return e.components.Rider !== undefined || e.components.HaulingCart !== undefined;
     case 'eat':

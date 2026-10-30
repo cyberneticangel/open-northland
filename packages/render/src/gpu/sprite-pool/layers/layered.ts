@@ -1,6 +1,7 @@
 import {
   type AtlasFrame,
   type BuildingDraw,
+  frameHasBuildTimes,
   lookupFrame,
   type ResourceDraw,
   type SpriteKind,
@@ -117,6 +118,7 @@ export function resolveFromLayer(
 ): ResolvedLayer | null {
   const frame = lookupFrame(layer.atlas, bob);
   if (frame === null) return null;
+  const times = layer.times !== undefined && frameHasBuildTimes(layer.times, frame) ? layer.times : undefined;
   const cached = bodyRecords.get(frame);
   if (
     cached !== undefined &&
@@ -124,7 +126,7 @@ export function resolveFromLayer(
     cached.scale === scale &&
     cached.atlasW === layer.atlas.width &&
     cached.atlasH === layer.atlas.height &&
-    cached.times === layer.times
+    cached.times === times
   )
     return cached;
   const record: ResolvedLayer = {
@@ -133,7 +135,7 @@ export function resolveFromLayer(
     scale,
     atlasW: layer.atlas.width,
     atlasH: layer.atlas.height,
-    ...(layer.times !== undefined ? { times: layer.times } : {}),
+    ...(times !== undefined ? { times } : {}),
   };
   bodyRecords.set(frame, record);
   return record;

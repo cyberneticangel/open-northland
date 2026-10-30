@@ -157,6 +157,8 @@ export const COMMAND_ISSUER: {
   setAssistantPostGraduates: 'seat',
   setAssistantMoveFlags: 'seat',
   setAssistantWeaponVeto: 'seat',
+  setAssistantArmorOrder: 'seat',
+  setAssistantWeaponOrder: 'seat',
   setProductionGoods: 'seat',
   setProductionCount: 'seat',
   setDefenceMode: 'seat',

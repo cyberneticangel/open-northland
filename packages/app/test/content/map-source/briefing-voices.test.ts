@@ -88,6 +88,7 @@ function fakeSink() {
       state = { ...state, positionS: atS };
     }),
     narrationState: () => state,
+    setNarrationRate: vi.fn(),
   };
   return sink;
 }
@@ -184,6 +185,24 @@ describe('briefingVoicePlayer', () => {
       sink,
     ).play({ lang: 'pol', id: 1 });
     await vi.waitFor(() => expect(sink.narrate).toHaveBeenCalled());
+  });
+
+  it('speaks at the saved tempo and hands a changed one to the sink and its owner', () => {
+    const sink = fakeSink();
+    const saved = vi.fn();
+    const player = briefingVoicePlayer(
+      loaderOf(async () => null),
+      sink,
+      1.5,
+      saved,
+    );
+    expect(sink.setNarrationRate).toHaveBeenLastCalledWith(1.5);
+    player.setRate(1.5);
+    expect(saved).not.toHaveBeenCalled();
+    player.setRate(2);
+    expect(player.rate()).toBe(2);
+    expect(sink.setNarrationRate).toHaveBeenLastCalledWith(2);
+    expect(saved).toHaveBeenCalledWith(2);
   });
 
   it('drives a plain map`s clip: pause, resume, seek, and a replay once the line went idle', async () => {

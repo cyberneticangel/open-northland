@@ -4,6 +4,8 @@ import {
   bindFootprintClearing,
   type FootprintBuildingType,
 } from '../../../src/view/map-objects/footprint-clearing.js';
+import { SightDeferral } from '../../../src/view/map-objects/sight-deferral.js';
+import { testSight } from '../../support/sight.js';
 import { type Ent, snapshotOf } from '../../support/snapshot.js';
 
 /** The static-layer half of a building's landscape clearing: which placed sprites leave the layer when
@@ -79,9 +81,11 @@ function buildingAt(id: number, typeId: number, hx: number, hy: number, tribe = 
   return { id, components: { Building: { buildingType: typeId, tribe }, Position: positionOfNode(hx, hy) } };
 }
 
-function bind(entities: readonly Ent[]) {
+function bind(entities: readonly Ent[], seesNode: (hx: number, hy: number) => boolean = () => true) {
   const removed: string[] = [];
   let snapshot = snapshotOf(entities);
+  const view = testSight(seesNode);
+  const sight = new SightDeferral(view);
   const onEvents = bindFootprintClearing(
     { removeMapObject: (sprite: string) => removed.push(sprite) },
     PLACEMENTS,
@@ -89,8 +93,13 @@ function bind(entities: readonly Ent[]) {
     { buildings: TYPES },
     () => snapshot,
     NODE_WIDTH,
+    sight,
   );
-  return { removed, onEvents, setSnapshot: (next: WorldSnapshot) => (snapshot = next) };
+  const look = (): void => {
+    view.look();
+    sight.flush();
+  };
+  return { removed, onEvents, look, setSnapshot: (next: WorldSnapshot) => (snapshot = next) };
 }
 
 const placed = (entity: number, hx: number, hy: number): SimEvent => ({
@@ -121,6 +130,19 @@ describe('footprint clearing of static landscape sprites', () => {
     setSnapshot(snapshotOf([buildingAt(1, HALL, 19, 20)]));
     onEvents([placed(1, 19, 20)]);
     expect(removed.sort()).toEqual(['far-grass', 'far-mushroom']);
+  });
+
+  it("keeps scenery under a building raised in the fog until the viewer sees it, the map's own at once", () => {
+    let watching = false;
+    const { removed, onEvents, look, setSnapshot } = bind([buildingAt(1, HALL, 10, 11)], () => watching);
+    expect(removed).toEqual(['anchor-grass']);
+    setSnapshot(snapshotOf([buildingAt(1, HALL, 10, 11), buildingAt(2, HALL, 19, 20)]));
+    onEvents([placed(2, 19, 20)]);
+    look();
+    expect(removed).toEqual(['anchor-grass']);
+    watching = true;
+    look();
+    expect(removed.sort()).toEqual(['anchor-grass', 'far-grass', 'far-mushroom']);
   });
 
   it('clears the grown footprint when an upgrade swaps the building type', () => {

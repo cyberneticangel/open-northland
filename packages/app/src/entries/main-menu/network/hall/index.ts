@@ -4,6 +4,7 @@ import { type HallChatLine, MAX_CHAT_LENGTH, type RoomSummary } from '@open-nort
 import { quietTextField } from '../../../../hud/dom/parts/text-field.js';
 import { bcp47Tag, formatMessage, messages, pluralForm } from '../../../../i18n/index.js';
 import { node } from '../../dom.js';
+import { nickWithFlag } from '../flags/catalog.js';
 import { button } from '../parts.js';
 import { formatAgo, formatChatStamp, formatPlayed, hallRooms, type OnlineRow, onlineRows } from './model.js';
 
@@ -107,7 +108,7 @@ export function networkHall(deps: HallDeps) {
     if (line.from !== nick && mentions(line.text, nick)) row.classList.add('is-mention');
     const time = node('time', 'network-hall__chat-time', formatChatStamp(line.at, now, tag));
     time.setAttribute('datetime', new Date(line.at).toISOString());
-    row.append(time, node('strong', '', line.from), node('span', '', line.text));
+    row.append(time, nickWithFlag('strong', '', line.from, line.flag), node('span', '', line.text));
     return row;
   };
 
@@ -178,7 +179,7 @@ export function networkHall(deps: HallDeps) {
     onlineList.replaceChildren(
       ...online.map((row) => {
         const item = node('li', `is-online is-${row.where.kind}${row.self ? ' is-self' : ''}`);
-        const name = node('span', 'network-hall__nick', row.nick);
+        const name = nickWithFlag('span', 'network-hall__nick', row.nick, row.flag);
         if (row.self) name.append(node('em', '', copy.you));
         item.append(
           node('i', 'network-hall__dot'),

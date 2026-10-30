@@ -35,7 +35,6 @@ const NOTABLE: readonly UserMessageTypeName[] = [
   'workplaceNotFound',
   'vehicleSiteNotFound',
   'vehicleSiteOccupied',
-  'noVehicleForWork',
   'wantsToPray',
   'grewUp',
   'cannotEnterVehicle',
@@ -53,6 +52,7 @@ const NOTABLE: readonly UserMessageTypeName[] = [
   'productionStalled',
   'explorationFinished',
   'workerRefused',
+  'tradeRefused',
 ];
 
 const IMPORTANT_LEVEL: MessagePriorityLevel = 2;

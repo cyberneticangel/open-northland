@@ -5,7 +5,6 @@ import {
   clearTradeImports,
   isForeignHouse,
   removeTradeStop,
-  Settler,
   setTradeAgreement,
   setTradeAgreementLimits,
   setTradeImport,
@@ -19,20 +18,17 @@ import { contentIndex } from '../../core/content-index.js';
 import { ONE } from '../../core/fixed.js';
 import type { Entity, World } from '../../ecs/world.js';
 import type { ContentContext, SystemContext } from '../context.js';
-import { isTraderJob } from '../readviews/jobs.js';
-import { agreementsAt } from './agreements.js';
+import { isTrader } from '../readviews/jobs.js';
+import { agreementsAt, mutualFriends } from './agreements.js';
 import { isSettlementAnchor } from './settlement.js';
-
-function isTrader(world: World, ctx: ContentContext, e: Entity): boolean {
-  const settler = world.tryGet(e, Settler);
-  return settler !== undefined && isTraderJob(ctx.content, settler.jobType);
-}
 
 /**
  * Whether `attachTradeHouse` puts `house` on the trader's route: a standing house not on it yet that
  * keeps a stock when it is the trader's own, or that offers an agreement when it is another player's.
  * Trade inside the settlement moves any good; with another tribe only the house's agreements trade, so
  * a house offering none is no stop (owner's choice, so the house pick lights only the houses that trade).
+ * Original behavior: a foreign house joins a route only while both players hold `friend` toward each
+ * other; the trips after that check only the trader's side (`activeAgreement`).
  */
 export function canAttachTradeHouse(
   world: World,
@@ -40,17 +36,19 @@ export function canAttachTradeHouse(
   trader: Entity,
   house: Entity,
 ): boolean {
-  if (!isTrader(world, ctx, trader) || !world.isAlive(house)) return false;
+  if (!isTrader(world, ctx.content, trader) || !world.isAlive(house)) return false;
   const building = world.tryGet(house, Building);
   if (building === undefined || building.built !== ONE) return false;
   if (tradeRouteOf(world, trader)?.stops.some((stop) => stop.house === house) === true) return false;
-  if (isForeignHouse(world, trader, house)) return agreementsAt(world, house).length > 0;
+  if (isForeignHouse(world, trader, house)) {
+    return agreementsAt(world, house).length > 0 && mutualFriends(world, trader, house);
+  }
   return (contentIndex(ctx.content).storedGoodsByBuilding.get(building.buildingType)?.size ?? 0) > 0;
 }
 
 /** Apply one trader order. A stale house, a non-trader, or a choice the route cannot hold is skipped. */
 export function applyTradeCommand(world: World, ctx: SystemContext, command: TradeCommand): void {
-  if (!isTrader(world, ctx, command.entity)) return;
+  if (!isTrader(world, ctx.content, command.entity)) return;
   switch (command.kind) {
     case 'attachTradeHouse':
       if (canAttachTradeHouse(world, ctx, command.entity, command.house)) {

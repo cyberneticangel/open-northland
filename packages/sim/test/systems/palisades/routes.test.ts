@@ -86,6 +86,14 @@ const WALL: ScriptLandscapeType = {
 
 const GATE_SPAN = [-2, -1, 0, 1, 2].map((dx) => ({ dx, dy: 0 }));
 
+/** A tower-kind building with no posts to man, the defence wall's shape in the extracted houses, and a
+ *  manned tower beside it. */
+const DEFENCE_WALL = 90;
+const WATCHTOWER = 91;
+const DEFENCE_WALL_SPAN = GATE_SPAN;
+/** Anchor spacing that joins {@link DEFENCE_WALL_SPAN} bodies end to end. */
+const DEFENCE_WALL_STEP = DEFENCE_WALL_SPAN.length;
+
 const CLOSED_GATE: ScriptLandscapeType = {
   typeId: 696,
   walk: GATE_SPAN,
@@ -142,6 +150,23 @@ function wallBreakingContent(): ContentSet {
     ...economyContent,
     ...combatContent,
     ...societyContent,
+    buildings: [
+      ...economyContent.buildings,
+      {
+        typeId: DEFENCE_WALL,
+        id: 'defence_wall',
+        kind: 'tower',
+        hitpoints: 1000,
+        footprint: { blocked: DEFENCE_WALL_SPAN },
+      },
+      {
+        typeId: WATCHTOWER,
+        id: 'watchtower',
+        kind: 'tower',
+        hitpoints: 1000,
+        workers: [{ jobType: UNARMED_SOLDIER, count: 1 }],
+      },
+    ],
     weapons: combatContent.weapons.map((w) =>
       w.id === 'test_axe'
         ? { ...dentsWalls(w), mainType: STRIKER_CLASS }
@@ -163,15 +188,16 @@ function fresh(content: ContentSet = wallBreakingContent()): Simulation {
   return new Simulation({ seed: 1, content, map: routesMap() });
 }
 
-/** A finished wall row across the whole map, owned by `owner`, with an open gate at {@link GATE_X}. */
-function wallRow(sim: Simulation, owner: number): Entity {
+/** A finished wall row across the whole map on half-row `hy`, owned by `owner`, with an open gate at
+ *  {@link GATE_X}. */
+function wallRow(sim: Simulation, owner: number, hy = WALL_ROW): Entity {
   for (let hx = 0; hx < WIDTH; hx++) {
     if (Math.abs(hx - GATE_X) <= 2) continue;
     sim.enqueueSetup({
       kind: 'placePalisade',
       gfxIndex: WALL.typeId,
       x: hx,
-      y: WALL_ROW,
+      y: hy,
       tribe: VIKING,
       owner,
     });
@@ -180,7 +206,7 @@ function wallRow(sim: Simulation, owner: number): Entity {
     kind: 'placePalisade',
     gfxIndex: OPEN_GATE.typeId,
     x: GATE_X,
-    y: WALL_ROW,
+    y: hy,
     tribe: VIKING,
     owner,
   });
@@ -376,6 +402,38 @@ describe('walls that start blocking a route', () => {
       for (const walker of walkers) expect(nodeRow(sim, walker).hy).toBeLessThan(row);
     }
   });
+
+  it("sends a walker ordered onto a closed gate between two open halves to the gate's near side", () => {
+    // Each half holds about 750 nodes, past ROUTE_REGION_POCKET_CAP, so no pocket proof covers either.
+    const height = 64;
+    const row = 32;
+    const sim = new Simulation({
+      seed: 1,
+      content: wallBreakingContent(),
+      map: { ...routesMap(), ...grassNodeMap(WIDTH, height) },
+    });
+    const gate = wallRow(sim, P0, row);
+    sim.enqueueSetup({ kind: 'setPalisadeGate', palisade: gate, open: false });
+    sim.step();
+    expect(sealed(sim, { hx: GATE_X, hy: 4 }, { hx: GATE_X, hy: height - 4 })).toBe(true);
+    const north = fighter(sim, { hx: GATE_X, hy: 4 }, P0);
+    const south = fighter(sim, { hx: GATE_X, hy: height - 4 }, P0);
+    for (const walker of [north, south])
+      moveUnit(sim.world, ctxOf(sim), { kind: 'moveUnit', entity: walker, x: GATE_X, y: row });
+
+    let lost = 0;
+    for (let tick = 0; tick < 400 && [north, south].some((w) => sim.world.has(w, PlayerOrder)); tick++) {
+      sim.step();
+      lost += sim.events.current().filter((ev) => ev.kind === 'settlerLost').length;
+    }
+    expect(lost).toBe(0);
+    expect(sim.world.has(north, PlayerOrder) || sim.world.has(south, PlayerOrder)).toBe(false);
+    // Each stops beside the gate on its own side.
+    expect(row - nodeRow(sim, north).hy).toBeGreaterThan(0);
+    expect(row - nodeRow(sim, north).hy).toBeLessThanOrEqual(2);
+    expect(nodeRow(sim, south).hy - row).toBeGreaterThan(0);
+    expect(nodeRow(sim, south).hy - row).toBeLessThanOrEqual(2);
+  });
 });
 
 describe('a wall line that turns', () => {
@@ -483,6 +541,79 @@ describe('a wall line that turns', () => {
     const blocked = dynamicBlockOverlay(sim.world, ctxOf(sim), terrain);
     expect(blocked.has(terrain.nodeAt(GATE_X - 1, row))).toBe(false);
     expect(blocked.has(terrain.nodeAt(GATE_X - 2, row + 1))).toBe(false);
+  });
+});
+
+/** An enemy building of `buildingType` anchored on node `at`, placed finished - the test-setup exception. */
+function buildingAt(
+  sim: Simulation,
+  at: { hx: number; hy: number },
+  buildingType: number,
+  owner: number,
+): Entity {
+  const e = sim.world.create();
+  sim.world.add(e, Position, positionOfNode(at.hx, at.hy));
+  sim.world.add(e, Building, { buildingType, tribe: VIKING, built: fx.fromInt(1), level: 0 });
+  sim.world.add(e, Health, { hitpoints: 1000, max: 1000 });
+  sim.world.add(e, Owner, { player: owner });
+  return e;
+}
+
+/** Defence walls end to end along {@link WALL_ROW}, sealing the north off from the south. */
+function defenceWallRow(sim: Simulation, owner: number): Entity[] {
+  const walls: Entity[] = [];
+  for (let hx = 2; hx - 2 < WIDTH; hx += DEFENCE_WALL_STEP)
+    walls.push(buildingAt(sim, { hx, hy: WALL_ROW }, DEFENCE_WALL, owner));
+  return walls;
+}
+
+describe('defence walls', () => {
+  it("are never picked on a fighter's own, only broken to reach a tower behind them", () => {
+    const sim = fresh();
+    defenceWallRow(sim, P1);
+    expect(sealed(sim)).toBe(true);
+    const guard = fighter(sim, { hx: GATE_X, hy: WALL_ROW - 2 }, P0);
+    sim.run(60);
+    expect(sim.world.has(guard, Engagement)).toBe(false);
+
+    const tower = buildingAt(sim, { hx: GATE_X, hy: WALL_ROW + 4 }, WATCHTOWER, P1);
+    for (let tick = 0; tick < 200 && sim.world.tryGet(guard, AttackOrder)?.breach === undefined; tick++)
+      sim.step();
+    const order = sim.world.get(guard, AttackOrder);
+    expect(order.breach?.enemy).toBe(tower);
+    expect(sim.world.get(order.target, Building).buildingType).toBe(DEFENCE_WALL);
+  });
+
+  it('are broken through by an attack-move they bar, and one falling lets its whole line go', () => {
+    const sim = fresh();
+    defenceWallRow(sim, P1);
+    const squad = [GATE_X, GATE_X - DEFENCE_WALL_STEP, GATE_X + DEFENCE_WALL_STEP].map((hx) =>
+      fighter(sim, { hx, hy: 4 }, P0),
+    );
+    for (const raider of squad)
+      attackMoveUnit(sim.world, ctxOf(sim), {
+        kind: 'attackMoveUnit',
+        entity: raider,
+        x: SOUTH.hx,
+        y: SOUTH.hy,
+      });
+    const breaching = (): boolean =>
+      squad.every((r) => sim.world.tryGet(r, AttackOrder)?.breach !== undefined);
+    for (let tick = 0; tick < 20 && !breaching(); tick++) sim.step();
+    const targets = squad.map((r) => sim.world.get(r, AttackOrder).target);
+    for (const wall of targets) expect(sim.world.get(wall, Building).buildingType).toBe(DEFENCE_WALL);
+    const [lead] = squad;
+    const [first] = targets;
+    if (lead === undefined || first === undefined) throw new Error('expected a squad');
+    const elsewhere = squad.filter((_, at) => targets[at] !== first);
+    expect(elsewhere.length).toBeGreaterThan(0);
+
+    // The first wall's gap lets every breaker on its line go, not only those striking it.
+    sim.world.mut(first, Health).hitpoints = 0;
+    sim.step();
+    for (const raider of elsewhere) expect(sim.world.tryGet(raider, AttackOrder)?.breach).toBeUndefined();
+    for (let tick = 0; tick < 600 && nodeRow(sim, lead).hy < SOUTH.hy; tick++) sim.step();
+    expect(nodeRow(sim, lead)).toEqual(SOUTH);
   });
 });
 

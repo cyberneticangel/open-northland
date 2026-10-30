@@ -2,7 +2,7 @@
  * Artistic approximation, independent of sim state: wind in a ship's set sail. The original draws one
  * rigid frame per heading, so the paletted shader ripples the sail's own pixels instead: a travelling
  * wave slides the stripes sideways inside the sail's fixed outline and lights its crests, harder under
- * way than standing at sea. Periods are sim ticks (12 Hz), lengths native sprite pixels.
+ * way than standing at sea. Periods are ticks of the water clock at the 12 Hz base rate, lengths native sprite pixels.
  */
 
 import type { WindSway } from '../../data/weather/climate.js';

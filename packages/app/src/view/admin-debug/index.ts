@@ -105,7 +105,7 @@ const DEFAULT_HITPOINTS = systems.HUMAN_HITPOINTS;
 /** The action tools' health share until the field is edited. */
 const DEFAULT_HEALTH_PERCENT = 1;
 /** The debug tempos beyond the HUD's ×1..×3, for watching a map script's slow chains. */
-const DEBUG_GAME_SPEEDS: readonly number[] = [5, 10, 15, 20, 30];
+const DEBUG_GAME_SPEEDS: readonly number[] = [5, 10, 20, 30, 60];
 
 const FOG_MAP_SETTINGS: Readonly<Record<Exclude<FogMapKey, 'off'>, boolean>> = {
   classic: false,

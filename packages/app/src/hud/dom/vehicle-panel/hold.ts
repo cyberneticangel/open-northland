@@ -292,8 +292,9 @@ export function createHoldSection(
     write(flag, copy.noHand);
     setTip(flag, copy.noHandTooltip);
     setHidden(routed, !fixed);
-    write(routed, cargo.hauled ? copy.hauled : copy.routed);
-    setTip(routed, cargo.hauled ? copy.hauledTooltip : copy.routedTooltip);
+    // The route's word wins: a trader's route drives the load of the cart it pulls.
+    write(routed, cargo.routed ? copy.routed : copy.hauled);
+    setTip(routed, cargo.routed ? copy.routedTooltip : copy.hauledTooltip);
     setHidden(clear, fixed);
     write(clear, copy.clear);
     setDisabled(clear, target === 0);

@@ -1,0 +1,144 @@
+import { ONE, systems } from '@open-northland/sim';
+import { describe, expect, it } from 'vitest';
+import { JOB_BUILDER, JOB_COLLECTOR } from '../../../../src/catalog/jobs.js';
+import { HUMAN_PLAYER } from '../../../../src/game/rules.js';
+import { BUILDING_BARRACKS, BUILDING_HOME_00, sandboxContent } from '../../../../src/game/sandbox/index.js';
+import type { FormationUnit } from '../../../../src/view/unit-controls/orders/formation.js';
+import {
+  atBuilding,
+  atSite,
+  queueAtBuilding,
+} from '../../../../src/view/unit-controls/right-click/building-rungs.js';
+import { type Ent, snapshotOf } from '../../../support/snapshot.js';
+
+/** The ladder's building rungs: who joins a building's crew, who it houses, drills or teaches, and who
+ *  a site pins. */
+
+const CONTENT = sandboxContent();
+const SCHOOL = ((): number => {
+  const school = CONTENT.buildings.find((row) => systems.isSchoolType(row));
+  if (school === undefined) throw new Error('the sandbox has no school');
+  return school.typeId;
+})();
+const BUILDING = 100;
+const SITE = 101;
+const TILE = { col: 6, row: 8 };
+const FIRST_SETTLER = 1;
+/** A builder of the selection already pinned to `BUILDING`, so its repair crew counts him. */
+const PINNED = 50;
+
+type BuildingState = 'foundation' | 'damaged' | 'standing';
+
+const settler = (id: number, jobType: number | null, site?: number): Ent => ({
+  id,
+  components: {
+    Settler: { jobType },
+    Owner: { player: HUMAN_PLAYER },
+    Position: { x: ONE, y: ONE },
+    ...(site === undefined ? {} : { SiteAssignment: { site } }),
+  },
+});
+
+const building = (buildingType: number, state: BuildingState): Ent => ({
+  id: BUILDING,
+  components: {
+    Building: { buildingType, tribe: 1, built: state === 'foundation' ? 0 : ONE, level: 0 },
+    Owner: { player: HUMAN_PLAYER },
+    Position: { x: 4 * ONE, y: 4 * ONE },
+    ...(state === 'foundation' ? { UnderConstruction: { labor: 0 } } : {}),
+    ...(state === 'damaged' ? { Damaged: { lastHitTick: 0 } } : {}),
+  },
+});
+
+const units = (count: number, from = FIRST_SETTLER): FormationUnit[] =>
+  Array.from({ length: count }, (_, i) => ({ ref: from + i, x: 0, y: 0 }));
+
+const refs = (list: readonly FormationUnit[]): number[] => list.map((unit) => unit.ref);
+
+function contextOf(entities: readonly Ent[]) {
+  return { snapshot: snapshotOf(entities), content: CONTENT };
+}
+
+describe('the building rungs', () => {
+  it('take every builder into a foundation, a damaged building only while its repair crew has room', () => {
+    const builders = units(systems.REPAIR_CREW_LIMIT + 1);
+    const crewOf = (state: BuildingState, extra: readonly Ent[] = []) => {
+      const ctx = contextOf([
+        ...builders.map((unit) => settler(unit.ref, JOB_BUILDER)),
+        ...extra,
+        building(BUILDING_HOME_00, state),
+      ]);
+      const intent = atBuilding(ctx, builders, BUILDING);
+      if (intent.kind !== 'building') throw new Error(`not a building rung: ${intent.kind}`);
+      return refs(intent.crew);
+    };
+    expect(crewOf('foundation')).toEqual(refs(builders));
+    expect(crewOf('damaged')).toEqual(refs(builders.slice(0, systems.REPAIR_CREW_LIMIT)));
+    // One builder of another selection already mends it: one seat less.
+    expect(crewOf('damaged', [settler(PINNED, JOB_BUILDER, BUILDING)])).toHaveLength(
+      systems.REPAIR_CREW_LIMIT - 1,
+    );
+    expect(crewOf('standing')).toEqual([]);
+  });
+
+  it('house the rest at a home, drill them at a barracks and offer them the lessons at a school', () => {
+    const [builder, idle] = units(2);
+    if (builder === undefined || idle === undefined) throw new Error('setup: two settlers');
+    const at = (buildingType: number) =>
+      atBuilding(
+        contextOf([
+          settler(builder.ref, JOB_BUILDER),
+          settler(idle.ref, null),
+          building(buildingType, 'foundation'),
+        ]),
+        [builder, idle],
+        BUILDING,
+      );
+    expect(at(BUILDING_HOME_00)).toMatchObject({ kind: 'building', crew: [builder], household: [idle] });
+    expect(at(BUILDING_BARRACKS)).toMatchObject({ kind: 'building', crew: [builder], trainees: [idle] });
+    expect(at(SCHOOL)).toEqual({ kind: 'school', building: BUILDING, crew: [builder], learners: [idle] });
+  });
+
+  it('queue the crew and the recruits under Shift and walk the rest there', () => {
+    const [builder, idle, collector] = units(3);
+    if (builder === undefined || idle === undefined || collector === undefined)
+      throw new Error('setup: three settlers');
+    const ctx = contextOf([
+      settler(builder.ref, JOB_BUILDER),
+      settler(idle.ref, null),
+      settler(collector.ref, JOB_COLLECTOR),
+      building(BUILDING_BARRACKS, 'foundation'),
+    ]);
+    expect(queueAtBuilding(ctx, [builder, idle, collector], BUILDING, TILE)).toEqual({
+      kind: 'queueAtBuilding',
+      building: BUILDING,
+      crew: [builder],
+      recruits: [idle, collector],
+      walkers: [],
+      tile: TILE,
+    });
+    const home = contextOf([
+      settler(builder.ref, JOB_BUILDER),
+      settler(idle.ref, null),
+      building(BUILDING_HOME_00, 'foundation'),
+    ]);
+    expect(queueAtBuilding(home, [builder, idle], BUILDING, TILE)).toMatchObject({
+      crew: [builder],
+      recruits: [],
+      walkers: [idle],
+    });
+  });
+
+  it('pin the builders to a wall or road site and walk the rest there', () => {
+    const [builder, idle] = units(2);
+    if (builder === undefined || idle === undefined) throw new Error('setup: two settlers');
+    const ctx = contextOf([settler(builder.ref, JOB_BUILDER), settler(idle.ref, null)]);
+    expect(atSite(ctx, [builder, idle], SITE, TILE)).toEqual({
+      kind: 'site',
+      site: SITE,
+      builders: [builder],
+      walkers: [idle],
+      tile: TILE,
+    });
+  });
+});

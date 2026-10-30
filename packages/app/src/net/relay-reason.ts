@@ -36,6 +36,8 @@ export function relayReasonText(reason: RelayReason, copy: Messages = messages()
       return formatMessage(templates[reason.code], { seat: seatNumber(reason.player) });
     case 'seatTaken':
       return formatMessage(templates[reason.code], { seat: seatNumber(reason.player), nick: reason.nick });
+    case 'colorTaken':
+      return formatMessage(templates[reason.code], { wearer: seatNumber(reason.wearer) });
     case 'malformed':
       return templates[reason.code];
     default: {

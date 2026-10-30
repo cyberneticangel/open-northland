@@ -13,7 +13,13 @@ import { landscapePlacementRevision } from '../../../components/landscape.js';
 import { contentIndex } from '../../../core/content-index.js';
 import type { Component, Entity, World } from '../../../ecs/world.js';
 import { nodeOfPosition } from '../../../nav/halfcell.js';
-import { ANCHOR_ONLY, buildingFlagBody, buildingFootprintOf } from '../geometry.js';
+import {
+  ANCHOR_ONLY,
+  buildingFlagBody,
+  buildingFootprintOf,
+  type HouseKey,
+  houseFootprintOf,
+} from '../geometry.js';
 import { footprintCellsOf } from '../resource-footprint-cells.js';
 import { vehicleAnchorRevision } from '../vehicle-anchors.js';
 import { hexDisc, vehicleAnchor } from '../vehicle-footprint.js';
@@ -105,35 +111,32 @@ export function buildingBlockerCells(
   const p = world.tryGet(e, Position);
   if (b === undefined || p === undefined) return;
   const { hx, hy } = nodeOfPosition(p.x, p.y);
-  const fp = buildingFootprintOf(content, b.buildingType, b.tribe);
-  const body = buildingFlagBody(content, b.buildingType, b.tribe);
+  const fp = houseFootprintOf(content, b);
+  const body = buildingFlagBody(content, b);
   const zone = fp?.reserved.length ? fp.reserved : ANCHOR_ONLY;
   for (const c of body) visit(hx + footprintCellDx(hy, c), hy + c.dy, OBSTACLE);
   for (const c of zone) visit(hx + footprintCellDx(hy, c), hy + c.dy, BUILDING_ZONE);
-  for (const c of upgradeReserveCells(content, b.buildingType, b.tribe)) {
+  for (const c of upgradeReserveCells(content, b)) {
     visit(hx + footprintCellDx(hy, c), hy + c.dy, UPGRADE_RESERVE);
   }
 }
 
 const upgradeReserves = new WeakMap<ContentSet, Map<string, readonly FootprintCell[]>>();
 
-/** The `blocked` cells of every level above `buildingType` in its chain, less its own, kept per content
- *  and (type, tribe). A cell only a lower level stood on is no upgrade's ground. A footprint without walls,
+/** The `blocked` cells of every level above `house` in its chain, less its own, kept per content
+ *  and (type, tribe, record). A cell only a lower level stood on is no upgrade's ground. A footprint without walls,
  *  as the approximate catalog's, has no growth to tell from its body. */
-function upgradeReserveCells(
-  content: ContentSet,
-  buildingType: number,
-  tribe: number,
-): readonly FootprintCell[] {
+function upgradeReserveCells(content: ContentSet, house: HouseKey): readonly FootprintCell[] {
+  const { buildingType, tribe, record } = house;
   let byType = upgradeReserves.get(content);
   if (byType === undefined) {
     byType = new Map();
     upgradeReserves.set(content, byType);
   }
-  const key = `${buildingType}:${tribe}`;
+  const key = `${buildingType}:${tribe}:${record ?? ''}`;
   const held = byType.get(key);
   if (held !== undefined) return held;
-  const standing = buildingFootprintOf(content, buildingType, tribe)?.blocked ?? [];
+  const standing = houseFootprintOf(content, house)?.blocked ?? [];
   const cells: FootprintCell[] = [];
   if (standing.length > 0) {
     const seen = new Set(standing.map((c) => `${c.dx},${c.dy}`));
@@ -141,7 +144,7 @@ function upgradeReserveCells(
     const climbed = new Set([buildingType]);
     for (let next = buildings.get(buildingType)?.upgradeTarget; next !== undefined && !climbed.has(next); ) {
       climbed.add(next);
-      for (const c of buildingFootprintOf(content, next, tribe)?.blocked ?? []) {
+      for (const c of buildingFootprintOf(content, next, tribe, record)?.blocked ?? []) {
         const at = `${c.dx},${c.dy}`;
         if (seen.has(at)) continue;
         seen.add(at);
@@ -249,9 +252,9 @@ export function eachBlockerCell(
  * `Signpost` and `Vehicle` membership generations, the scripted landscape placement revision, the
  * `Building` VALUE generation, since the home tier upgrade swaps `buildingType` in place invisibly to
  * membership, and the vehicles' anchor revision, which moves when a vehicle enters a node rather than
- * on every facing, task or seat write. The tier swap keeps the OBSTACLE and BUILDING_ZONE cells
- * (`familyBody` and `reserved` are level-chain unions) but moves the UPGRADE_RESERVE ones, which follow
- * each level's own `blocked`. A wall's placement body changes only by a re-add, so its in-place claim
+ * on every facing, task or seat write. The tier swap moves the UPGRADE_RESERVE cells, which follow each
+ * level's own `blocked`, and a map-placed house record whose next tier has no such record moves its
+ * OBSTACLE and BUILDING_ZONE cells too. A wall's placement body changes only by a re-add, so its in-place claim
  * and build writes stay out. The `BioGroundRules` waiver changes which ground a well or hive accepts.
  *
  * Exactness rests on buildings and footprinted objects never MOVING once placed, so a stored entity's

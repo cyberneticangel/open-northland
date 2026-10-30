@@ -1,4 +1,3 @@
-import { BUILDING_KIND } from '@open-northland/data';
 import type { Entity, Simulation } from '@open-northland/sim';
 import { components, systems } from '@open-northland/sim';
 import { grassTerrain } from '../../catalog/buildings.js';
@@ -103,10 +102,11 @@ function build(sim: Simulation): void {
   sim.world.mut(reserve, components.Stance).mode = systems.MILITARY_MODE.IGNORE;
 }
 
-/** Keyed on the same id and kind as the sim's siege-priority policy, so the check moves with the rule. */
+/** The sim's own siege classes, so the check moves with the rule. */
 function isHighValue(sim: Simulation, e: Entity): boolean {
   const def = sim.content.buildings.find((b) => b.typeId === sim.world.get(e, Building).buildingType);
-  return def?.id === systems.HEADQUARTERS_BUILDING_ID || def?.kind === BUILDING_KIND.tower;
+  const combatClass = def === undefined ? 'other' : systems.combatClassOfType(def);
+  return combatClass === 'hq' || combatClass === 'tower';
 }
 
 /** Mean remaining HP fraction over `buildings`; 1 when the set is empty. */

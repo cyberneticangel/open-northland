@@ -4,19 +4,27 @@ import { isShipVehicle } from '../readviews/vehicles.js';
 import { vehicleLineCap } from './stock.js';
 
 // A laden cart drags: every map point it crosses, or every step of the carrier pulling it, takes longer
-// by a share that grows with how full its hold is. Owner's feature, a named addition: the original moves
-// a cart at the ground's period whatever it carries.
+// by a share that grows with how full its hold is. A unit lifted into or out of a cart takes a share of
+// the lifting clip by cart kind. Owner's feature, a named addition: the original moves a cart at the
+// ground's period whatever it carries. The two kinds trade off (approximation, tuned by hand): the
+// handcart lifts fast and drags hard, so it wins the short village haul where lifting is most of a trip;
+// the ox cart lifts slow and barely drags, so it wins the long haul between settlements. With a 20-tick
+// clip, full holds and 6- to 8-tick steps the two move the same goods per tick at about 20 to 30 nodes
+// one way.
 
 /** A cart: a land vehicle with a hold, so a handcart or an ox cart, and not the catapult or a ship. */
 export function isCartType(type: VehicleType): boolean {
   return !isShipVehicle(type) && type.stockSlots > 0;
 }
 
-/** The speed a full handcart loses, in percent: it moves at half its empty pace. */
-export const HANDCART_FULL_SPEED_LOSS_PERCENT = 50;
-/** The speed a full animal-drawn cart loses, in percent: less than the handcart's, so the ox earns its
- *  keep, yet never nothing. */
-export const DRAWN_CART_FULL_SPEED_LOSS_PERCENT = 25;
+/** The speed a full handcart loses, in percent: it moves at 40% of its empty pace. */
+export const HANDCART_FULL_SPEED_LOSS_PERCENT = 60;
+/** The speed a full animal-drawn cart loses, in percent: far less than the handcart's, yet never nothing. */
+export const DRAWN_CART_FULL_SPEED_LOSS_PERCENT = 15;
+/** A unit's lift into or out of a handcart, in percent of the lifting clip's length. */
+export const HANDCART_LIFT_PERCENT = 60;
+/** A unit's lift into or out of an animal-drawn cart, in percent of the lifting clip's length. */
+export const DRAWN_CART_LIFT_PERCENT = 130;
 const PERCENT = 100;
 
 /**
@@ -32,6 +40,13 @@ export function cartSpeedLossPercent(content: ContentSet, type: VehicleType, loa
     ? DRAWN_CART_FULL_SPEED_LOSS_PERCENT
     : HANDCART_FULL_SPEED_LOSS_PERCENT;
   return Math.floor((full * Math.min(load, cap)) / cap);
+}
+
+/** The ticks one unit's lift into or out of a cart of `type` takes, the lifting clip lasting `clipTicks`;
+ *  at least one tick. */
+export function cartLiftTicks(content: ContentSet, type: VehicleType, clipTicks: number): number {
+  const percent = isAnimalDrawnType(content, type) ? DRAWN_CART_LIFT_PERCENT : HANDCART_LIFT_PERCENT;
+  return Math.max(1, Math.round((clipTicks * percent) / PERCENT));
 }
 
 /** The ticks a speed loss of `percent` adds to a move of `ticks`, so the move's pace falls by that

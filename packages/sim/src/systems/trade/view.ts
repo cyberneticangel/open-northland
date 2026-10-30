@@ -7,12 +7,13 @@ import {
   TRADE_LIMIT_NONE,
   type TradeImportMark,
   tradeRouteOf,
+  Vehicle,
 } from '../../components/index.js';
 import type { Entity, World } from '../../ecs/world.js';
 import type { ContentContext } from '../context.js';
 import { isTraderJob } from '../readviews/jobs.js';
 import { activeAgreement, agreementsAt, type HouseAgreement } from './agreements.js';
-import { cartHoldOf, tradeCartOf } from './cart.js';
+import { traderHoldOf } from './hold.js';
 import { isSettlementAnchor } from './settlement.js';
 
 /** One agreement as a window lists it. */
@@ -52,9 +53,9 @@ export interface TraderView {
   /** The agreement's limits in units; `TRADE_LIMIT_NONE` sets none. */
   readonly giveKeep: number;
   readonly takeUpTo: number;
-  /** The cart the trader commands, or null while it is on foot. */
+  /** The hauling cart the trader pulls as its tool, or null while it goes on foot. */
   readonly cart: { readonly entity: Entity; readonly vehicleType: number } | null;
-  /** The goods aboard that cart, ascending by good; empty without one. */
+  /** The goods in its hold, the cart's or its hands, ascending by good. */
   readonly cargo: readonly { readonly good: number; readonly amount: number }[];
 }
 
@@ -90,10 +91,10 @@ export function tradeOffersOf(world: World, partner: number): TradeOffer[] {
 export function traderView(world: World, ctx: ContentContext, trader: Entity): TraderView | undefined {
   const settler = world.tryGet(trader, Settler);
   if (settler === undefined || !isTraderJob(ctx.content, settler.jobType)) return undefined;
-  const cart = tradeCartOf(world, ctx, trader);
-  const cartView = cart === null ? null : { entity: cart.vehicle, vehicleType: cart.type.typeId };
-  const cargo =
-    cart === null ? [] : cartHoldOf(world, ctx, cart).entries.map(([good, amount]) => ({ good, amount }));
+  const hold = traderHoldOf(world, ctx, trader);
+  const cartView =
+    hold.cart === null ? null : { entity: hold.cart, vehicleType: world.get(hold.cart, Vehicle).vehicleType };
+  const cargo = hold.entries.map(([good, amount]) => ({ good, amount }));
   const route = tradeRouteOf(world, trader);
   if (route === undefined) {
     return {

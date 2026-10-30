@@ -23,6 +23,7 @@ import {
   startQueuedOrders,
 } from '../orders/queued.js';
 import { loadIntoVehicle } from './boarding.js';
+import { unloadPeople } from './crew.js';
 import { dockVehicle } from './dock.js';
 import { moveVehicle } from './movement.js';
 import { attackWithVehicle } from './orders.js';
@@ -123,6 +124,9 @@ function startQueuedOrder(world: World, ctx: SystemContext, queued: QueuedVehicl
       return;
     case 'loadIntoVehicle':
       loadIntoVehicle(world, ctx, command);
+      return;
+    case 'unloadPeople':
+      unloadPeople(world, ctx, command);
       return;
     default:
       assertNever(command);

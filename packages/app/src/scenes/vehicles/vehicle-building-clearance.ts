@@ -93,7 +93,8 @@ export const vehicleBuildingClearanceScene: SceneDefinition = {
         const cells = [...sim.world.query(Building, Position)].flatMap((e) => {
           const building = sim.world.get(e, Building);
           const type = sim.content.buildings.find((b) => b.typeId === building.buildingType);
-          const fp = type === undefined ? undefined : buildingFootprintFor(type, building.tribe);
+          const fp =
+            type === undefined ? undefined : buildingFootprintFor(type, building.tribe, building.record);
           if (fp === undefined) return [];
           const pos = sim.world.get(e, Position);
           const at = nodeOfPosition(pos.x, pos.y);

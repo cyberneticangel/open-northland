@@ -1,6 +1,6 @@
 import type { UiCue } from '@open-northland/audio';
-import { type ContentSet, type EquipCategory, lastByTypeId } from '@open-northland/data';
-import type { ElevationField, OrderMarkerKind, TargetFlashTone } from '@open-northland/render';
+import type { ContentSet, EquipCategory } from '@open-northland/data';
+import type { OrderMarkerKind, TargetFlashTone } from '@open-northland/render';
 import {
   type Command,
   type Entity,
@@ -16,23 +16,29 @@ import {
   type WorldSnapshot,
 } from '@open-northland/sim';
 import {
-  canOpenChest,
-  chestKindOf,
   commandedVehicleOf,
   isBuilding,
   isSettler,
-  isVehicle,
-  num,
   positionOf,
   settlerJobType,
-  vehicleSeatsOf,
   workplaceOf,
 } from '../../../game/snapshot/index.js';
 import type { GoodIconPainter } from '../../../hud/dom/good-art.js';
-import { clampTile, nodeBounds, pickNearestAt, pickTopAt, type Tile, worldToTile } from '../../picking.js';
-import { tradeHousePick } from '../highlights/index.js';
+import { clampTile, nodeBounds, type Tile } from '../../picking.js';
 import { selectionEquipCommands } from '../panels/equip-picker.js';
 import { openSchoolDialog, type SchoolDialog } from '../panels/school-dialog.js';
+import { enemyAt, preyAt } from '../pick-targets.js';
+import type { RiderPlan } from '../right-click/riders.js';
+import {
+  type LadderContext,
+  PARTITION_RUNGS,
+  pastRouteRungs,
+  type RightClickAim,
+  routeRungs,
+  type SettlerGroup,
+  type SettlerIntent,
+  type SettlerPlan,
+} from '../right-click/settler-ladder.js';
 import type { TechnologyStatusRead } from '../types.js';
 import type { UnitTargetKind, UnitTargets } from '../unit-targets.js';
 import type { AnsweredOrders } from './answered.js';
@@ -72,7 +78,6 @@ export interface UnitOrderDeps {
   readonly content: ContentSet;
   readonly onOrderLimit?: (() => void) | undefined;
   readonly mapSize: { readonly width: number; readonly height: number };
-  readonly elevation?: ElevationField;
   readonly toWorld: (clientX: number, clientY: number) => { x: number; y: number };
   readonly enqueue: (command: PlayerCommand) => void;
   readonly selectOwnSettler: (id: number) => void;
@@ -86,6 +91,8 @@ export interface UnitOrderDeps {
   /** The sim's trade-stop rule, asked as the click lands; absent, a trader's right-click puts no house on
    *  its route. */
   readonly askAttachTradeHouse?: ((trader: number, house: number) => Promise<boolean>) | undefined;
+  /** Says why the sim kept `house` off a route; absent, the refusal is silent. */
+  readonly onTradeRefused?: ((house: number) => void) | undefined;
   /** Acknowledges a walk or march on the ground where it was aimed; absent, nothing is drawn. */
   readonly markOrder?: ((node: Tile, kind: OrderMarkerKind) => void) | undefined;
   /** Flashes an order's target once; absent, nothing is drawn. */
@@ -97,26 +104,18 @@ export interface UnitOrderDeps {
  * no target under the cursor, issues nothing, and the caller's click feedback follows that answer.
  */
 export interface UnitOrderController {
-  /** `onBuilding` is a building resolved from a marker rather than the world pixel under the cursor
-   *  (a garrison flag hangs far above the tower it stands for). True when the press selected a settler
-   *  or gave the selected settlers an order. With Shift, each settler's order waits behind its current
-   *  one; one whose order is a standing setting (a post, a home, a lesson, a gathered good or a trade
-   *  stop) walks to the spot instead. */
-  issueRightClick(event: MouseEvent, onBuilding?: number | null): boolean;
-  /** The trade-route toggle for the selected traders off the map (riding inside a cart, or inside a
-   *  house), which the settlers' click skips, and for the crew of a selected cart, whose window shows its
-   *  trader's route. True when any of them took the click; `onNoneTook` runs once the sim refused every
-   *  one asked about, so the cart can take the click instead. A trade stop is a standing setting, so a
-   *  Shift click leaves a cart's trader to the cart, which drives there queued; a trader inside a house
-   *  has nowhere to walk and still toggles the stop. */
-  issueRiderTradeHouse(
-    event: MouseEvent,
-    onBuilding: number | null | undefined,
-    onNoneTook: () => void,
-  ): boolean;
-  /** Move the selected gatherers' work flags to a world click; clicking a resource also narrows their
-   *  gathering filter to that resource's good. */
-  issueSetWorkFlagAt(event: MouseEvent): boolean;
+  /** Issues the settlers' part of a resolved right click (`resolveSettlerRightClick`) for the press
+   *  `event` it was resolved from. True when the press selected a settler or gave the selected settlers an order.
+   *  With Shift, each settler's order waits behind its current one; one whose order is a standing setting
+   *  (a post, a home, a lesson, a gathered good or a trade stop) walks to the spot instead. */
+  issueSettlerPlan(plan: SettlerPlan, event: MouseEvent): boolean;
+  /** Issues the riders' resolved trade-route toggle (`resolveRiderTrade`). True when any of them took the
+   *  click; `onNoneTook` runs once the sim refused every one asked about, so the cart can take the click
+   *  instead. */
+  issueRiderPlan(plan: RiderPlan, onNoneTook: () => void): boolean;
+  /** Move the selected gatherers' work flags to `target`; a resource's `goodType` there also narrows their
+   *  gathering filter to it. `units` narrows the order as in `issueSetWorkFlag`. */
+  issueWorkFlagAt(target: Tile, goodType: number | null, units?: readonly number[]): boolean;
   /** The ground orders name a half-cell node rather than a cursor, so the map overview can issue them
    *  for a spot the camera is nowhere near. Off-map nodes clamp into the map here. `units`, when given,
    *  narrows these orders to the selected settlers an armed order was issued for. A `queued` walk waits
@@ -155,29 +154,6 @@ export interface UnitOrderController {
 
 type WalkOrderKind = Extract<Command, { kind: 'moveUnit' | 'attackMoveUnit' }>['kind'];
 
-/** What a right-click lands on, read as it lands: an order decided later still aims there. */
-interface RightClickAim {
-  /** Any building under the cursor, a trader's route candidate. */
-  readonly house: number | null;
-  /** An own building under the cursor, the ladder's building rung. */
-  readonly building: number | null;
-  /** An own wall or road site under the cursor, which the selected builders take as their site. */
-  readonly site: number | null;
-  readonly tile: Tile;
-}
-
-/** Whether the snapshot settler's fixed `group` slot already holds `goodType`, worn or not. */
-function wearsGood(
-  components: Readonly<Record<string, unknown>>,
-  group: Exclude<EquipCategory, 'misc'>,
-  goodType: number,
-): boolean {
-  const equipment = components.Equipment as
-    | Partial<Record<Exclude<EquipCategory, 'misc'>, { readonly goodType?: unknown } | null>>
-    | undefined;
-  return equipment?.[group]?.goodType === goodType;
-}
-
 export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderController {
   const pending = deps.pendingGroundOrders ?? createPendingGroundOrders();
   if (deps.pendingGroundOrders === undefined) {
@@ -187,19 +163,9 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
   let disposed = false;
   let school: SchoolDialog | undefined;
   let uiScale = deps.uiscale ?? 1;
-  const goodsByType = lastByTypeId(deps.content.goods);
-  const vehiclesByType = lastByTypeId(deps.content.vehicles);
   const onOrderLimit = (): void => {
     deps.onOrderLimit?.();
     deps.cue?.('fail');
-  };
-
-  const standingTile = (ref: number): Tile | undefined => {
-    const entity = entityById(deps.snapshot(), ref);
-    const position = entity === undefined ? undefined : positionOf(entity);
-    if (position === undefined) return undefined;
-    const node = nodeOfPosition(position.x, position.y);
-    return { col: node.hx, row: node.hy };
   };
 
   const occupiedTiles = (exclude: ReadonlySet<number>): ((col: number, row: number) => boolean) => {
@@ -352,203 +318,160 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
     return school !== undefined;
   };
 
-  const issueRightClick = (event: MouseEvent, onBuilding?: number | null): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const own = pickTopAt(deps.targets.owned('settler'), world.x, world.y);
-    if (own !== null) {
-      deps.selectOwnSettler(own);
-      deps.openActions({ x: event.clientX, y: event.clientY });
-      return true;
+  const ladderContext = (): LadderContext => ({
+    snapshot: deps.snapshot(),
+    content: deps.content,
+    asks: {
+      tradeHouse: deps.askAttachTradeHouse !== undefined,
+      equip: deps.requestEquipPicks !== undefined,
+      formation: deps.requestFormationSlots !== undefined,
+    },
+  });
+
+  const issueSettlerPlan = (plan: SettlerPlan, event: MouseEvent): boolean => {
+    switch (plan.kind) {
+      case 'none':
+        return false;
+      case 'select':
+        deps.selectOwnSettler(plan.settler);
+        deps.openActions({ x: event.clientX, y: event.clientY });
+        return true;
+      case 'orderLimit':
+        onOrderLimit();
+        return false;
+      case 'orders':
+        return issueGroups(plan.groups, plan.aim, event, event.shiftKey);
     }
-    // A selected building, flag or signpost takes no orders: nobody to command, nothing to confirm.
-    const commanded = deps.targets.ownedSettlersIn(deps.selected());
-    if (commanded.length === 0) return false;
-    if (commanded.length > MAX_UNIT_ORDER_MEMBERS) {
-      onOrderLimit();
-      return false;
-    }
-    const chest = pickTopAt(deps.targets.chests(), world.x, world.y);
-    const animal = pickTopAt(deps.targets.claimableLivestock(), world.x, world.y);
-    const goods = deps.targets.goods();
-    const pile = pickTopAt(goods, world.x, world.y);
-    const pileGood = pile === null ? undefined : goods.find((target) => target.ref === pile)?.goodType;
-    const queued = event.shiftKey;
-    // The scouts go after a claimable animal; the rest take the ladder, which strikes an enemy's animal.
-    // An animal the scouts are claiming is struck by nobody: the others take their order under it.
-    const unclaiming = animal === null ? commanded : claimAnimal(commanded, animal, queued);
-    if (unclaiming.length === 0) return true;
-    const claimed = unclaiming.length < commanded.length ? animal : null;
-    const enemy = pickTopAt(deps.targets.enemies(), world.x, world.y);
-    if (enemy !== null && enemy !== claimed) return strike(unclaiming, enemy, queued);
-    const prey = pickTopAt(deps.targets.wildlife(), world.x, world.y);
-    const rest = prey === null || prey === claimed ? unclaiming : huntWithFighters(unclaiming, prey, queued);
-    if (rest.length === 0) return true;
-    // A chest nobody selected may open is walked to like any ground.
-    if (chest !== null && openChest(rest, chest, queued)) return true;
-    if (
-      pile !== null &&
-      pileGood !== undefined &&
-      systems.isFoodIn(deps.content, systems.edibleGoodFormOf(deps.content, pileGood))
-    ) {
-      const eating = enqueueArmyOrder(
-        {
-          kind: 'unitActionGroup',
-          members: rest.map((unit) => ({ entity: unit.ref as Entity })),
-          action: { kind: 'orderNeed', need: 'hunger', ...(queued ? { queued } : {}) },
-        },
-        deps.enqueue,
-        onOrderLimit,
-      );
-      if (eating) deps.flashTarget?.(pile, 'order');
-      return eating;
-    }
-    const aim: RightClickAim = {
-      house: onBuilding ?? pickTopAt(deps.targets.buildings(), world.x, world.y),
-      building: onBuilding ?? pickTopAt(deps.targets.owned('building'), world.x, world.y),
-      site: siteAt(world.x, world.y),
-      // A marker's building is walked to where it stands, not to the ground under its flag.
-      tile:
-        (onBuilding === null || onBuilding === undefined ? undefined : standingTile(onBuilding)) ??
-        worldToTile(world.x, world.y, deps.elevation),
-    };
-    if (
-      pile !== null &&
-      pileGood !== undefined &&
-      wearFromGround(rest, pile, pileGood, (unworn) => rightClickRest(event, unworn, aim, queued), queued)
-    ) {
-      return true;
-    }
-    // A gathered good is a standing setting, so a Shift click on a resource walks there.
-    const others = queued ? rest : gatherFromResource(rest, world.x, world.y);
-    if (others.length === 0) return true;
-    return rightClickRest(event, others, aim, queued);
   };
 
-  /** The fighters among `commanded` strike a wild animal; returns the rest for the usual ladder. Original
-   *  behavior: the right click offers every settler the attack-animal order; here only fighters take it. */
-  const huntWithFighters = (
-    commanded: readonly FormationUnit[],
-    prey: number,
-    queued: boolean,
-  ): readonly FormationUnit[] => {
-    const snapshot = deps.snapshot();
-    const fighters: FormationUnit[] = [];
-    const others: FormationUnit[] = [];
-    for (const unit of commanded) {
-      const self = entityById(snapshot, unit.ref);
-      const fighter = self !== undefined && systems.isFighterJob(deps.content, settlerJobType(self) ?? null);
-      (fighter ? fighters : others).push(unit);
-    }
-    // Fighters whose strike is refused take the click's normal order with the rest.
-    if (fighters.length === 0 || !strike(fighters, prey, queued)) return commanded;
-    return others;
-  };
-
-  /** A right click on a resource switches the gatherers among `commanded` that gather its good to it,
-   *  leaving their work flag where it stands (Ctrl moves the flag too); returns the rest. */
-  const gatherFromResource = (
-    commanded: readonly FormationUnit[],
-    wx: number,
-    wy: number,
-  ): readonly FormationUnit[] => {
-    const resources = deps.targets.resources();
-    const resource = pickNearestAt(resources, wx, wy);
-    const goodType =
-      resource === null ? undefined : resources.find((target) => target.ref === resource)?.goodType;
-    if (goodType === undefined) return commanded;
-    const snapshot = deps.snapshot();
-    const gathers = (unit: FormationUnit): boolean => {
-      const self = entityById(snapshot, unit.ref);
-      const job = self === undefined ? undefined : settlerJobType(self);
-      return (
-        job !== undefined &&
-        systems.jobChangesProduction(deps.content, job) &&
-        systems.jobGathersGood({ content: deps.content }, job, goodType)
-      );
-    };
-    const others: FormationUnit[] = [];
-    const commands: UnitSelectionCommand[] = [];
-    for (const unit of commanded) {
-      if (gathers(unit)) commands.push({ kind: 'setGatherGood', entity: unit.ref as Entity, goodType });
-      else others.push(unit);
-    }
-    enqueueUnitSelection(commands, deps.enqueue, onOrderLimit);
-    return others;
-  };
-
-  /** The ladder past the goods heap: a trader's route toggle, then the building, then the walk. A trader
-   *  the sim then refuses the house to takes the rest of the ladder once the answer lands. A route stop is
-   *  a standing setting, so a `queued` click skips the toggle. */
-  const rightClickRest = (
-    event: MouseEvent,
-    commanded: readonly FormationUnit[],
+  /** Issues the groups in ladder order. The press confirms on the orders past the partition rungs, or on
+   *  the partitions when they took everyone. */
+  const issueGroups = (
+    groups: readonly SettlerGroup[],
     aim: RightClickAim,
+    event: MouseEvent,
     queued: boolean,
   ): boolean => {
-    if (queued) return orderPastRoute(event, commanded, aim, true);
-    const routed = routeTradeHouse(commanded, aim.house, (refused) =>
-      orderPastRoute(event, refused, aim, false),
-    );
-    const others = routed.size === 0 ? commanded : commanded.filter((unit) => !routed.has(unit.ref));
-    if (others.length === 0) return true;
-    return orderPastRoute(event, others, aim, false) || routed.size > 0;
+    let terminal = false;
+    let took = false;
+    for (const group of groups) {
+      const issued = issueGroup(group, aim, event, queued);
+      if (PARTITION_RUNGS.has(group.intent.kind)) continue;
+      terminal = true;
+      took = issued || took;
+    }
+    return terminal ? took : groups.length > 0;
   };
 
-  const orderPastRoute = (
-    event: MouseEvent,
-    units: readonly FormationUnit[],
+  const issueGroup = (
+    group: SettlerGroup,
     aim: RightClickAim,
+    event: MouseEvent,
     queued: boolean,
   ): boolean => {
-    if (aim.building !== null) {
-      return queued
-        ? queueAtBuilding(units, aim.building, aim.tile)
-        : orderAtBuilding(event, units, aim.building);
+    const { units, intent } = group;
+    const sendFlashing = (commands: readonly UnitSelectionCommand[], target: number): boolean => {
+      const sent = enqueueUnitSelection(commands, deps.enqueue, onOrderLimit);
+      if (sent) deps.flashTarget?.(target, 'order');
+      return sent;
+    };
+    const queuedFlag = queued ? { queued } : {};
+    switch (intent.kind) {
+      case 'claimAnimal':
+        // The sim judges the animal when each order starts.
+        return sendFlashing(
+          units.map((unit) => ({
+            kind: 'claimAnimal',
+            entity: unit.ref as Entity,
+            animal: intent.animal as Entity,
+            ...queuedFlag,
+          })),
+          intent.animal,
+        );
+      case 'attack':
+        return strike(units, intent.enemy, queued);
+      case 'hunt':
+        return strike(units, intent.prey, queued);
+      case 'openChest':
+        // The sim re-checks each on arrival, so two senders race and the loser walks back into autonomy.
+        return sendFlashing(
+          units.map((unit) => ({
+            kind: 'openChest',
+            entity: unit.ref as Entity,
+            chest: intent.chest as Entity,
+            ...queuedFlag,
+          })),
+          intent.chest,
+        );
+      case 'eat': {
+        const eating = enqueueArmyOrder(
+          {
+            kind: 'unitActionGroup',
+            members: units.map((unit) => ({ entity: unit.ref as Entity })),
+            action: { kind: 'orderNeed', need: 'hunger', ...queuedFlag },
+          },
+          deps.enqueue,
+          onOrderLimit,
+        );
+        if (eating) deps.flashTarget?.(intent.pile, 'order');
+        return eating;
+      }
+      case 'equip':
+        return wearFromGround(units, intent, aim, event, queued);
+      case 'gather':
+        // The work flag stays where it stands (Ctrl moves the flag too).
+        return enqueueUnitSelection(
+          units.map((unit) => ({
+            kind: 'setGatherGood',
+            entity: unit.ref as Entity,
+            goodType: intent.goodType,
+          })),
+          deps.enqueue,
+          onOrderLimit,
+        );
+      case 'tradeHouse': {
+        const asking = new Set(intent.ask);
+        routeTradeHouse(
+          intent.house,
+          intent.detach,
+          units.filter((unit) => asking.has(unit.ref)),
+          (refused) => issueGroups(pastRouteRungs(ladderContext(), refused, aim, false), aim, event, false),
+        );
+        return true;
+      }
+      case 'walk':
+        return walkTo(intent.tile, units, queued);
+      case 'school':
+      case 'building':
+      case 'queueAtBuilding':
+      case 'site':
+        return issueBuildingIntent(intent, event, queued);
     }
-    if (aim.site !== null) return orderAtSite(units, aim.site, aim.tile, queued);
-    return walkTo(aim.tile, units, queued);
   };
 
   /** A `queued` walk leaves out the commanders of the vehicles the same press drives (`issueWalkOrder`). */
   const walkTo = (tile: Tile, units: readonly FormationUnit[], queued: boolean): boolean =>
     issueWalkOrder(tile, units, 'moveUnit', queued, queued ? new Set(deps.drivenVehicles?.()) : undefined);
 
-  const { siteAt, orderAtSite, queueAtBuilding, orderAtBuilding } = createBuildingOrders({
-    ...deps,
-    onOrderLimit,
-    walkTo,
-    openSchool,
-  });
+  const issueBuildingIntent = createBuildingOrders({ ...deps, onOrderLimit, walkTo, openSchool });
 
   /**
-   * Original behavior: a trader's right-click on a standing house puts it on the trade route, another
-   * tribe's house included, and takes it off when the route already names it. Which houses a route
-   * takes is the sim's rule, asked as the click lands. The traders that took the click are returned,
-   * those asked about included; the rest of the selection handles the click as usual, and the asked
-   * traders the sim refuses reach `onRefused` once the answer lands.
+   * The trade-route toggle: `detach` take the house off their route now; `asked` are put on it once the
+   * sim's trade-stop rule admits each, as the click lands, and those it refuses reach `onRefused`.
    */
   const routeTradeHouse = <U extends { readonly ref: number }>(
-    commanded: readonly U[],
-    house: number | null,
+    house: number,
+    detach: readonly number[],
+    asked: readonly U[],
     onRefused: (refused: readonly U[]) => void,
-  ): Set<number> => {
-    const routed = new Set<number>();
+  ): void => {
+    enqueueUnitSelection(
+      detach.map((ref) => ({ kind: 'detachTradeHouse', entity: ref as Entity, house: house as Entity })),
+      deps.enqueue,
+      onOrderLimit,
+    );
     const ask = deps.askAttachTradeHouse;
-    if (house === null) return routed;
-    const snapshot = deps.snapshot();
-    const asked: U[] = [];
-    const detached: UnitSelectionCommand[] = [];
-    for (const unit of commanded) {
-      const self = entityById(snapshot, unit.ref);
-      if (self === undefined || !systems.isTraderJob(deps.content, settlerJobType(self) ?? null)) continue;
-      if (tradeHousePick.onRoute(snapshot, house, unit.ref)) {
-        detached.push({ kind: 'detachTradeHouse', entity: unit.ref as Entity, house: house as Entity });
-      } else if (ask !== undefined) asked.push(unit);
-      else continue;
-      routed.add(unit.ref);
-    }
-    enqueueUnitSelection(detached, deps.enqueue, onOrderLimit);
-    if (ask === undefined || asked.length === 0) return routed;
+    if (ask === undefined || asked.length === 0) return;
     deps.answered.after(Promise.all(asked.map((unit) => ask(unit.ref, house))), (verdicts) => {
       const refused = asked.filter((_unit, index) => verdicts[index] !== true);
       const attached: UnitSelectionCommand[] = [];
@@ -557,131 +480,48 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
         attached.push({ kind: 'attachTradeHouse', entity: unit.ref as Entity, house: house as Entity });
       }
       enqueueUnitSelection(attached, deps.enqueue, onOrderLimit);
-      if (refused.length > 0) onRefused(refused);
+      if (refused.length > 0) {
+        deps.onTradeRefused?.(house);
+        onRefused(refused);
+      }
     });
-    return routed;
   };
 
-  /** A house click for the selected settlers off the map and the riders of a selected cart. A ship's
-   *  passengers are left out: the ship takes the click itself, as its window has no Trade tab. */
-  const issueRiderTradeHouse = (
-    event: MouseEvent,
-    onBuilding: number | null | undefined,
-    onNoneTook: () => void,
-  ): boolean => {
-    const queued = event.shiftKey;
-    const snapshot = deps.snapshot();
-    const traders: { readonly ref: number }[] = [];
-    for (const id of deps.selected()) {
-      const e = entityById(snapshot, id);
-      if (e === undefined) continue;
-      if (!isVehicle(e)) {
-        const riding = e.components.Rider !== undefined;
-        if (positionOf(e) === undefined && !(queued && riding)) traders.push({ ref: id });
-        continue;
-      }
-      if (queued) continue;
-      const v = e.components.Vehicle as { vehicleType?: unknown; passengers?: unknown };
-      const type = vehiclesByType.get(num(v.vehicleType) ?? -1);
-      if (type === undefined || systems.isShipVehicle(type)) continue;
-      for (const seat of vehicleSeatsOf(v.passengers)) traders.push({ ref: seat.entity });
-    }
-    const uniqueTraders = [...new Map(traders.map((unit) => [unit.ref, unit])).values()];
-    if (uniqueTraders.length === 0) return false;
-    if (uniqueTraders.length > MAX_UNIT_ORDER_MEMBERS) {
+  const issueRiderPlan = (plan: RiderPlan, onNoneTook: () => void): boolean => {
+    if (plan.kind === 'none') return false;
+    if (plan.kind === 'orderLimit') {
       onOrderLimit();
       return false;
     }
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const house = onBuilding ?? pickTopAt(deps.targets.buildings(), world.x, world.y);
-    const took = routeTradeHouse(uniqueTraders, house, (refused) => {
-      if (refused.length === took.size) onNoneTook();
-    });
-    return took.size > 0;
-  };
-
-  /** Send every commanded settler that may open the chest; true when anyone was sent. Filtered here as
-   *  the original's default click offers it only to a settler that may open it, and so a settler the
-   *  sim would refuse never lands in the replay log; the sim re-checks each on arrival, so two senders
-   *  race and the loser walks back into autonomy. A `queued` chest waits behind each one's current order. */
-  const openChest = (commanded: readonly FormationUnit[], chest: number, queued = false): boolean => {
-    const snapshot = deps.snapshot();
-    const target = entityById(snapshot, chest);
-    const kind = target === undefined ? undefined : chestKindOf(target);
-    if (kind === undefined) return false;
-    const commands: UnitSelectionCommand[] = [];
-    for (const unit of commanded) {
-      const self = entityById(snapshot, unit.ref);
-      if (self === undefined || !canOpenChest(self, kind, deps.content)) continue;
-      commands.push({
-        kind: 'openChest',
-        entity: unit.ref as Entity,
-        chest: chest as Entity,
-        ...(queued ? { queued } : {}),
-      });
-    }
-    const sent = enqueueUnitSelection(commands, deps.enqueue, onOrderLimit);
-    if (sent) deps.flashTarget?.(chest, 'order');
-    return sent;
-  };
-
-  /** Send every commanded scout after `animal`, queued behind its current order when `queued`, and flash
-   *  the animal; returns the units that are not scouts. The sim judges the animal when each order starts. */
-  const claimAnimal = (
-    commanded: readonly FormationUnit[],
-    animal: number,
-    queued = false,
-  ): readonly FormationUnit[] => {
-    const snapshot = deps.snapshot();
-    const others: FormationUnit[] = [];
-    const commands: UnitSelectionCommand[] = [];
-    for (const unit of commanded) {
-      const self = entityById(snapshot, unit.ref);
-      if (self === undefined || !systems.isScoutJob(deps.content, settlerJobType(self) ?? null)) {
-        others.push(unit);
-        continue;
-      }
-      commands.push({
-        kind: 'claimAnimal',
-        entity: unit.ref as Entity,
-        animal: animal as Entity,
-        ...(queued ? { queued } : {}),
-      });
-    }
-    if (enqueueUnitSelection(commands, deps.enqueue, onOrderLimit)) deps.flashTarget?.(animal, 'order');
-    return others;
+    const took = plan.detach.length + plan.ask.length;
+    routeTradeHouse(
+      plan.house,
+      plan.detach,
+      plan.ask.map((ref) => ({ ref })),
+      (refused) => {
+        if (refused.length === took) onNoneTook();
+      },
+    );
+    return true;
   };
 
   /**
-   * Send every commanded settler that may wear the clicked good to put it on; true when anyone was sent.
-   * The original's default click on a good lying on the ground (a landscape
-   * of a good's `landscapetype`): each selected human who can equip the good now and does
-   * not already wear that item type gets the equip order by good type, so the sim fetches its nearest
-   * reachable unit rather than this exact heap. A misc good (mead, potions, amulets) skips the worn
-   * check, as its slots stack. The gate is the sim's pick list, the same read the equip window shows.
-   * Unlike an order from the equip window or the ring, the settler does not walk back to where it stood.
-   * `queued` waits behind each settler's current order.
+   * The equip rung's order once the pick lists answered: each candidate the sim's pick list lets wear
+   * the good gets the equip order by good type, so the sim fetches its nearest reachable unit rather
+   * than this exact heap. Unlike an order from the equip window or the ring, the settler does not walk
+   * back to where it stood. With nobody able to wear it, the click goes on from the trade route down.
    */
   const wearFromGround = (
-    commanded: readonly FormationUnit[],
-    pile: number,
-    goodType: number,
-    onNoneWears: (commanded: readonly FormationUnit[]) => void,
-    queued = false,
+    units: readonly FormationUnit[],
+    intent: Extract<SettlerIntent, { kind: 'equip' }>,
+    aim: RightClickAim,
+    event: MouseEvent,
+    queued: boolean,
   ): boolean => {
     const request = deps.requestEquipPicks;
-    const group = goodsByType.get(goodType)?.equip?.category;
-    if (request === undefined || group === undefined) return false;
-    const snapshot = deps.snapshot();
-    const candidates = commanded
-      .map((unit) => unit.ref)
-      .filter((ref) => {
-        const self = entityById(snapshot, ref);
-        return self !== undefined && (group === 'misc' || !wearsGood(self.components, group, goodType));
-      });
-    if (candidates.length === 0) return false;
-    // The pick lists are asked as the click lands and answered in click order; with nobody able to wear
-    // it the click walks on.
+    if (request === undefined) return false;
+    const { candidates, goodType, group, pile } = intent;
+    // The pick lists are asked as the click lands and answered in click order.
     const lists = Promise.all(candidates.map((ref) => request(ref, group)));
     afterClickAnswer(pending, deps.answered, candidates, queued, lists, (answers, current) => {
       const wearers = candidates.filter(
@@ -694,8 +534,9 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
         { skipReturn: true, queued },
       );
       if (enqueueUnitSelection(commands, deps.enqueue, onOrderLimit)) deps.flashTarget?.(pile, 'order');
-      if (commands.length === 0)
-        onNoneWears(commanded.filter(({ ref }) => !candidates.includes(ref) || current(ref)));
+      if (commands.length > 0) return;
+      const unworn = units.filter(({ ref }) => !candidates.includes(ref) || current(ref));
+      issueGroups(routeRungs(ladderContext(), unworn, aim, queued), aim, event, queued);
     });
     return true;
   };
@@ -743,27 +584,12 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
     queued = false,
   ): boolean => {
     const world = deps.toWorld(event.clientX, event.clientY);
-    const accepts =
-      typeof kind === 'string'
-        ? (candidate: UnitTargetKind) => candidate === kind
-        : (candidate: UnitTargetKind) => kind.includes(candidate);
-    const enemy = pickTopAt(
-      deps.targets
-        .enemies({ neutralWalls: true })
-        .filter((p) =>
-          p.kind === 'settler' || p.kind === 'building' || p.kind === 'palisade' || p.kind === 'vehicle'
-            ? accepts(p.kind)
-            : false,
-        ),
-      world.x,
-      world.y,
-    );
+    const enemy = enemyAt(deps.targets, world, typeof kind === 'string' ? [kind] : kind, true);
     return enemy !== null && strike(commandedAmong(units), enemy, queued);
   };
 
   const issueAttackAnimal = (event: MouseEvent, units?: readonly number[], queued = false): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const prey = pickTopAt(deps.targets.wildlife(), world.x, world.y);
+    const prey = preyAt(deps.targets, deps.toWorld(event.clientX, event.clientY));
     return prey !== null && strike(commandedAmong(units), prey, queued);
   };
 
@@ -814,14 +640,8 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
   const issueSetWorkFlag = (target: Tile, units?: readonly number[], unassignFirst = false): boolean =>
     setWorkFlags(commandedAmong(units), target, undefined, unassignFirst);
 
-  const issueSetWorkFlagAt = (event: MouseEvent): boolean => {
-    const world = deps.toWorld(event.clientX, event.clientY);
-    const resources = deps.targets.resources();
-    const resource = pickNearestAt(resources, world.x, world.y);
-    const goodType =
-      resource === null ? undefined : resources.find((target) => target.ref === resource)?.goodType;
-    return setWorkFlags(commandedAmong(), worldToTile(world.x, world.y, deps.elevation), goodType);
-  };
+  const issueWorkFlagAt = (target: Tile, goodType: number | null, units?: readonly number[]): boolean =>
+    setWorkFlags(commandedAmong(units), target, goodType ?? undefined);
 
   return {
     refresh: () => school?.refresh(),
@@ -834,9 +654,9 @@ export function createUnitOrderController(deps: UnitOrderDeps): UnitOrderControl
       if (deps.pendingGroundOrders === undefined) pending.dispose();
       school?.dispose();
     },
-    issueRightClick,
-    issueRiderTradeHouse,
-    issueSetWorkFlagAt,
+    issueSettlerPlan,
+    issueRiderPlan,
+    issueWorkFlagAt,
     issueSetWorkFlag,
     issueMoveTo,
     issueAttackMove,

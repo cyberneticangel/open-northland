@@ -62,7 +62,7 @@ function holdLine(
 
 /** The Vehicle row of an own grown person of a vehicle trade, else null. `Rider` names the vehicle from
  *  the attach on, while the person still walks to its door, and `HaulingCart` the cart a posted carrier
- *  pulls or walks to take. */
+ *  or a trader pulls or walks to take. */
 export function vehicleRow(
   ctx: UnitPanelModelContext,
   snapshot: WorldSnapshot,

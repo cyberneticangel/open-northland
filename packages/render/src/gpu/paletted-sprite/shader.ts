@@ -32,7 +32,9 @@ const FRAGMENT = `#version 300 es
 // and the index maths (texel.r * 255) needs the extra mantissa to land on the exact palette index.
 precision highp float;
 in vec2 vUV;
-out vec4 finalColor;
+layout(location = 0) out vec4 finalColor;
+// The night's lit mask in red, as the world batch writes it (see world-batch/shader.ts).
+layout(location = 1) out vec4 nightLit;
 
 uniform sampler2D uTexture; // indexed atlas: red = palette index / 255, green = coverage, opaque
 uniform sampler2D uLut;     // 256 x N palette LUT: row = player colour, column = palette index
@@ -48,6 +50,7 @@ uniform vec2 uAtlasSize;    // the indexed atlas's size in px
 uniform vec4 uClothRanges;  // two inclusive palette-index ranges (loA, hiA, loB, hiB) that are cloth
 uniform vec4 uClothWave;    // .x phase (rad), .y displacement in native px (0 = still), .z shade depth
 uniform vec2 uClothFreq;    // the wave's radians per native px along x and y
+uniform vec2 uNight;        // .x: the lit mask's share, 0 unlit
 
 // GUI transparent key, a floating-HUD deviation with no original mechanism behind it (the original's GUI
 // drawing has no colour key; source basis "Left tool panel"). The in-game GUI palettes reserve palette index 0 as a
@@ -112,7 +115,7 @@ vec4 resolvedBilinear(vec2 uv) {
   return magnifyBilinear(uv * atlasSize);
 }
 
-void main(void) {
+void drawPaletted() {
   // GUI keying/silhouettes retain their exact existing path. Magnification modes resolve colours
   // before blending; a 2x2 footprint reduces minification sparkle without filtering indices or
   // allocating per-player RGBA atlases. Not a mipmap substitute at extreme zoom-out: sampling cost
@@ -173,6 +176,11 @@ void main(void) {
   // Modulate by the texel's authored coverage (premultiplied - Pixi's normal blend expects it), so the
   // graded indexed bake's feathered edges draw translucent instead of binary.
   finalColor = vec4(rgb, 1.0) * texel.g;
+}
+
+void main(void) {
+  drawPaletted();
+  nightLit = vec4(uNight.x * finalColor.a, 0.0, 0.0, finalColor.a);
 }`;
 
 /**
@@ -226,6 +234,8 @@ export interface PalettedUniforms {
     uClothWave: Float32Array;
     /** [radians per px along x, along y]. */
     uClothFreq: Float32Array;
+    /** [lit share, _] - the night's lit mask over the mesh. */
+    uNight: Float32Array;
   };
   /** Bump the group's dirty id so Pixi re-uploads the changed contents. */
   update(): void;
@@ -269,6 +279,7 @@ export function createPalettedShader(lut: TextureSource, colours: number): Shade
     },
     uClothWave: { value: new Float32Array([0, 0, 0, 0]), type: 'vec4<f32>' as const },
     uClothFreq: { value: new Float32Array([0, 0]), type: 'vec2<f32>' as const },
+    uNight: { value: new Float32Array([0, 0]), type: 'vec2<f32>' as const },
   };
   return Shader.from({
     gl: PALETTED_SPRITE_SOURCE,

@@ -24,6 +24,13 @@ export function readAtomicDuration(components: Readonly<Record<string, unknown>>
   return readNumFieldOrNull(components, 'CurrentAtomic', 'duration');
 }
 
+/** Whether the running atomic lifts a unit into or out of a hold (`haulLoad`, `haulUnload`, `tradeLoad`,
+ *  `tradeUnload`), whose length a cart's kind sets; a trader on foot's lift lasts its clip. */
+export function readsCartLift(components: Readonly<Record<string, unknown>>): boolean {
+  const kind = (components.CurrentAtomic as { effect?: { kind?: unknown } } | undefined)?.effect?.kind;
+  return kind === 'haulLoad' || kind === 'haulUnload' || kind === 'tradeLoad' || kind === 'tradeUnload';
+}
+
 /**
  * The entity a settler's current atomic acts on (`CurrentAtomic.targetEntity`), or `null` when it runs
  * no atomic or its atomic has no entity target. The id rather than the target's tile, because the

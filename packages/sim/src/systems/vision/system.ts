@@ -12,7 +12,6 @@ import {
   Position,
   recordContact,
   Settler,
-  SettlerProgress,
   UnderConstruction,
   Upgrading,
   Vehicle,
@@ -23,12 +22,10 @@ import type { Component, Entity, World } from '../../ecs/world.js';
 import { nodeOfPosition } from '../../nav/halfcell.js';
 import type { System } from '../context.js';
 import { isNonWorkingAge } from '../lifecycle/ageclass.js';
-import { SCOUT_EXPERIENCE_TYPE, scoutVisionBonusNodes } from '../progression/index.js';
 import {
   HEADQUARTERS_BUILDING_ID,
   isFighterJob,
   isHeroJob,
-  isHunterJob,
   isScoutJob,
   isShipVehicle,
   isSiegeVehicle,
@@ -52,18 +49,17 @@ export const VISION_CADENCE_TICKS = 5;
  * measured 68×38 pitch); the stamped area is the world-metric ellipse of that radius, so vision reads circular
  * on screen. Original behavior: adult 10, child 5, scout and hero 20, house 15, headquarters 30, cart 15,
  * small ship 20, big ship 25, catapult 20, in map-point hexagons. Ours are tuned by the project owner: the
- * child, hero, headquarters, cart, big ship and catapult radii are the original's, the adult trades see
- * further, and both ships see like the big one.
+ * headquarters, big ship and catapult radii are the original's, everyone else sees further, and both ships
+ * see like the big one.
  */
-export const CIVILIAN_VISION_NODES = 12;
-export const CHILD_VISION_NODES = 5;
-export const HUNTER_VISION_NODES = 14;
-export const SOLDIER_VISION_NODES = 16;
-export const HERO_VISION_NODES = 20;
-export const SCOUT_VISION_NODES = 26;
+export const CIVILIAN_VISION_NODES = 15;
+export const CHILD_VISION_NODES = 10;
+export const SOLDIER_VISION_NODES = 20;
+export const HERO_VISION_NODES = 25;
+export const SCOUT_VISION_NODES = 30;
 export const BUILDING_VISION_NODES = 20;
 export const HEADQUARTERS_VISION_NODES = 30;
-export const CART_VISION_NODES = 15;
+export const CART_VISION_NODES = 20;
 export const SIEGE_VISION_NODES = 20;
 export const SHIP_VISION_NODES = 25;
 
@@ -73,7 +69,6 @@ export function visionRadiusForJob(content: ContentSet, jobType: number | null):
   if (isScoutJob(content, jobType)) return SCOUT_VISION_NODES;
   if (isHeroJob(content, jobType)) return HERO_VISION_NODES;
   if (isFighterJob(content, jobType)) return SOLDIER_VISION_NODES;
-  if (isHunterJob(content, jobType)) return HUNTER_VISION_NODES;
   if (isNonWorkingAge(jobType)) return CHILD_VISION_NODES;
   return CIVILIAN_VISION_NODES;
 }
@@ -355,9 +350,7 @@ function visionRadiusOf(world: World, radii: EyeRadii, e: Entity): number | null
       base = visionRadiusForJob(content, jobType);
       radii.jobs.set(jobType, base);
     }
-    return base === SCOUT_VISION_NODES && isScoutJob(content, jobType)
-      ? base + scoutVisionBonusNodes(world.get(e, SettlerProgress).experience.get(SCOUT_EXPERIENCE_TYPE) ?? 0)
-      : base;
+    return base;
   }
   const building = world.tryGet(e, Building);
   if (building !== undefined) {

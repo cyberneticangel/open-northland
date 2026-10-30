@@ -17,6 +17,8 @@ export const plNetwork = {
   source: 'Źródło gry',
   server: 'Adres serwera',
   nick: 'Pseudonim',
+  flag: 'Flaga',
+  noFlag: 'Bez flagi',
   connect: 'Połącz',
   disconnect: 'Rozłącz',
   connecting: 'Łączenie…',

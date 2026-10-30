@@ -18,7 +18,7 @@ import type { ContentContext, MapContext, SystemContext } from '../context.js';
 import { closer, nearestCell } from '../spatial/metric.js';
 import { resourceOfGoodAtNode } from '../spatial/resources.js';
 import { buildingBlockedCells } from './building-blocked-cache.js';
-import { ANCHOR_ONLY, buildingFootprintOf } from './geometry.js';
+import { ANCHOR_ONLY, houseFootprintOf } from './geometry.js';
 import { resourceBlockedCells } from './resource-blocked-cache.js';
 import { footprintCellsOf } from './resource-footprint-cells.js';
 import { type RouteRegions, routeRegions } from './route-regions.js';
@@ -77,7 +77,7 @@ function resolveInteractionNode(world: World, ctx: MapContext, building: Entity)
   const ay = nodeHyOfPosition(p.x, p.y);
   resolvedX = ax;
   resolvedY = ay;
-  const door = buildingFootprintOf(ctx.content, b.buildingType, b.tribe)?.door;
+  const door = houseFootprintOf(ctx.content, b)?.door;
   if (door === undefined) return true;
   const x = ax + footprintCellDx(ay, door);
   const y = ay + door.dy;
@@ -119,10 +119,7 @@ export function constructionWorkCells(
 
   const ax = nodeHxOfPosition(position.x, position.y);
   const ay = nodeHyOfPosition(position.x, position.y);
-  const footprint =
-    building === undefined
-      ? undefined
-      : buildingFootprintOf(ctx.content, building.buildingType, building.tribe);
+  const footprint = building === undefined ? undefined : houseFootprintOf(ctx.content, building);
   const bodyOffsets =
     palisade !== undefined && palisade.walk.length > 0
       ? palisade.walk

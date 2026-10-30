@@ -40,7 +40,7 @@ export const chsNetworkRoom = {
   rejoin: '重新加入游戏',
   reconnecting: '连接已断开，正在重新连接…',
   settings: '房间设置',
-  creatorSettings: '只有房间创建者可以更改席位和设置。',
+  creatorSettings: '只有房间创建者可以更改设置和席位；你自己席位的颜色和民族由你选择。',
   savedSettings: '已保存的游戏保留其原有的规则和颜色。',
   progression: '职业发展',
   progressionDetail: '新职业和新产品所需的经验要求。',

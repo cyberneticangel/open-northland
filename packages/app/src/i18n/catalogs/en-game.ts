@@ -144,11 +144,11 @@ export const enGame = {
     choiceBasic: 'Basic',
     choiceMethods: 'Production method',
     schoolPlaces: 'Places: {occupied} / {capacity}',
+    schoolPlacesQueued: 'Places: {occupied} / {capacity} · Queue: {queued}',
     schoolUnavailable: 'These settlers cannot train at this school',
     schoolTitle: 'School',
     schoolProfessions: 'Professions',
     schoolClose: 'Close',
-    schoolFull: 'The school is full',
     schoolLearned: 'Already learned',
     technologyForbidden: 'Unavailable in this mission',
     technologyRequires: 'Required discoveries:',
@@ -162,8 +162,10 @@ export const enGame = {
       finished: 'Finished',
       mode: 'Gate mode',
       open: 'Open',
-      closed: 'Closed',
+      close: 'Close',
       automatic: 'Automatic',
+      automaticTip: 'The gate stands open and closes by itself when an enemy comes near.',
+      manualLocked: 'Turn off automatic mode to work the gate by hand.',
       passageOpen: 'Passage open',
       passageClosed: 'Passage closed',
       waiting: 'Waiting for the passage to clear.',
@@ -213,7 +215,10 @@ export const enGame = {
       noOffers: 'No trade offers',
       give: 'You give',
       take: 'You receive',
-      tradeBlocked: 'Trade requires your friendly attitude.',
+      tradeLockedTitle: 'Trade unavailable',
+      tradeNeedsBoth: 'A trader can be sent to their trading house only while both sides are friendly.',
+      tradeTheirsHint: 'A paid tribute or a mission event may change their attitude.',
+      tradeBefriend: 'Set friendly',
       traded: 'Goods traded: {count}',
       failed: 'The order could not be carried out. Try again.',
     },
@@ -230,6 +235,7 @@ export const enGame = {
     tradeOffers: 'Trade offers',
     systemMenuDetails: {
       leaveGame: 'Leave game',
+      restartMission: 'Restart mission',
       resume: 'Return to game',
       paused: 'Game paused',
       multiplayer: 'Multiplayer game continues',
@@ -388,11 +394,52 @@ export const enGame = {
     crashBraveHint:
       'You are playing in Brave: if the error comes back, turn Shields off for this site (the lion icon in the address bar) and reload the page.',
     fieldCounters: 'Sown {sown} · Growing {growing} · Ripe {ripe}',
-    /** The chest tooltip: `misc` 112/113 name the two kinds, `misclogic` 35 the order. */
+    /** The chest names: `misc` 112/113 name the two kinds. */
     chest: {
       wooden: 'Chest',
       magical: 'Magic Chest',
-      open: 'Open Chest',
+    },
+    /** The label beside the cursor naming what a right click there does, or why it is refused. */
+    actionHint: {
+      walk: 'Go',
+      drive: 'Drive',
+      sail: 'Sail',
+      moor: 'Moor',
+      moorAndLand: 'Moor and land',
+      attack: 'Attack',
+      attackMove: 'Attack on the way',
+      hunt: 'Hunt',
+      claim: 'Claim',
+      openChest: 'Open chest',
+      eat: 'Eat',
+      putOn: 'Put on',
+      gather: 'Gather',
+      addToRoute: 'Add to route',
+      removeFromRoute: 'Remove from route',
+      learn: 'Learn',
+      train: 'Train',
+      work: 'Work here',
+      workAs: 'Work here ({job})',
+      live: 'Live here',
+      build: 'Build',
+      repair: 'Repair',
+      board: 'Board',
+      loadAboard: 'Load aboard',
+      workArea: 'Work area',
+      placeSignpost: 'Place signpost',
+      bombard: 'Bombard',
+      tooManyUnits: 'Too many units',
+      noFreePlaces: 'No free places',
+      noRoom: 'No room',
+      cannotAddToRoute: 'Cannot add to route',
+      cannotWorkHere: 'They cannot work here',
+      cannotLiveHere: 'They cannot live here',
+      cannotBuildHere: 'They cannot build here',
+      cannotTrainHere: 'They cannot train here',
+      cannotBoard: 'They cannot board',
+      cannotLoadAboard: 'Cannot load aboard here',
+      cannotMoorHere: 'Cannot moor here',
+      cannotPlaceSignpost: 'No signpost here',
     },
     resources: 'Resources',
     statuses: {
@@ -410,6 +457,7 @@ export const enGame = {
       walking: 'Walking',
       awaitingWorkplace: 'Waiting for the workshop',
       awaitingTraining: 'Waiting for construction',
+      awaitingSeat: 'Waiting for a free place',
       standingTo: 'Standing to',
       lost: { he: 'Lost', she: 'Lost' },
       idle: 'Idle',
@@ -712,7 +760,7 @@ export const enGame = {
       centre: 'Centre the view on the vehicle',
       health: 'Durability {hitpoints} / {max}',
       carrierTooltip: 'Select the ship',
-      haulerTooltip: 'Select the carrier',
+      haulerTooltip: 'Select who pulls it',
       status: {
         aboard: 'On a ship',
         pulledBy: 'Pulled by {porter}',
@@ -749,9 +797,11 @@ export const enGame = {
         attackPosition: 'Attack position',
       },
       armedTooltip: '{order} · pick the target · Esc cancels',
+      dockTooltip: '{order} ({key}) · pick the shore · Ctrl/Cmd + click: dock and land the crew',
+      dockArmedTooltip: '{order} · pick the shore · Ctrl/Cmd + click: dock and land the crew · Esc cancels',
       refusals: {
         carried: 'The vehicle stands on a ship',
-        hauled: 'A carrier pulls this cart',
+        hauled: 'Someone pulls this cart as a tool',
         noCommander: {
           cart: 'The cart has no commander',
           ship: 'The ship has no commander',
@@ -856,6 +906,9 @@ export const enGame = {
       itemSipsTooltip: '{good} · {count} · sips: {sips}',
       military: 'Military',
       siegeStance: 'Catapults',
+      fleet: 'Ships',
+      unloadFleetTooltip: 'The crews of the moored ships ({count} of {total}) step ashore',
+      unloadFleetNone: 'No moored ship has a crew aboard',
       orderReach: '{order} · reaches {reach} of {count}',
       orderReachNone: '{order} · nobody in scope can do this',
       stanceCounts: 'Now: {counts}',
@@ -939,6 +992,7 @@ export const enGame = {
         cancelUpgradeShort: 'Cancel',
         alarmOn: 'Start defence mode',
         alarmOff: 'Stop defence mode',
+        alarmEverywhere: 'Whole town',
         workers: 'Workers',
         knowledge: 'Knowledge',
         demolish: 'Demolish',
@@ -953,6 +1007,8 @@ export const enGame = {
       knowledgeTooltip: 'Knowledge: {name}',
       alarmOnTooltip: 'Start defence mode: nearby civilians shelter here',
       alarmOffTooltip: 'Stop defence mode: the sheltered go back to work',
+      alarmOnEverywhereTooltip: 'Start defence mode in every defence building · {key}',
+      alarmOffEverywhereTooltip: 'Stop defence mode in every defence building · {key}',
       demolishTitle: 'Demolish building',
       demolishQuestion: 'Demolish “{name}”?',
       demolishKeep: 'Keep',
@@ -989,6 +1045,7 @@ export const enGame = {
       crew: 'Builders',
       sheltered: 'Sheltered',
       trainees: 'Training',
+      traineesQueued: 'Queue',
       seatCount: 'Filled / all seats',
       familyCount: 'Families / family places',
       person: '{name} · {job}',
@@ -1104,6 +1161,7 @@ export const enGame = {
       voicePause: 'Pause',
       voiceSeek: 'Seek narration',
       voiceUnavailable: 'Narration unavailable',
+      voiceRate: 'Narration speed: {rate}',
     },
     residentsWindow: {
       title: 'Subjects',
@@ -1227,11 +1285,6 @@ export const enGame = {
           few: '{count} without work',
           many: '{count} without work',
         },
-        noVehicleForWork: {
-          one: '{count} without a cart',
-          few: '{count} without a cart',
-          many: '{count} without a cart',
-        },
         cannotFindGood: {
           one: '{count} out of resources',
           few: '{count} out of resources',
@@ -1282,6 +1335,20 @@ export const enGame = {
         short: 'Not enough for everyone: the rest wait for more.',
         covered: 'Enough for everyone.',
       },
+      weapons: {
+        label: 'Weapon',
+        tip: 'A recruit takes the weapons by number: the first one in stock. He skips a crossed-out one.',
+      },
+      armor: {
+        label: 'Armour',
+        tip: 'A recruit takes the armour by number: the first one in stock. With none in stock he goes without.',
+      },
+      gearChip: {
+        chip: '{name} (choice {rank})',
+        chipOff: '{name} (not for this class)',
+        chipTip: 'Click to turn it off. Hold and move to change the order.',
+        chipOffTip: 'Click to turn it back on.',
+      },
       audience: {
         label: 'who receives it',
         civilians: 'Civilians',
@@ -1303,15 +1370,15 @@ export const enGame = {
         },
         trainSword: {
           label: 'Sword fighters',
-          tip: 'Arms soldiers without weapons first, then trains new ones. The best sword and armour in stock.',
+          tip: 'Arms soldiers without weapons first, then trains new ones. Weapon and armour in the order below.',
         },
         trainSpear: {
           label: 'Spearmen',
-          tip: 'Arms soldiers without weapons first, then trains new ones. The best spear and armour in stock.',
+          tip: 'Arms soldiers without weapons first, then trains new ones. Weapon and armour in the order below.',
         },
         trainBow: {
           label: 'Archers',
-          tip: 'Arms soldiers without weapons first, then trains new ones. The best bow and armour in stock.',
+          tip: 'Arms soldiers without weapons first, then trains new ones. Weapon and armour in the order below.',
         },
       },
       switches: {
@@ -1358,18 +1425,6 @@ export const enGame = {
           label: 'Wind Amulet',
           tip: 'Every man without one fetches one from the store. Its bearer walks faster.',
         },
-        allowShortSwords: {
-          label: 'Shortswords too',
-          tip: 'On: a recruit takes a shortsword when no longsword is in stock. Off: he waits for a long one.',
-        },
-        allowWoodenSpears: {
-          label: 'Wooden spears too',
-          tip: 'On: a recruit takes a wooden spear when no iron spear is in stock. Off: he waits for an iron one.',
-        },
-        allowShortBows: {
-          label: 'Short bows too',
-          tip: 'On: a recruit takes a short bow when no longbow is in stock. Off: he waits for a long one.',
-        },
         postGraduates: {
           label: 'School graduates assigned to workshops automatically',
           tip: 'A school graduate goes straight to the nearest free workplace in his profession.',
@@ -1399,7 +1454,7 @@ export const enGame = {
             few: '{count} in the barracks',
             many: '{count} in the barracks',
           },
-          tip: 'Recruits sent to the barracks: on their way or already training.',
+          tip: 'Recruits sent to the barracks: on their way, queued or already training.',
         },
         fetchingWeapon: {
           counted: {
@@ -1517,8 +1572,7 @@ export const enGame = {
     allowRegeneration: 'Allow Regeneration',
     prohibitRegeneration: 'Prohibit Regeneration',
   },
-  // Roles outside the profession picker, keyed by content job slug: the life stages (`jobtypes.ini` 1..6)
-  // and the jester (28), which maps can place but no player can train.
+  // Roles outside the profession picker, keyed by content job slug: the life stages (`jobtypes.ini` 1..6).
   roleNames: {
     baby_female: 'Baby (girl)',
     baby_male: 'Baby (boy)',
@@ -1526,7 +1580,6 @@ export const enGame = {
     child_male: 'Boy',
     woman: 'Woman',
     civilist: 'Civilian',
-    jester: 'Jester',
   },
   heroNames: {
     hero_unarmed: 'Unarmed Hero',
@@ -1696,7 +1749,6 @@ export const enGame = {
       nothingToDo: 'Nothing to do',
       constructionStarved: 'Site needs {good}',
       storageFull: 'Stores full: {good}',
-      noVehicleForWork: 'No cart',
       experienceUnlocks: 'New skills',
       experienceBuilding: 'New building',
       experienceBuildings: 'New buildings',
@@ -1718,6 +1770,7 @@ export const enGame = {
       peopleAttacked: 'Under attack',
       houseFinished: 'Built',
       explorationFinished: 'Land explored',
+      tradeRefused: 'No trade',
       settingsNeedRestart: 'Needs a restart',
       houseUpgraded: 'Upgraded',
       vehicleNoPath: 'No route',
@@ -1753,10 +1806,6 @@ export const enGame = {
         "{building}: construction has stopped for lack of {good}. No store within the site's signpost reach holds it. Make or bring some in, or link a store that holds it with signposts.",
       storageFull:
         'Your stores are full of {good}. {building} has nowhere to take its goods and cannot work. Build another store, or use up the stock.',
-      noVehicleForWork: {
-        he: '{name} has a trade route but no cart. Put him in a cart to start the route.',
-        she: '{name} has a trade route but no cart. Put her in a cart to start the route.',
-      },
       experienceUnlocks: { he: '{name} has gained experience.', she: '{name} has gained experience.' },
       canProduceNewGood: {
         he: '{name} learned at school to make a new good: {good}.',
@@ -1807,6 +1856,8 @@ export const enGame = {
         'Your people are under attack outside the settlement. Enemy: {enemy}. Hit: {hits}. Send soldiers or lead them to safety.',
       houseFinished: 'Construction finished: {building}.',
       explorationFinished: '{name} has explored all the land within reach and awaits orders.',
+      tradeRefused:
+        '{player}: your trader will not trade here. Trade needs both sides friendly; see Diplomacy.',
       settingsNeedRestart: 'A settings change takes effect after the map is restarted: {settings}.',
       houseUpgraded: 'Upgrade finished: {building}.',
       vehicleNoPath: '{vehicle} cannot find a way there. Pick another destination.',

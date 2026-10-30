@@ -46,6 +46,7 @@ function paletteIni(): string {
     );
     lines.push(`[GfxPalette16]\neditname "Player ${pad(c)}"\ngfxcolorrange "Human_Player${pad(c + 1)}" 1`);
   }
+  lines.push('[GfxPalette16]\neditname "Player 02a"\ngfxcolorrange "Human_Player03" 2');
   lines.push('[GfxPalette256]\neditname "human_colors"\ngfxfile "data\\colors.pcx"');
   lines.push('[GfxPalette16]\neditname "colors grey"\ngfxcolorrange "human_colors" 14');
   lines.push('[GfxPalette256]\neditname "test_human_00"\ngfxfile "data\\base.pcx"');
@@ -99,14 +100,14 @@ describe('buildHumanPalettes', () => {
     const names = lane.recipes.map((r) => r.name);
     expect(names.slice(0, 3)).toEqual(['golden weapons', 'player_00', 'woman_00']);
     expect(names).toContain('vik_woman_base');
-    expect(names.at(-1)).toBe('synthetic_woman_15');
+    expect(names.at(-1)).toBe(`synthetic_woman_${PLAYER_COLORS.length - 1}`);
     expect(lane.recipes.find((r) => r.name === 'vik_woman_base')?.patches).toEqual([
       copy(14, 15),
       copy(14, 1),
     ]);
   });
 
-  it('maps shipped colours to their recipes and synthesizes hue-rotated twins of colour 0', async () => {
+  it('maps shipped colours to their recipes and synthesizes toned twins of colour 0', async () => {
     const lane = await buildHumanPalettes(sources());
     expect(lane.players).toHaveLength(PLAYER_COLORS.length);
     expect(lane.players[3]).toEqual({ player: 3, male: 'player_03', female: 'woman_03' });
@@ -116,11 +117,10 @@ describe('buildHumanPalettes', () => {
       female: 'synthetic_woman_12',
     });
     const synthetic = lane.recipes.find((r) => r.name === 'synthetic_player_12');
-    const hue = PLAYER_COLORS[12]?.source.kind === 'synthetic' ? PLAYER_COLORS[12].source.hue : -1;
-    expect(synthetic?.patches).toEqual([ramp(10, `player 00 hue ${hue}`), copy(5, 10)]);
-    // Pure red rotated to the colour's hue keeps full saturation and value.
-    expect(lane.ramps[`player 00 hue ${hue}`]).toHaveLength(96);
-    expect(lane.ramps[`player 00 hue ${hue}`]).not.toBe(lane.ramps['player 00']);
+    const toned = `player 00 as ${PLAYER_COLORS[12]?.name}`;
+    expect(synthetic?.patches).toEqual([ramp(10, toned), copy(5, 10)]);
+    expect(lane.ramps[toned]).toHaveLength(96);
+    expect(lane.ramps[toned]).not.toBe(lane.ramps['player 00']);
   });
 
   it('resolves every referenced ramp and base palette to hex colours', async () => {
@@ -136,6 +136,25 @@ describe('buildHumanPalettes', () => {
     expect(lane.armorRecipes).toEqual([0, 1, 2, 3, 4].map((t) => `human_armor_00${t}`));
     expect(lane.cartRecipes).toEqual({ handcart: 'good_handcart', oxcart: 'good_oxcart' });
     expect(lane.jobChanges[0]).toEqual({ tribe: 1, job: 25, recipe: 'vik_man_changejob' });
+  });
+
+  it('points gold and coin at a copy of the gold recipe painting the gold ramp', async () => {
+    const goldRecipe = { name: 'good_gold', patches: [ramp(14, 'colors grey'), ramp(15, 'colors grey')] };
+    const goods = [
+      { typeId: 7, id: 'gold' },
+      { typeId: 8, id: 'coin' },
+    ];
+    const lane = await buildHumanPalettes(sources({ recipes: [...recipes(), goldRecipe], goods }));
+    expect(lane.goodRecipes).toEqual([
+      { good: 7, recipe: 'good_gold in player 02a' },
+      { good: 8, recipe: 'good_gold in player 02a' },
+    ]);
+    expect(lane.recipes.find((r) => r.name === 'good_gold in player 02a')?.patches).toEqual([
+      ramp(14, 'player 02a'),
+      ramp(15, 'player 02a'),
+    ]);
+    expect(lane.recipes).toContainEqual(goldRecipe);
+    expect(lane.ramps['player 02a']).toHaveLength(96);
   });
 
   it('keeps a job change record whose last name is absent or unknown, without a recipe', async () => {

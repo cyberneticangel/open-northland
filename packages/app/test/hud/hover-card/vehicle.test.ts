@@ -42,7 +42,7 @@ function ownVehicle(sim: Simulation, type: number): VehicleView {
 const panel = () => messages().hud.vehiclePanel;
 
 describe('vehicle hover card model', () => {
-  it('names the commander of a trader cart, by name and trade', () => {
+  it('names the commander of a crewed cart, by name and trade', () => {
     const { sim, ctx } = world(vehiclesScene);
     const cart = ownVehicle(sim, VEHICLE_HANDCART);
 
@@ -53,7 +53,7 @@ describe('vehicle hover card model', () => {
     expect(model?.health?.hover).toBe(`${cart.hitpoints}/${cart.maxHitpoints}`);
     const commander = model?.facts[0];
     expect(commander?.label).toBe(panel().roles.cart);
-    expect(commander?.value).toMatch(/ · Kupiec/);
+    expect(commander?.value).toMatch(/ · Tragarz/);
   });
 
   it('says a driverless cart has nobody, cannot move, and lists what it carries', () => {

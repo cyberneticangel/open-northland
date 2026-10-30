@@ -5,7 +5,7 @@ import type { PlannerContext } from '../../planner/context.js';
 import type { IdleStands } from '../../planner/idle-replan.js';
 import { nearestWorkplaceOutput } from '../../targets/index.js';
 import { unreachableGoalVeto } from '../../unreachable-goals.js';
-import { deliverableGoodProbe } from './delivery-targets.js';
+import { deliverableGoodProbe, homeBoundGoodProbe } from './delivery-targets.js';
 import { haulFlagArea, waitAtHaulFlag } from './haul-flag-area.js';
 import { porterPickupTarget } from './haul-targets.js';
 import { markPorterDormant, porterDormant, wakePorter } from './porter-dormancy.js';
@@ -46,8 +46,9 @@ export function planPorter(plan: PlannerContext, idle: IdleStands): boolean {
 /**
  * STORE-CARRIER HAUL - an employed carrier hauls a finished workplace output to a store, so producing
  * workshops do not clog. Nobody else ferries: transport is a job one is hired for, never a default pastime
- * (observed original behaviour), and a carrier hauls only through its assignment. `anyHaulable` is the
- * planner's per-tick dormancy gate: with nothing haulable anywhere the per-settler scan is provably null.
+ * (observed original behaviour), and a carrier hauls only through its assignment; a store's porter
+ * hauls only into its own store. `anyHaulable` is the planner's per-tick dormancy gate: with nothing
+ * haulable anywhere the per-settler scan is provably null.
  */
 export function planCarrierHaul(plan: PlannerContext, anyHaulable: boolean): boolean {
   const { world, ctx, entity: e, here, targets } = plan;
@@ -57,7 +58,7 @@ export function planCarrierHaul(plan: PlannerContext, anyHaulable: boolean): boo
   const haul = anyHaulable
     ? nearestWorkplaceOutput(
         targets.stockpileCells,
-        deliverableGoodProbe(plan),
+        isPorterBoundToStore(plan) ? homeBoundGoodProbe(plan) : deliverableGoodProbe(plan),
         world,
         ctx,
         here,

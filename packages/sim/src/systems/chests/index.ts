@@ -16,7 +16,7 @@ import { assertNever } from '../../core/brand.js';
 import { contentIndex } from '../../core/content-index.js';
 import { eventAt } from '../../core/events.js';
 import type { Entity, World } from '../../ecs/world.js';
-import { type HalfCellNode, positionOfNode } from '../../nav/halfcell.js';
+import { type HalfCellNode, positionOfNode, stepHex } from '../../nav/halfcell.js';
 import type { SystemContext } from '../context.js';
 import { scatterSpilledStock } from '../economy/goods-spill.js';
 import { stampResourceFootprintData, unstampResourceFootprint } from '../footprint/index.js';
@@ -72,7 +72,7 @@ export function jobCanOpenChest(content: ContentSet, jobType: number | null, kin
 
 /**
  * Hand a chest's contents out to `opener`'s player and leave its inert open visual behind. Goods heap on
- * the ground around the chest's cell, a paper enters the player's list (raising `paperFound`), settlers
+ * the ground beside the chest, never on it, a paper enters the player's list (raising `paperFound`), settlers
  * stand up for the opener's player and home nation, animals spawn as a herd there, and a vehicle
  * stands on the chest's node for the opener's player and tribe. A chest already open whiffs.
  */
@@ -86,6 +86,16 @@ export function openChest(world: World, ctx: SystemContext, opener: Entity, ches
   const p = world.get(chest, Position);
   const at = eventAt(p.x, p.y);
   const reward = resolveChestReward(ctx.content, kind, contents);
+  // Goods land while the chest still blocks its cells, so no heap covers the open chest.
+  if (reward.kind === 'goods') {
+    const start = stepHex(at, reward.spillFrom);
+    const from = positionOfNode(start.hx, start.hy);
+    scatterSpilledStock(world, ctx, {
+      x: from.x,
+      y: from.y,
+      goods: [{ goodType: reward.goodType, amount: reward.amount }],
+    });
+  }
 
   unstampResourceFootprint(world, chest);
   const openRecord = openedChestRecord(ctx.content, kind, closed.gfxIndex);
@@ -101,11 +111,6 @@ export function openChest(world: World, ctx: SystemContext, opener: Entity, ches
 
   switch (reward.kind) {
     case 'goods':
-      scatterSpilledStock(world, ctx, {
-        x: p.x,
-        y: p.y,
-        goods: [{ goodType: reward.goodType, amount: reward.amount }],
-      });
       return;
     case 'paper':
       grantPaper(world, ctx, player, reward.paper, chest, at);

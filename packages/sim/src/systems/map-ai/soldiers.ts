@@ -24,7 +24,7 @@ import { type HalfCellNode, hexDistanceBetween, nodeOfPosition } from '../../nav
 import type { TerrainGraph } from '../../nav/terrain/index.js';
 import { ownedSettlers } from '../ai-shared/seat-roster.js';
 import type { SystemContext } from '../context.js';
-import { buildingFootprintOf, translatedCells } from '../footprint/geometry.js';
+import { houseFootprintOf, translatedCells } from '../footprint/geometry.js';
 import { isTravelling } from '../movement/nav-state.js';
 import { isFighterJob, isHeroJob, isMilitaryMode, MILITARY_MODE } from '../readviews/index.js';
 import type { TaskGroup } from './tasks.js';
@@ -432,8 +432,7 @@ function enemyHouseAt(
   for (const e of world.query(Building, Owner, Position)) {
     if (diplomacyStance(world, seat, world.get(e, Owner).player) !== 'enemy') continue;
     const at = pointOf(world, e);
-    const { buildingType, tribe } = world.get(e, Building);
-    const cells = buildingFootprintOf(ctx.content, buildingType, tribe)?.blocked ?? [];
+    const cells = houseFootprintOf(ctx.content, world.get(e, Building))?.blocked ?? [];
     const body = translatedCells(terrain, cells, at.hx, at.hy);
     if (body.includes(target) || (at.hx === group.hx && at.hy === group.hy)) {
       if (best === null || e < best) best = e;

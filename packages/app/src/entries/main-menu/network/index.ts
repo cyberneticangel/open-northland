@@ -8,7 +8,7 @@ import { type ConnectionEvent, NetworkConnection } from '../../../net/connection
 import { type RelayMapRequest, relayMapRequest } from '../../../net/map-request.js';
 import { relayCloseText, relayFailureText, relayReasonText } from '../../../net/relay-reason.js';
 import { nextPaint } from '../../../view/next-paint.js';
-import { relayIdentity } from '../../relay/identity.js';
+import { relayIdentity, rememberFlag } from '../../relay/identity.js';
 import { node } from '../dom.js';
 import { type MapSelectItem, mapSourceItem } from '../map-select/model.js';
 import type { MenuScreen } from '../model.js';
@@ -57,6 +57,7 @@ export function networkScreen(
     accountName,
     address,
     nick,
+    flag,
     advanced,
     connect,
     disconnect,
@@ -188,6 +189,7 @@ export function networkScreen(
     accountName.textContent = formatMessage(copy.connected, { nick: connection?.client.nick ?? nick.value });
     lockServer(connection !== null);
     nick.disabled = connection !== null;
+    flag.setDisabled(connection !== null);
     connect.disabled = connection !== null;
     connect.textContent = connection === null ? copy.connect : copy.connecting;
     if (!connected && connection !== null) form.append(disconnect);
@@ -391,6 +393,7 @@ export function networkScreen(
     }
     try {
       rememberAddress();
+      rememberFlag(flag.value());
       connection = services.connect(url, nick.value.trim());
       mapRequest = relayMapRequest(connection.client);
       assets = services.assets(

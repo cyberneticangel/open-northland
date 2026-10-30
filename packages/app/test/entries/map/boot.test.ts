@@ -47,7 +47,7 @@ const SESSION: GameSession = {
   rules: { fog: null, progression: null, needs: null, weather: null, alliedVision: null },
   speed: 1,
 };
-const STAGED = { header: { tick: 40, mapId: null, view: null } };
+const STAGED = { header: { tick: 40, mapId: null, view: null }, presentation: null };
 
 /** A promise with its settle handles, for ordering the worker against the art load. */
 function deferred<T>() {

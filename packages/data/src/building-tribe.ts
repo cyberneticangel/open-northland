@@ -10,15 +10,32 @@ interface TribeVariants<F> {
     readonly footprint?: F | undefined;
     readonly hitpoints?: number | undefined;
   }[];
+  readonly recordFootprints?:
+    | readonly { readonly tribe: number; readonly editName: string; readonly footprint: F }[]
+    | undefined;
 }
 
-/** `tribe`'s own footprint for `type`, else the lowest tribe's; an undefined tribe reads the lowest. */
+/** `tribe`'s own footprint for `type`, else the lowest tribe's; an undefined tribe reads the lowest. A
+ *  `record` names the house record a map placed, whose own footprint wins where it has one. */
 export function buildingFootprintFor<F = BuildingFootprint>(
   type: TribeVariants<F>,
   tribe: number | undefined,
+  record?: string,
 ): F | undefined {
   if (tribe === undefined) return type.footprint;
+  if (record !== undefined) {
+    const records = type.recordFootprints ?? [];
+    for (let i = 0; i < records.length; i++) {
+      const entry = records[i];
+      if (entry?.tribe === tribe && entry.editName === record) return entry.footprint;
+    }
+  }
   return variantOf(type, tribe)?.footprint ?? type.footprint;
+}
+
+/** Whether `record` stands `type` on a footprint of its own for `tribe`. */
+export function hasRecordFootprint(type: TribeVariants<unknown>, tribe: number, record: string): boolean {
+  return (type.recordFootprints ?? []).some((entry) => entry.tribe === tribe && entry.editName === record);
 }
 
 /** `tribe`'s own max hitpoints for `type`, else the lowest tribe's; an undefined tribe reads the lowest. */
@@ -30,14 +47,21 @@ export function buildingHitpointsFor(
   return variantOf(type, tribe)?.hitpoints ?? type.hitpoints;
 }
 
-/** Whether `type` stands on the same footprint cells for tribes `a` and `b`. Each tribe's variant carries
- *  its own footprint object, so the cells are compared, in any order. */
+/** Whether `type` stands on the same footprint cells for tribe `a`, as house `record` where one is named,
+ *  and for tribe `b`. Each variant carries its own footprint object, so the cells are compared, in any
+ *  order. */
 export function sameBuildingFootprintCells(
   type: TribeVariants<BuildingFootprint>,
   a: number,
   b: number,
+  record?: string,
 ): boolean {
-  return footprintKey(buildingFootprintFor(type, a)) === footprintKey(buildingFootprintFor(type, b));
+  return footprintKey(buildingFootprintFor(type, a, record)) === footprintKey(buildingFootprintFor(type, b));
+}
+
+/** Whether two footprints hold the same cells and door, in any order. */
+export function sameFootprintCells(a: BuildingFootprint, b: BuildingFootprint): boolean {
+  return footprintKey(a) === footprintKey(b);
 }
 
 function footprintKey(footprint: BuildingFootprint | undefined): string {

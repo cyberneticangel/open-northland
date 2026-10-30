@@ -2,9 +2,11 @@ import {
   type ClientLoad,
   DESCRIPTOR_WORLD,
   type LobbyCompatibility,
+  type PlayerFlag,
   type RelayReason,
   type ServerMessage,
   type WaitReason,
+  withFlag,
 } from '@open-northland/net-protocol';
 import { msFields } from './relay-log.js';
 
@@ -12,6 +14,8 @@ export interface Member {
   readonly token: string;
   /** Unique within the room; a duplicate gets a numeric suffix. */
   readonly nick: string;
+  /** The flag the member said `hello` with when it joined; none when absent. */
+  readonly flag?: PlayerFlag;
   connected: boolean;
   /** When the current connection was made, then the order of joining; the earliest wins a digest tie. */
   connectedSince: number;
@@ -127,10 +131,17 @@ export interface MeasuredLink {
   readonly measured?: boolean;
 }
 
-export function createMember(token: string, nick: string, now: number, link: MeasuredLink): Member {
+export function createMember(
+  token: string,
+  nick: string,
+  now: number,
+  link: MeasuredLink,
+  flag?: PlayerFlag,
+): Member {
   return {
     token,
     nick,
+    ...withFlag(flag),
     connected: true,
     connectedSince: now,
     joinOrder: 0,

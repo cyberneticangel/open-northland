@@ -378,6 +378,16 @@ export const enContent = {
       summary:
         "A merchant with a handcart plies between two of your warehouses with different stocks and no good marked, so nothing moves. Select the merchant and, in its Trade section, choose a good's direction (→ A, ⇄, → B), its ceiling and the reserve left behind.",
     },
+    'trade-bread': {
+      title: 'Bread on a trade route',
+      summary:
+        "A merchant with a handcart carries bread from a bakery to a home. The home keeps no bread, only food, so the cart carries the loaves as food. Select the merchant and open the trade window: the bakery's bread arrow into the home is open.",
+    },
+    'trade-on-foot': {
+      title: 'Merchant on foot and with a cart',
+      summary:
+        'Two merchants carry wood between your own warehouses: the upper one on foot, one unit in hand a trip, the lower one with a handcart it pulls as a tool and sets down by each warehouse door while it loads and unloads.',
+    },
     tribute: {
       title: 'Tributes',
       summary:
@@ -417,6 +427,11 @@ export const enContent = {
       title: 'A long voyage',
       summary:
         'A crewed ship at the north end of a long channel is ordered to dock at the shore at its south end, twice as far as the old vehicle range. It rounds an island that blocks the straight way, sails the whole channel and moors at the chosen shore.',
+    },
+    'vehicle-dock-fleet': {
+      title: 'A fleet off a ragged coast',
+      summary:
+        'Five crewed ships lie at sea off a coast with a bay and a cape. Select one or several and right-click by the shore, press Z, or use the Dock button of the ship or group panel: a rounded glow shows the shore they can moor at, mooring posts with their lines under the cursor show where each ship will land, and the fleet spreads along the shore with open water between the hulls. With Ctrl/Cmd (a click after Z, or a right-click by the shore) the crews step ashore once moored, and the Unload all button of a group of ships lands the crews of the moored ones.',
     },
     'ship-wakes': {
       title: 'Ship wakes',
@@ -487,6 +502,11 @@ export const enContent = {
       title: 'Learning at a foundation',
       summary:
         'A civilian is sent to a barracks foundation and an extractor to a school foundation before the builders finish them. Both wait beside the door, walk in once their house stands, and come out a soldier and a carpenter. Select the spare civilian and right-click a foundation to send it yourself.',
+    },
+    'school-queue': {
+      title: 'Queue at a full school',
+      summary:
+        'Seven extractors are sent to learn carpentry at once. The school seats five: they go in, the other two wait in the yard and start as soon as the first ones finish.',
     },
     'school-graduates': {
       title: 'Graduates go to work',
@@ -868,10 +888,20 @@ export const enContent = {
       summary:
         'The AI siege march with a tough blue band standing across the route. The catapults shell it as the wave closes in, and once the band is near enough the whole wave charges it before marching on to the defence tower.',
     },
+    'home-roofs': {
+      title: 'Home roofs',
+      summary:
+        "Every viking home level twice. Levels 4 and 5 have tiled roofs in two colours, brown and blue-grey, like the workshops'; levels 1 to 3 keep one look.",
+    },
     'tower-finials': {
       title: 'Tower finials',
       summary:
         'A frankish and a saracen defence tower, each twice: the left one manned by an archer, the right one bare. The bare towers keep their own roof finial, the frank pennant and the saracen crescent; on the manned ones the garrison flag takes its place instead of flying over it.',
+    },
+    'defence-wall': {
+      title: 'Defence walls before a tower',
+      summary:
+        'The player stands two defence walls between a manned tower and the enemy, with a gap in the middle. The walls are nearer the enemy than the tower, but the enemy party in the Attack stance does not stop at them: a defence wall, like a palisade, is never a target picked on sight. The party walks through the gap and batters the tower that shoots at it, and both walls stay untouched.',
     },
     'tower-garrison': {
       title: 'Tower garrison',

@@ -1,24 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   cultureOfStem,
+  cultureOfTribe,
   culturePools,
   MUSIC_VARIANTS,
-  mapMusicFor,
+  mapVariantsFor,
   parseMusicManifest,
 } from '../../../src/index.js';
 import { manifestDocument, musicTrack } from '../../support/music-manifest.js';
 
 /**
- * The rotation pools: every rendered stem lands in its culture's calm or tense pool, each distinct
- * audio once, and Underworld borrows from the Norse. The fixture is the full segment table, with the
+ * The nation pools: every rendered stem lands in its culture's calm or tense pool, each distinct
+ * audio once. The fixture is the full segment table, with the
  * twelve add-on stems that ship the same segment bytes as a base mission.
  */
 
-const MISSION_FRANKEN1 = 11;
 const MISSION_MIDGARD1 = 20;
-const MISSION_ADDON_FRANKEN2 = 34;
-const MISSION_ADDON_UNDERWORLD = 37;
-const ATTACK_BYZANZ = 8;
 const JINGLE_BIRTH = 23;
 
 /** Add-on stem to the base stem whose segment bytes it repeats. */
@@ -32,9 +29,6 @@ const SAME_AUDIO: Readonly<Record<string, string>> = Object.fromEntries(
     ['standard', 'wealthy', 'danger'].map((mood) => [`mission_${addon}_${mood}`, `mission_${base}_${mood}`]),
   ),
 );
-
-/** The two softest Norse calm stems, as rendered. */
-const QUIET_NORSE = { mission_addon_nordland_standard: -28.7, mission_addon_asgard_standard: -27 };
 
 function everyStem(): string[] {
   const stems = new Set<string>();
@@ -50,11 +44,7 @@ const MANIFEST = parseMusicManifest(
     Object.fromEntries(
       everyStem().map((stem) => {
         const sameAudioAs = SAME_AUDIO[stem];
-        const loudnessLufs = QUIET_NORSE[stem as keyof typeof QUIET_NORSE] ?? -20;
-        return [
-          stem,
-          musicTrack(stem, { loudnessLufs, ...(sameAudioAs === undefined ? {} : { sameAudioAs }) }),
-        ];
+        return [stem, musicTrack(stem, { ...(sameAudioAs === undefined ? {} : { sameAudioAs }) })];
       }),
     ),
   ),
@@ -70,7 +60,7 @@ describe('music culture', () => {
     expect(cultureOfStem('theme_franken_hostile')).toBe('frank');
     expect(cultureOfStem('attack_byzanz')).toBe('byzantine');
     expect(cultureOfStem('mission_addon_arabs2_wealthy')).toBe('arab');
-    expect(cultureOfStem('mission_addon_underworld_standard')).toBe('underworld');
+    expect(cultureOfStem('mission_addon_underworld_standard')).toBeNull();
     expect(cultureOfStem('jingles_birth')).toBeNull();
   });
 });
@@ -88,46 +78,25 @@ describe('culture pools', () => {
     expect(POOLS.get('norse')?.tense).not.toContain('mission_midgard1_standard');
   });
 
-  it('lends Underworld the two quietest Norse calm stems and the Norse tense pool', () => {
-    expect(POOLS.get('underworld')).toEqual({
-      calm: [
-        'mission_addon_underworld_standard',
-        'mission_addon_nordland_standard',
-        'mission_addon_asgard_standard',
-      ],
-      tense: POOLS.get('norse')?.tense,
-    });
-  });
-
   it('leaves out a stem the pipeline did not render', () => {
     const { mission_viking1_danger: _missing, ...rest } = MANIFEST.tracks;
     expect(culturePools({ tracks: rest }).get('norse')?.tense).not.toContain('mission_viking1_danger');
   });
 });
 
-describe('map music', () => {
-  it('gives a map code its culture, the culture pools and its own stems', () => {
-    const music = mapMusicFor(MISSION_MIDGARD1, MANIFEST);
-    expect(music?.culture).toBe('norse');
-    expect(music?.pools).toEqual(POOLS.get('norse'));
-    expect(music?.variants).toEqual(MUSIC_VARIANTS[MISSION_MIDGARD1]);
+describe('nation and map lookups', () => {
+  it('maps each nation to its culture and leaves the beasts out', () => {
+    expect(cultureOfTribe('viking')).toBe('norse');
+    expect(cultureOfTribe('saracen')).toBe('arab');
+    expect(cultureOfTribe('egypt')).toBe('arab');
+    expect(cultureOfTribe('wolves')).toBeNull();
   });
 
-  it('shares one pool between an add-on code and the base code it repeats', () => {
-    expect(mapMusicFor(MISSION_ADDON_FRANKEN2, MANIFEST)?.pools).toEqual(
-      mapMusicFor(MISSION_FRANKEN1, MANIFEST)?.pools,
-    );
-  });
-
-  it('reads an attack code by its culture', () => {
-    expect(mapMusicFor(ATTACK_BYZANZ, MANIFEST)?.culture).toBe('byzantine');
-    expect(mapMusicFor(MISSION_ADDON_UNDERWORLD, MANIFEST)?.culture).toBe('underworld');
-  });
-
-  it('has no music for a jingle code, an unknown code, no code or no manifest', () => {
-    expect(mapMusicFor(JINGLE_BIRTH, MANIFEST)).toBeNull();
-    expect(mapMusicFor(999, MANIFEST)).toBeNull();
-    expect(mapMusicFor(undefined, MANIFEST)).toBeNull();
-    expect(mapMusicFor(MISSION_MIDGARD1, null)).toBeNull();
+  it('gives a map code its own stems, and none for a jingle, an unknown or a missing code', () => {
+    expect(mapVariantsFor(MISSION_MIDGARD1, MANIFEST)).toEqual(MUSIC_VARIANTS[MISSION_MIDGARD1]);
+    expect(mapVariantsFor(JINGLE_BIRTH, MANIFEST)).toBeNull();
+    expect(mapVariantsFor(999, MANIFEST)).toBeNull();
+    expect(mapVariantsFor(null, MANIFEST)).toBeNull();
+    expect(mapVariantsFor(MISSION_MIDGARD1, { tracks: {} })).toBeNull();
   });
 });

@@ -83,17 +83,24 @@ export function transferOf(trade: TradePanelModel, goodType: number): TradeTrans
   return trade.transfers.find((transfer) => transfer.goodType === goodType);
 }
 
-/** The good as the route moves it now; null on a route that is not two own stops. */
+/** The good as the route moves it now; null on a route that is not two own stops. A house takes it in
+ *  while it stores the form the cart carries: a home stores no bread, yet takes the bakery's bread as
+ *  the food it travels as. */
 export function tradeGood(trade: TradePanelModel, goodType: number): TradeGood | null {
   if (trade.stock === null) return null;
   const transfer = transferOf(trade, goodType);
+  const carried =
+    stockAt(trade, TRADE_SLOT_A, goodType)?.carriedAs ??
+    stockAt(trade, TRADE_SLOT_B, goodType)?.carriedAs ??
+    transfer?.carriedAs ??
+    goodType;
   return {
     goodType,
     flow: transfer?.direction ?? 'none',
     upTo: transfer?.upTo ?? TRADE_LIMIT_NONE,
     keep: transfer?.keep ?? TRADE_LIMIT_NONE,
-    storedA: stockAt(trade, TRADE_SLOT_A, goodType) !== undefined,
-    storedB: stockAt(trade, TRADE_SLOT_B, goodType) !== undefined,
+    storedA: stockAt(trade, TRADE_SLOT_A, carried) !== undefined,
+    storedB: stockAt(trade, TRADE_SLOT_B, carried) !== undefined,
   };
 }
 

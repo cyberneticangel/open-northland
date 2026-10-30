@@ -12,6 +12,7 @@ interface LoadingTip {
 const LOADING_TIPS: readonly LoadingTip[] = [
   { id: 'queueOrders' },
   { id: 'attackMove', key: 'attackMove' },
+  { id: 'dockShips', key: 'dockShips' },
   { id: 'postGraduates', key: 'assistant' },
   { id: 'moveFlags', key: 'assistant' },
   { id: 'lobbyNation' },

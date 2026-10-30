@@ -4,9 +4,20 @@ import {
   type EntityBounds,
   ONE,
   projectTile,
+  SPRITE_CULL_MARGIN,
+  TILE_HALF_H,
+  TILE_HALF_W,
   tileToScreen,
 } from '@open-northland/render';
-import { entitiesWith, entityById, positionOfNode, type WorldSnapshot } from '@open-northland/sim';
+import {
+  collectPositioned,
+  type EntitySnapshot,
+  entitiesWith,
+  entityById,
+  positionOfNode,
+  type TileBox,
+  type WorldSnapshot,
+} from '@open-northland/sim';
 import {
   flagHolderOf,
   isPlayerControllable,
@@ -20,7 +31,7 @@ import {
   siteClaimBuilderOf,
 } from '../../game/snapshot/index.js';
 import { pickableSeat, type ViewerSeat } from '../../game/viewer-seat.js';
-import { containsTargetPoint, hitsTarget, isHitTarget, type Pickable } from '../picking.js';
+import { containsTargetPoint, drawnInFront, hitsTarget, isHitTarget, type Pickable } from '../picking.js';
 import type { FormationUnit } from './orders/formation.js';
 
 /** What the pickable target sets need from the unit-controls options (a subset threaded through). */
@@ -131,6 +142,49 @@ export interface UnitTargets {
   ownedSettlersIn(refs: ReadonlySet<number>): FormationUnit[];
 }
 
+/** A target under the point that carries a good: a goods heap, or a resource a gatherer may switch to. */
+export interface GoodHit {
+  readonly ref: number;
+  readonly goodType: number;
+}
+
+/** A goods heap under the point, with the units it holds. */
+export interface PileHit extends GoodHit {
+  readonly amount: number;
+}
+
+/**
+ * Everything a right click tells apart under one world point, each the frontmost of its set as
+ * `pickTopAt` over the matching {@link UnitTargets} list picks it (a resource the nearest, as
+ * `pickNearestAt` does), or null.
+ */
+export interface PointHits {
+  readonly ownSettler: number | null;
+  readonly ownVehicle: number | null;
+  /** An own building, the right-click ladder's building rung. */
+  readonly ownBuilding: number | null;
+  /** An own wall segment still to be built or an own road site. */
+  readonly site: number | null;
+  /** Any standing building, whoever owns it: a trader's route candidate. */
+  readonly building: number | null;
+  /** From {@link UnitTargets.enemies} without the neutral walls. */
+  readonly enemy: number | null;
+  /** The frontmost enemy settler, which an armed vehicle strikes before any other enemy. */
+  readonly enemySettler: number | null;
+  readonly wildlife: number | null;
+  readonly claimableLivestock: number | null;
+  /** Any animal, wild, decorative or someone's livestock: what the hover names. */
+  readonly creature: number | null;
+  readonly chest: number | null;
+  readonly pile: PileHit | null;
+  readonly resource: GoodHit | null;
+}
+
+/** The right click's point classification, read in one pass over the frame. */
+export interface PointHitTargets {
+  pointHits(wx: number, wy: number): PointHits;
+}
+
 /** Point queries for hover; the order target API retains its array contracts. */
 export interface SelectionHitTargets {
   /** Any owned selectable kind under the point, including vehicles, using this frame's bounds. */
@@ -139,8 +193,35 @@ export interface SelectionHitTargets {
   hasSignpostAt(wx: number, wy: number): boolean;
 }
 
+/** The frontmost target of one set so far, ordered as {@link drawnInFront} orders them. */
+type Front = { readonly ref: number; readonly y: number } | null;
+
+/** The resource nearest the point so far, ordered as `pickNearestAt` orders them. */
+type Nearest = { readonly ref: number; readonly goodType: number; readonly distance: number } | null;
+
+function inFront(best: Front, item: DrawItem): Front {
+  return best === null || drawnInFront(item, best) ? { ref: item.ref, y: item.y } : best;
+}
+
+function nearer(
+  best: Nearest,
+  ref: number,
+  x: number,
+  y: number,
+  goodType: number,
+  wx: number,
+  wy: number,
+): Nearest {
+  const distance = (wx - x) * (wx - x) + (wy - y) * (wy - y);
+  return best === null || distance < best.distance || (distance === best.distance && ref > best.ref)
+    ? { ref, goodType, distance }
+    : best;
+}
+
 /** Turns the frame the player is looking at into the {@link Pickable}s a click hit-tests against. */
-export function createUnitTargets(deps: UnitTargetsDeps): UnitTargets & SelectionHitTargets {
+export function createUnitTargets(
+  deps: UnitTargetsDeps,
+): UnitTargets & SelectionHitTargets & PointHitTargets {
   /** The owner of a drawn item's entity; a synthetic ref or a departed entity has none. */
   const ownerOfRef = (snapshot: WorldSnapshot, ref: number): number | undefined => {
     const e = entityById(snapshot, ref);
@@ -278,7 +359,125 @@ export function createUnitTargets(deps: UnitTargetsDeps): UnitTargets & Selectio
     return false;
   };
 
+  /** Tile coordinates whose resources a sprite over the point may stand on: the renderer's cull slack
+   *  bounds how far a drawn sprite reaches from its anchor, and a stagger or terrain lift adds a tile. */
+  const retainedNear = (wx: number, wy: number): TileBox => {
+    const reachY = SPRITE_CULL_MARGIN + (deps.elevation?.maxLift ?? 0);
+    return {
+      minX: (wx - SPRITE_CULL_MARGIN) / (2 * TILE_HALF_W) - 1,
+      maxX: (wx + SPRITE_CULL_MARGIN) / (2 * TILE_HALF_W) + 1,
+      minY: (wy - reachY) / TILE_HALF_H - 1,
+      maxY: (wy + reachY) / TILE_HALF_H + 1,
+    };
+  };
+
+  const resourceHits = (ref: number, x: number, y: number, wx: number, wy: number): boolean =>
+    containsTargetPoint('resource', x, y, deps.boundsOf?.(ref), wx, wy) &&
+    (deps.pixelHitOf?.(ref, wx, wy) ?? true);
+
+  // Reused across point queries, so a hover read per frame allocates per hit rather than per item.
+  const nearby: EntitySnapshot[] = [];
+  const drawnResources = new Set<number>();
+
+  const pointHits = (wx: number, wy: number): PointHits => {
+    const snapshot = deps.snapshot();
+    let ownSettler: Front = null;
+    let ownVehicle: Front = null;
+    let ownBuilding: Front = null;
+    let site: Front = null;
+    let building: Front = null;
+    let enemy: Front = null;
+    let enemySettler: Front = null;
+    let wildlife: Front = null;
+    let claimableLivestock: Front = null;
+    let creature: Front = null;
+    let chest: Front = null;
+    let pile: (Front & { readonly goodType: number; readonly amount: number }) | null = null;
+    let resource: Nearest = null;
+    drawnResources.clear();
+    for (const item of deps.drawnItems()) {
+      if (!isHitTarget(item)) continue;
+      const kind = unitKindOf(item);
+      if (kind === null) {
+        if (item.kind === 'chest') {
+          if (containsTargetPoint('chest', item.x, item.y, deps.boundsOf?.(item.ref), wx, wy))
+            chest = inFront(chest, item);
+        } else if (item.kind === 'stockpile' || item.kind === 'grounddrop') {
+          const goodType = item.goodType;
+          if (
+            goodType !== undefined &&
+            containsTargetPoint('pile', item.x, item.y, deps.boundsOf?.(item.ref), wx, wy) &&
+            (pile === null || drawnInFront(item, pile))
+          )
+            pile = { ref: item.ref, y: item.y, goodType, amount: item.fill ?? 0 };
+        } else if (item.kind === 'resource') {
+          drawnResources.add(item.ref);
+          if (item.goodType !== undefined && resourceHits(item.ref, item.x, item.y, wx, wy))
+            resource = nearer(resource, item.ref, item.x, item.y, item.goodType, wx, wy);
+        }
+        continue;
+      }
+      if (!boxHits(item, kind, wx, wy) || !pixelsHit(item, kind, wx, wy)) continue;
+      const entity = entityById(snapshot, item.ref);
+      const owner = entity === undefined ? undefined : ownerPlayerOf(entity);
+      if (kind === 'building') building = inFront(building, item);
+      if (entity !== undefined && pickableOwner(owner) && !isLivestock(entity)) {
+        if (kind === 'settler') ownSettler = inFront(ownSettler, item);
+        else if (kind === 'vehicle') ownVehicle = inFront(ownVehicle, item);
+        else if (kind === 'building') ownBuilding = inFront(ownBuilding, item);
+        else if (kind === 'roadsite' || entity.components.UnderConstruction !== undefined)
+          site = inFront(site, item);
+      }
+      if (kind !== 'roadsite' && owner !== undefined && !pickableOwner(owner) && deps.hostileToward(owner)) {
+        enemy = inFront(enemy, item);
+        if (kind === 'settler') enemySettler = inFront(enemySettler, item);
+      }
+      if (kind !== 'settler' || entity === undefined) continue;
+      if (isWildlife(entity)) creature = inFront(creature, item);
+      if (isWildlife(entity) && owner === undefined) {
+        const tribe = settlerTribeOf(entity);
+        if (tribe === undefined || !deps.animalCannotBeAttacked(tribe)) wildlife = inFront(wildlife, item);
+      }
+      if (
+        isLivestock(entity) &&
+        (owner === undefined || (!pickableOwner(owner) && deps.hostileToward(owner)))
+      )
+        claimableLivestock = inFront(claimableLivestock, item);
+    }
+    const count = collectPositioned(snapshot, retainedNear(wx, wy), nearby);
+    for (let i = 0; i < count; i++) {
+      const entity = nearby[i];
+      if (entity === undefined || entity.components.LandscapeResource === undefined) continue;
+      if (drawnResources.has(entity.id)) continue;
+      const goodType = (entity.components.Resource as { goodType?: unknown } | undefined)?.goodType;
+      const position = positionOf(entity);
+      if (typeof goodType !== 'number' || position === undefined) continue;
+      const tileX = position.x / ONE;
+      const tileY = position.y / ONE;
+      if (deps.resourceVisible?.(tileX, tileY) === false) continue;
+      const at = projectTile(deps.elevation, tileX, tileY);
+      if (resourceHits(entity.id, at.x, at.y, wx, wy))
+        resource = nearer(resource, entity.id, at.x, at.y, goodType, wx, wy);
+    }
+    return {
+      ownSettler: ownSettler?.ref ?? null,
+      ownVehicle: ownVehicle?.ref ?? null,
+      ownBuilding: ownBuilding?.ref ?? null,
+      site: site?.ref ?? null,
+      building: building?.ref ?? null,
+      enemy: enemy?.ref ?? null,
+      enemySettler: enemySettler?.ref ?? null,
+      wildlife: wildlife?.ref ?? null,
+      claimableLivestock: claimableLivestock?.ref ?? null,
+      creature: creature?.ref ?? null,
+      chest: chest?.ref ?? null,
+      pile: pile === null ? null : { ref: pile.ref, goodType: pile.goodType, amount: pile.amount },
+      resource: resource === null ? null : { ref: resource.ref, goodType: resource.goodType },
+    };
+  };
+
   return {
+    pointHits,
     owned(kind?: UnitTargetKind): Pickable[] {
       const out: Pickable[] = [];
       visitOwned(kind, (item, itemKind) => {

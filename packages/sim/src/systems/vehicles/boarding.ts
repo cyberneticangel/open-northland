@@ -20,7 +20,7 @@ import type { System, SystemContext } from '../context.js';
 import { vehicleAnchor, vehicleDoorNode } from '../footprint/index.js';
 import { clearNavState, redirectRoute } from '../movement/nav-state.js';
 import { sendUnit } from '../orders/movement.js';
-import { isFighterJob, isTraderJob } from '../readviews/jobs.js';
+import { isFighterJob } from '../readviews/jobs.js';
 import { isShipVehicle } from '../readviews/vehicles.js';
 import { markLostWay } from '../settlers/lost-way.js';
 import { type IdleStands, wakeIdle } from '../settlers/planner/idle-replan.js';
@@ -104,13 +104,13 @@ export function boardCrew(world: World, ctx: SystemContext, vehicle: Entity): bo
 
 /**
  * Whether a rider steps in as soon as it reaches the door, unasked: everyone but the crew that works its
- * vehicle from outside, a carrier serving the hold, a trader working a route or a commander with cargo
- * to move, who wait by the door for their own rungs until the vehicle asks. Deviation (owner's choice): the
+ * vehicle from outside, a carrier serving the hold or a commander with cargo to move, who wait by the
+ * door for their own rungs until the vehicle asks. Deviation (owner's choice): the
  * original keeps every rider outside until the vehicle's order asks it in.
  */
 function boardsUnasked(world: World, ctx: SystemContext, vehicle: Entity, e: Entity): boolean {
   const jobType = world.get(e, Settler).jobType;
-  if (jobType === null || isCarrierJob(ctx, jobType) || isTraderJob(ctx.content, jobType)) return false;
+  if (jobType === null || isCarrierJob(ctx, jobType)) return false;
   return !cargoHandHasWork(world, ctx.content, vehicle, e);
 }
 
@@ -140,7 +140,7 @@ function standsAtDoor(
 
 /**
  * The rider rung of the drive ladder, for an idle attached settler: walk to the vehicle's boarding node
- * and step in there, at once for a passenger, once the vehicle asks for a carrier or trader. True when
+ * and step in there, at once for a passenger, once the vehicle asks for a carrier. True when
  * the rung took the settler. A rider left waiting by the door, or with no door to walk to, stands on the
  * idle cadence: the vehicle's ask, an order or a route command wakes it.
  */
@@ -322,6 +322,7 @@ function resumeHeldGoal(world: World, ctx: SystemContext, terrain: TerrainGraph,
   const live = world.mut(vehicle, Vehicle);
   const goal = live.heldGoal;
   live.heldGoal = null;
+  live.heldDock = null;
   live.task = 'none';
   if (goal === null) return;
   if (vehicleCommander(live) === null) {
@@ -350,7 +351,15 @@ function resumeHeldDock(world: World, ctx: SystemContext, terrain: TerrainGraph,
     refuseMove(world, ctx, vehicle, 'noCommander');
     return;
   }
-  startDock(world, ctx, terrain, vehicle, { hx: point.hx, hy: point.hy });
+  const dock = state.heldDock;
+  startDock(
+    world,
+    ctx,
+    terrain,
+    vehicle,
+    { hx: point.hx, hy: point.hy },
+    dock === null ? null : { hx: dock.hx, hy: dock.hy },
+  );
 }
 
 /** The tasks the boarding pass drives. */

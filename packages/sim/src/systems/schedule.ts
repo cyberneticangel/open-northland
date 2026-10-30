@@ -51,7 +51,7 @@ import { atomicSystem } from './settlers/atomics/system.js';
 import { plannerSystem } from './settlers/planner/system.js';
 import { signpostLinksSystem } from './signposts/links.js';
 import { gossipSystem } from './social/index.js';
-import { tradePartnerStockSystem, traderDisembarkSystem } from './trade/index.js';
+import { tradePartnerStockSystem, traderTakesUpCartSystem } from './trade/index.js';
 import {
   cargoHandDisembarkSystem,
   draughtAnimalSystem,
@@ -127,9 +127,8 @@ export const SYSTEM_ORDER: readonly ScheduledSystem[] = [
   // Beside the boarding pass and before the planner: a recruited animal's walk to the cart routes on
   // this tick's pathfinding pass, and the herd and graze drives ahead of it already saw the booking.
   { name: 'draughtAnimal', system: draughtAnimalSystem },
-  // After the boarding pass, which starts a held drive the tick its crew is in, so a trader whose cart
-  // stopped steps out before the planner works the stop.
-  { name: 'traderDisembark', system: traderDisembarkSystem },
+  // After the boarding pass, so a trader seated in a cart this tick steps out before the planner.
+  { name: 'traderTakesUpCart', system: traderTakesUpCartSystem },
   { name: 'cargoHandDisembark', system: cargoHandDisembarkSystem },
   { name: 'planner', system: plannerSystem },
   // A local map-AI response may not carry yesterday's chase beyond its camp.

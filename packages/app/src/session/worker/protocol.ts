@@ -1,5 +1,7 @@
 import type { ContentSet } from '@open-northland/data';
 import type {
+  AssistantArmingIntent,
+  AssistantArmorOrder,
   AssistantCounterValues,
   CommandEnvelope,
   ConstructionPlot,
@@ -178,6 +180,8 @@ export interface AssistantFacts {
   readonly weaponVetoes: readonly number[];
   readonly soldierOnlyGrants: readonly number[];
   readonly civilianOnlyGrants: readonly number[];
+  readonly armorOrders: Readonly<Record<AssistantArmingIntent, AssistantArmorOrder>>;
+  readonly weaponOrders: Readonly<Record<AssistantArmingIntent, readonly number[]>>;
   readonly postsGraduates: boolean;
   readonly movesFlags: boolean;
 }

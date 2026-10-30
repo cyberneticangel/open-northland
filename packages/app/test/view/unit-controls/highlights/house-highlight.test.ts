@@ -12,11 +12,11 @@ import { buildingPickController, NO_TARGETS } from '../../../support/pick-mode.j
 import { type Ent, snapshotOf } from '../../../support/snapshot.js';
 
 /**
- * The "przypisz dom" verdict - the residential twin of `assign-highlight.test.ts`. A home is green iff
+ * The "przypisz dom" verdict - the residential twin of `assign-highlight.test.ts`. A home is lit iff
  * it is an own `home` with a free FAMILY slot (`homeSize` counts families, not heads) for the
  * settler's household. The key invariant, as on the workplace side: the highlight (`computeHouseHighlight`,
- * what the player sees green) and the click resolver (`houseAssignableAt`, what a click binds) must agree
- * home-for-home, so a green home never silently cancels the click and a red one never binds.
+ * what the player sees lit) and the click resolver (`houseAssignableAt`, what a click binds) must agree
+ * home-for-home, so a lit home never silently cancels the click and a refused one never binds.
  */
 
 const TRIBE = 1; // the settlers' own tribe; OTHER_TRIBE below is the mismatch case
@@ -50,13 +50,13 @@ function person(id: number, opts: { player?: number; tribe?: number; home?: numb
 }
 
 describe('computeHouseHighlight / houseAssignableAt', () => {
-  it('greens an empty own home and the click resolver agrees', () => {
+  it('lights an empty own home and the click resolver agrees', () => {
     const snap = snapshotOf([person(1), home(10)]);
-    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, ok: true }]);
+    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, tone: 'candidate' }]);
     expect(houseAssignableAt(snap, 10, [1], HOUSES)).toBe(true);
   });
 
-  it('greens an own home under construction and reserves its family slot', () => {
+  it('lights an own home under construction and reserves its family slot', () => {
     const site: Ent = {
       id: 10,
       components: {
@@ -66,7 +66,7 @@ describe('computeHouseHighlight / houseAssignableAt', () => {
       },
     };
     const snap = snapshotOf([person(1), site]);
-    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, ok: true }]);
+    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, tone: 'candidate' }]);
     expect(houseAssignableAt(snap, 10, [1], HOUSES)).toBe(true);
   });
 
@@ -77,25 +77,25 @@ describe('computeHouseHighlight / houseAssignableAt', () => {
       person(2, { home: 10 }), // two unrelated households fill a homeSize-2 home
       person(3, { home: 10 }),
     ]);
-    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, ok: false }]);
+    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, tone: 'refused' }]);
     expect(houseAssignableAt(snap, 10, [1], HOUSES)).toBe(false);
   });
 
   it('offers no click on the home a lone mover already lives in', () => {
     const snap = snapshotOf([person(1, { home: 10 }), home(10)]);
-    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, ok: false }]);
+    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, tone: 'refused' }]);
     expect(houseAssignableAt(snap, 10, [1], HOUSES)).toBe(false);
   });
 
   it('skips a non-home building and another player’s home', () => {
     const snap = snapshotOf([person(1), home(11, HUMAN_PLAYER, MILL_TYPE), home(14, ENEMY_PLAYER)]);
-    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([]); // never tinted, not even red
+    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([]); // never marked, not even refused
     for (const id of [11, 14]) expect(houseAssignableAt(snap, id, [1], HOUSES)).toBe(false);
   });
 
-  it('greens an own home of another tribe, which the sim’s assignHouse accepts', () => {
+  it('lights an own home of another tribe, which the sim’s assignHouse accepts', () => {
     const snap = snapshotOf([person(1), home(10, HUMAN_PLAYER, HOME_TYPE, OTHER_TRIBE)]);
-    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, ok: true }]);
+    expect(computeHouseHighlight(snap, [1], HOUSES)).toEqual([{ id: 10, tone: 'candidate' }]);
     expect(houseAssignableAt(snap, 10, [1], HOUSES)).toBe(true);
   });
 
@@ -109,14 +109,15 @@ describe('computeHouseHighlight / houseAssignableAt', () => {
     ]);
     const items = computeHouseHighlight(snap, [1], HOUSES);
     expect(items.length).toBe(2);
-    for (const item of items) expect(item.ok).toBe(houseAssignableAt(snap, item.id, [1], HOUSES));
+    for (const item of items)
+      expect(item.tone === 'candidate').toBe(houseAssignableAt(snap, item.id, [1], HOUSES));
   });
 });
 
 describe('a home pick armed for a group', () => {
-  it('reds a full home a selected member already lives in', () => {
+  it('refuses a full home a selected member already lives in', () => {
     const snap = snapshotOf([person(1, { home: 10 }), person(3, { home: 10 }), person(2), home(10)]);
-    expect(computeHouseHighlight(snap, [1, 2], HOUSES)).toEqual([{ id: 10, ok: false }]);
+    expect(computeHouseHighlight(snap, [1, 2], HOUSES)).toEqual([{ id: 10, tone: 'refused' }]);
     expect(houseAssignableAt(snap, 10, [1, 2], HOUSES)).toBe(false);
   });
 
@@ -133,9 +134,9 @@ describe('a home pick armed for a group', () => {
     expect(houseAssignableAt(snap, 20, [1], HOUSES)).toBe(true);
   });
 
-  it('greens a home one member may move into, though another member may not', () => {
+  it('lights a home one member may move into, though another member may not', () => {
     const snap = snapshotOf([person(1), person(2, { player: ENEMY_PLAYER }), home(10)]);
-    expect(computeHouseHighlight(snap, [1, 2], HOUSES)).toEqual([{ id: 10, ok: true }]);
+    expect(computeHouseHighlight(snap, [1, 2], HOUSES)).toEqual([{ id: 10, tone: 'candidate' }]);
     expect(computeHouseHighlight(snap, [2], HOUSES)).toEqual([]);
   });
 
@@ -156,5 +157,21 @@ describe('a home pick armed for a group', () => {
     expect(issued).toEqual([
       { kind: 'assignHouseGroup', members: [{ entity: 1 }, { entity: 2 }, { entity: 3 }], house: 10 },
     ]);
+  });
+
+  it('aims at the home a press would name, with its verdict, and at nothing off every judged one', () => {
+    const snap = snapshotOf([person(1, { home: 10 }), home(10, HUMAN_PLAYER, BUILDING_HOME_00)]);
+    let under: Pickable[] = [{ ref: 10, x: 0, y: 0 }];
+    const pick = buildingPickController({
+      snapshot: () => snap,
+      content: sandboxContent(),
+      targets: { ...NO_TARGETS, owned: (kind) => (kind === 'building' ? under : []) },
+    });
+    expect(pick.aimedAt(0, 0)).toBeNull();
+    pick.arm({ kind: 'home', units: [1] });
+    expect(pick.aimedAt(0, 0)).toEqual({ id: 10, tone: 'refused' });
+    under = [];
+    pick.arm({ kind: 'home', units: [1] });
+    expect(pick.aimedAt(0, 0)).toBeNull();
   });
 });

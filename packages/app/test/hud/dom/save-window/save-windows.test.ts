@@ -71,6 +71,7 @@ function mount(initial: SaveSlotInfo[], settingsOverride?: GameSettingsRuntime) 
     current: defaultSettings,
     pinnedUiScale: null,
     bootOwnedChangesDeferred: true,
+    inGame: true,
     effectiveUiScaleFor: (factor) => factor,
     update: async () => true,
   };
@@ -125,6 +126,7 @@ describe('save window', () => {
       },
       pinnedUiScale: null,
       bootOwnedChangesDeferred: true,
+      inGame: true,
       effectiveUiScaleFor: (factor) => factor,
     };
     const first = mount([], settings);

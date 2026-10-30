@@ -1,7 +1,9 @@
-import type { CharacterPalette } from '@open-northland/render';
+import { CARRIED_LOAD_BAND } from '@open-northland/data';
+import type { CharacterPalette, LoadLayout } from '@open-northland/render';
 import type { ContentIr, JobGraphicsRow } from '../ir/rows.js';
 import { armorLayout } from './armor-bands.js';
 import { CHARACTER_SPEC_ENTRIES, type CharacterSpecId } from './character-specs.js';
+import { paletteLibrary } from './library-layout.js';
 import { weaponLayout } from './weapon-bands.js';
 
 /**
@@ -54,6 +56,10 @@ export function lookFrom(row: JobGraphicsRow): TribeLook {
   const bodyBmd = bobStem(row.body);
   const armor = armorLayout(bodyBmd, heads);
   const weapon = weaponLayout(bodyBmd);
+  const load: LoadLayout | undefined =
+    paletteLibrary(bodyBmd) === CARRIED_LOAD_BAND.body
+      ? { band: CARRIED_LOAD_BAND.band, from: CARRIED_LOAD_BAND.fromBand }
+      : undefined;
   return {
     job: row.job,
     bodyBmd,
@@ -67,6 +73,7 @@ export function lookFrom(row: JobGraphicsRow): TribeLook {
       random: row.randomPalettes,
       ...(armor !== undefined ? { armor } : {}),
       ...(weapon !== undefined ? { weapon } : {}),
+      ...(load !== undefined ? { load } : {}),
     },
   };
 }

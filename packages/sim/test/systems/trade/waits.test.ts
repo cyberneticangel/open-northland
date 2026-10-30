@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addPerson,
   Building,
+  HaulingCart,
   IdleStand,
   MissionObjectId,
   Owner,
@@ -10,13 +11,15 @@ import {
   Rider,
   Stockpile,
   setStockAmount,
-  VehicleDrive,
   VehicleStock,
 } from '../../../src/components/index.js';
 import type { Entity } from '../../../src/ecs/world.js';
 import { fx, ONE, playerCommand, Simulation } from '../../../src/index.js';
+import { hexDistance, nodeOfPosition } from '../../../src/nav/halfcell.js';
+import { interactionNode } from '../../../src/systems/footprint/index.js';
 import { roomFor } from '../../../src/systems/missions/stock.js';
 import { IDLE_REPLAN_PERIOD_TICKS } from '../../../src/systems/settlers/planner/idle-replan.js';
+import { TRADE_CART_HOUSE_DISTANCE } from '../../../src/systems/trade/index.js';
 import { createVehicle } from '../../../src/systems/vehicles/index.js';
 import { combatContent } from '../../fixtures/content/combat.js';
 import { economyContent } from '../../fixtures/content/economy.js';
@@ -26,10 +29,10 @@ import { ctxOf } from '../../fixtures/context.js';
 import { grassCellMap } from '../../fixtures/terrain.js';
 
 /**
- * A trader with nothing it can move waits: parked by its cart's door it stands on the idle cadence instead
+ * A trader with nothing it can move waits: with its cart in hand it stands on the idle cadence instead
  * of running its ladder every tick, and a route command wakes it on the tick it applies; at a foreign
  * house whose take good its cart cannot carry it hands nothing over, and at one with no room for the give
- * good it keeps the cart parked there until room appears.
+ * good it keeps the cart standing there until room appears.
  */
 
 const VIKING = 1;
@@ -47,25 +50,12 @@ const NEAR_X = 1;
 const FAR_X = 7;
 const MAP_W = 10;
 const MAP_H = 3;
-/** Long enough for the trader to take command of its cart and walk to its door. */
+/** Long enough for the trader to walk to its cart and take it up. */
 const SETTLE_TICKS = 60;
 /** Long enough for a woken trader to put a unit in the hold. */
 const LOAD_TICKS = 300;
 /** The trading post's wood once room is made on its full shelf. */
 const POST_WOOD_DRAWN_DOWN = 10;
-
-/** How many times the cart set off over `ticks` ticks. */
-function cartDrives(sim: Simulation, cart: Entity, ticks: number): number {
-  let drives = 0;
-  let driving = sim.world.has(cart, VehicleDrive);
-  for (let t = 0; t < ticks; t++) {
-    sim.step();
-    const now = sim.world.has(cart, VehicleDrive);
-    if (now && !driving) drives++;
-    driving = now;
-  }
-  return drives;
-}
 
 function newSim(content = testContent()): Simulation {
   const sim = new Simulation({ seed: 3, content, map: grassCellMap(MAP_W, MAP_H) });
@@ -137,12 +127,12 @@ function idleThroughout(sim: Simulation, trader: Entity, ticks: number): boolean
 }
 
 describe('a trader with nothing to move', () => {
-  it('stands idle by the door of a cart it has no route for', () => {
+  it('takes up a cart it is handed and stands idle with it while it has no route', () => {
     const sim = newSim();
     const { trader } = traderWithCart(sim, NEAR_X);
     sim.run(SETTLE_TICKS);
-    expect(sim.world.has(trader, Rider)).toBe(true);
-    expect(sim.world.has(trader, Position)).toBe(true);
+    expect(sim.world.get(trader, HaulingCart).taken).toBe(true);
+    expect(sim.world.has(trader, Rider)).toBe(false);
     expect(idleThroughout(sim, trader, 2 * IDLE_REPLAN_PERIOD_TICKS)).toBe(true);
   });
 
@@ -177,6 +167,7 @@ describe('a trader at a foreign house its cart cannot take from', () => {
     const post = houseAt(sim, FAR_X, [[PLANK, 8]], NEIGHBOUR, TRADING_POST_ID);
     const { trader, cart } = traderWithCart(sim, NEAR_X);
     sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+    sim.enqueueSetup({ kind: 'setDiplomacy', from: NEIGHBOUR, to: HUMAN, state: 'friend' });
     sim.enqueueSetup({
       kind: 'addTradeAgreement',
       missionId: TRADING_POST_ID,
@@ -198,12 +189,13 @@ describe('a trader at a foreign house its cart cannot take from', () => {
 });
 
 describe('a trader at a foreign house with no room for the give good', () => {
-  it('keeps the cart parked at the house with its load until room appears, then hands over', () => {
+  it('keeps the trader at the house with its load until room appears, then hands over', () => {
     const sim = newSim();
     const home = houseAt(sim, NEAR_X, [[WOOD, 6]]);
     const post = houseAt(sim, FAR_X, [[PLANK, 8]], NEIGHBOUR, TRADING_POST_ID);
     const { trader, cart } = traderWithCart(sim, NEAR_X);
     sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+    sim.enqueueSetup({ kind: 'setDiplomacy', from: NEIGHBOUR, to: HUMAN, state: 'friend' });
     sim.enqueueSetup({
       kind: 'addTradeAgreement',
       missionId: TRADING_POST_ID,
@@ -219,9 +211,21 @@ describe('a trader at a foreign house with no room for the give good', () => {
     setStockAmount(sim.world, post, WOOD, roomFor(sim.world, ctxOf(sim), post, WOOD));
     const full = sim.world.get(post, Stockpile).amounts.get(WOOD);
 
-    // One trip out with the wood, and none after it while the shelf stays full.
-    expect(cartDrives(sim, cart, RUN_TICKS)).toBe(1);
-    expect(cartDrives(sim, cart, RUN_TICKS)).toBe(0);
+    // One trip out with the wood, and the trader stays at the post with it while the shelf stays full.
+    const door = interactionNode(sim.world, ctxOf(sim), post);
+    if (door === null) throw new Error('post off the map');
+    const nearPost = (): boolean => {
+      const pos = sim.world.get(trader, Position);
+      return (
+        hexDistance(nodeOfPosition(pos.x, pos.y), { hx: door.x, hy: door.y }) <= TRADE_CART_HOUSE_DISTANCE
+      );
+    };
+    sim.run(RUN_TICKS);
+    expect(nearPost()).toBe(true);
+    for (let t = 0; t < RUN_TICKS; t++) {
+      sim.step();
+      expect(nearPost()).toBe(true);
+    }
     expect(sim.world.get(cart, VehicleStock).lines.get(WOOD)?.current).toBe(6);
     expect(sim.world.get(post, Stockpile).amounts.get(WOOD)).toBe(full);
 

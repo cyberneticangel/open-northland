@@ -7,6 +7,7 @@ import { fixedViewerSeat, overseerViewerSeat } from '../../../src/game/viewer-se
 import { createSceneSim, SCENES } from '../../../src/scenes/index.js';
 import { pickInRect, pickNearestAt, pickTopAt } from '../../../src/view/picking.js';
 import { createUnitTargets, type UnitTargetsDeps } from '../../../src/view/unit-controls/unit-targets.js';
+import { pointHitsOfLists } from '../../support/point-hits.js';
 import { snapshotOf, visitCountingSnapshot } from '../../support/snapshot.js';
 
 /**
@@ -259,6 +260,60 @@ describe('unit-controls targets over the renderer frame', () => {
 
     expect(owned).not.toContain(dropped.ref);
     expect(owned.length).toBe(targetsOver(fullScene).owned().length - 1);
+  });
+
+  it("reads a point's right-click targets in one pass as picking over each list does", () => {
+    const retained = {
+      id: 90_030,
+      components: {
+        Position: { x: 4 * ONE, y: 6 * ONE },
+        LandscapeResource: { id: 10 },
+        Resource: { goodType: 5 },
+      },
+    };
+    snapshot = { ...snapshot, entities: [...snapshot.entities, retained] };
+    const retainedAt = { x: 8 * 34, y: 6 * 38 };
+    const extras: DrawItem[] = [
+      { ref: 90_031, kind: 'chest', ...retainedAt, depth: 0 },
+      { ref: 90_032, kind: 'grounddrop', ...retainedAt, depth: 0, goodType: 7 },
+      { ref: 90_033, kind: 'resource', x: retainedAt.x + 4, y: retainedAt.y, depth: 0, goodType: 4 },
+    ];
+    const drawn = [...fullScene, ...extras];
+    const targets = targetsOver(drawn, (owner) => owner === ENEMY_PLAYER);
+    // The anchors and the sprite bodies above them, where neighbours overlap.
+    const points = drawn.flatMap((item) => [0, 10, 40].map((lift) => ({ x: item.x, y: item.y - lift })));
+    for (const { x, y } of points)
+      expect(targets.pointHits(x, y)).toEqual(pointHitsOfLists(targets, x, y, snapshot, drawn));
+    expect(targets.pointHits(retainedAt.x, retainedAt.y)).toMatchObject({
+      chest: 90_031,
+      pile: { ref: 90_032, goodType: 7 },
+    });
+  });
+
+  it("reads only the retained resources whose sprite may reach the point, not the map's", () => {
+    const SPREAD = 2000;
+    const FAR_TILES = 100;
+    const resources = Array.from({ length: SPREAD }, (_, i) => ({
+      id: 100_000 + i,
+      components: {
+        Position: { x: (i % FAR_TILES) * 4 * ONE, y: Math.floor(i / FAR_TILES) * 4 * ONE },
+        LandscapeResource: { id: 10 },
+        Resource: { goodType: 5 },
+      },
+    }));
+    snapshot = snapshotOf(resources);
+    let asked = 0;
+    const targets = targetsOver(
+      [],
+      () => true,
+      () => {
+        asked++;
+        return true;
+      },
+    );
+
+    expect(targets.pointHits(0, 0).resource).toEqual({ ref: 100_000, goodType: 5 });
+    expect(asked).toBeLessThan(SPREAD / 10);
   });
 
   it('exposes visible resource nodes as right-click targets', () => {

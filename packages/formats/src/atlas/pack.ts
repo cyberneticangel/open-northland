@@ -4,7 +4,7 @@
  * is one entry per bob id, with a 0×0 rect for an empty bob so every id stays addressable.
  */
 
-import { type Bmd, decodeBobFrame } from '../bmd/index.js';
+import { type Bmd, type BobFrame, decodeBobFrame } from '../bmd/index.js';
 import type { RgbaImage } from '../image.js';
 import {
   type AtlasAlphaMode,
@@ -62,7 +62,12 @@ export interface PackBobAtlasOptions {
   /** Bob ids that bake `'per-pixel'` whatever {@link alpha} says: the decor a build-time `.bmd` also
    *  carries, whose second byte is coverage. */
   readonly coverageBobs?: ReadonlySet<number>;
+  /** Rewrites a decoded frame's pixels in place before it is baked. */
+  readonly editFrame?: FrameEdit;
 }
+
+/** An in-place edit of bob `bobId`'s decoded frame. */
+export type FrameEdit = (bobId: number, frame: BobFrame) => void;
 
 const NO_BOBS: ReadonlySet<number> = new Set();
 
@@ -72,10 +77,20 @@ const NO_BOBS: ReadonlySet<number> = new Set();
  * bob id. A frame wider than `maxWidth` is still packed; its row is just wider.
  */
 export function packBobAtlas(bmd: Bmd, palette: Uint8Array, options: PackBobAtlasOptions = {}): BobAtlas {
-  const { maxWidth = DEFAULT_ATLAS_MAX_WIDTH, alpha = 'per-pixel', coverageBobs = NO_BOBS } = options;
+  const {
+    maxWidth = DEFAULT_ATLAS_MAX_WIDTH,
+    alpha = 'per-pixel',
+    coverageBobs = NO_BOBS,
+    editFrame,
+  } = options;
   const atlasBake = colouredBake(palette, alpha);
   const coverageBake = alpha === 'per-pixel' ? atlasBake : colouredBake(palette, 'per-pixel');
-  return packBobAtlasWith(bmd, (bobId) => (coverageBobs.has(bobId) ? coverageBake : atlasBake), maxWidth);
+  return packBobAtlasWith(
+    bmd,
+    (bobId) => (coverageBobs.has(bobId) ? coverageBake : atlasBake),
+    maxWidth,
+    editFrame,
+  );
 }
 
 /**
@@ -94,12 +109,18 @@ export function packShadowBobAtlas(bmd: Bmd): BobAtlas {
  * authored feathered translucency survives into the drawn sprite.
  */
 export function packIndexedBobAtlas(bmd: Bmd, options: PackBobAtlasOptions = {}): BobAtlas {
-  const { maxWidth = DEFAULT_ATLAS_MAX_WIDTH, alpha = 'per-pixel', coverageBobs = NO_BOBS } = options;
+  const {
+    maxWidth = DEFAULT_ATLAS_MAX_WIDTH,
+    alpha = 'per-pixel',
+    coverageBobs = NO_BOBS,
+    editFrame,
+  } = options;
   const atlasBake = indexedBake(alpha);
   const atlas = packBobAtlasWith(
     bmd,
     (bobId) => (coverageBobs.has(bobId) ? INDEXED_BAKE : atlasBake),
     maxWidth,
+    editFrame,
   );
   const { rgba } = atlas.image;
   // The packer leaves the space between frames all zero; the layout's uncovered pixel is opaque.
@@ -121,8 +142,8 @@ export function packDisplacementBobAtlas(bmd: Bmd): BobAtlas {
 /** The bake one bob id takes. */
 type BakeFor = (bobId: number) => BobBake;
 
-function packBobAtlasWith(bmd: Bmd, bakeFor: BakeFor, maxWidth: number): BobAtlas {
-  const prepared = prepareFrames(bmd, bakeFor);
+function packBobAtlasWith(bmd: Bmd, bakeFor: BakeFor, maxWidth: number, editFrame?: FrameEdit): BobAtlas {
+  const prepared = prepareFrames(bmd, bakeFor, editFrame);
   const layout = shelfPack(prepared, maxWidth);
   return emitAtlas(
     prepared,
@@ -149,7 +170,7 @@ interface PreparedFrame {
 
 /** `bobs` is `bobCount` long by the {@link Bmd} contract, so the index guard only discharges the
  *  checked-index `| undefined`. */
-function prepareFrames(bmd: Bmd, bakeFor: BakeFor): PreparedFrame[] {
+function prepareFrames(bmd: Bmd, bakeFor: BakeFor, editFrame: FrameEdit | undefined): PreparedFrame[] {
   const prepared: PreparedFrame[] = [];
   for (let i = 0; i < bmd.bobCount; i++) {
     const bob = bmd.bobs[i];
@@ -157,6 +178,7 @@ function prepareFrames(bmd: Bmd, bakeFor: BakeFor): PreparedFrame[] {
     const bobId = bmd.firstBobId + i;
     const bake = bakeFor(bobId);
     const frame = decodeBobFrame(bmd, i, bake.secondByte);
+    editFrame?.(bobId, frame);
     const hasPixels = frame.width > 0 && frame.height > 0;
     let opaque = false;
     if (hasPixels) {

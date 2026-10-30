@@ -8,6 +8,7 @@ import {
   type MapAiDefaultPosition,
   type MapAiHouseRecord,
   MapAiState,
+  type MapAiWallRecord,
   mapAiEntity,
   Position,
   setAiExternalFlag,
@@ -32,6 +33,7 @@ import { rebuildList, rebuildOrders } from './rebuild.js';
 import { assignSoldiers, clearInvalidTasks, updateSoldierList, workOrders } from './soldiers.js';
 import { activeGroups, freshTaskRecord, recheckTasks } from './tasks.js';
 import { holdTownGoods, townStaffingOrders } from './town.js';
+import { wallList, wallRebuildOrders } from './walls.js';
 
 /**
  * The scripted handler's program (`docs/formats/MISSIONS.md`, AI data): on a computer seat's handler
@@ -139,7 +141,7 @@ export const mapAiSystem: System = (world, ctx) => {
       reassigned,
     ),
   );
-  commands.push(...townOrders(world, ctx, terrain, seat, script, program.houses, raiders, turn));
+  commands.push(...townOrders(world, ctx, terrain, seat, script, program, raiders, turn));
   for (const command of commands) ctx.commands.enqueue(aiCommand(seat, command, 'map-ai'));
 };
 
@@ -152,9 +154,9 @@ const TOWN_EVERY_TURNS = 6;
 const FAMILY_EVERY_TURNS = 12;
 
 /**
- * The handler's own economy, for the strategic modules the map switched off: it raises lost buildings
- * again, holds its stores, staffs and houses the town, and marries and breeds its people. Every pass runs
- * only while the strategic module owning that concern is off, so the two never order the same men.
+ * The handler's own economy, for the strategic modules the map switched off: it raises lost buildings and
+ * walls again, holds its stores, staffs and houses the town, and marries and breeds its people. Every pass
+ * runs only while the strategic module owning that concern is off, so the two never order the same men.
  */
 function townOrders(
   world: World,
@@ -162,15 +164,19 @@ function townOrders(
   terrain: TerrainGraph,
   seat: number,
   script: MapAiSeat | undefined,
-  houses: readonly MapAiHouseRecord[],
+  program: { readonly houses: readonly MapAiHouseRecord[]; readonly walls: readonly MapAiWallRecord[] },
   raiders: () => readonly Raider[],
   turn: number,
 ): PlayerCommand[] {
   const commands: PlayerCommand[] = [];
   const staff = isScriptedEconomySeat(world, seat);
   const house = !computerModuleRuns(world, seat, 'homeExpansion');
-  if (turn % REBUILD_EVERY_TURNS === 0 && !computerModuleRuns(world, seat, 'houseBuild')) {
-    commands.push(...rebuildOrders(world, ctx, terrain, seat, houses, raiders()));
+  const build = !computerModuleRuns(world, seat, 'houseBuild');
+  if (turn % REBUILD_EVERY_TURNS === 0 && build) {
+    commands.push(...rebuildOrders(world, ctx, terrain, seat, program.houses, raiders()));
+  }
+  if (turn % TOWN_EVERY_TURNS === 0 && build) {
+    commands.push(...wallRebuildOrders(world, ctx, terrain, seat, program.walls, raiders()));
   }
   if (turn % TOWN_EVERY_TURNS === 0 && (staff || house)) {
     if (staff) holdTownGoods(world, ctx, seat);
@@ -237,6 +243,7 @@ function startProgram(
     soldiers: [],
     groups: [],
     houses: rebuildList(world, ctx, seat),
+    walls: wallList(world, ctx, terrain, seat, centre),
   });
   return e;
 }

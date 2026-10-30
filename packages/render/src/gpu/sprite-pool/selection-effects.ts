@@ -7,6 +7,7 @@ import {
   type SelectionStyle,
   selectionLight,
   type TargetFlash,
+  type TargetFlashTone,
   targetFlashLight,
 } from '../selection/style.js';
 import type { TextureCache } from '../textures/texture-cache.js';
@@ -27,9 +28,18 @@ const OUTLINE_PASSES = [
   { radius: 2, colour: 0x14211b },
   { radius: 1.25, colour: undefined },
 ] as const;
+// A pick's target wears a band about twice as wide, so it reads apart from the hover outline; the inner
+// core pass fills the corners the eight-direction stamps of the wide one leave open.
+const WIDE_OUTLINE_PASSES = [
+  { radius: 4.5, colour: 0x14211b },
+  { radius: 3.25, colour: undefined },
+  { radius: 1.75, colour: undefined },
+] as const;
 
 /** Screen px the outline reaches past the body art. */
-export const OUTLINE_REACH = Math.max(...OUTLINE_PASSES.map((pass) => pass.radius));
+export const OUTLINE_REACH = Math.max(
+  ...[...OUTLINE_PASSES, ...WIDE_OUTLINE_PASSES].map((pass) => pass.radius),
+);
 
 /** Outline quads sit behind the complete body, so overlapping layers leave no internal outlines.
  * They use the world batch and the existing atlas alpha, without filters or per-entity render targets. */
@@ -48,17 +58,23 @@ export class SelectionEffects {
     seconds: number,
     outlineColour = 0xf2e8c9,
     flash?: TargetFlash,
+    /** A pick target's lift towards `markTone`'s colour, under a flash and the selection pulse; a target
+     *  also wears the wide outline band. */
+    markLift?: number,
+    markTone: TargetFlashTone = 'order',
   ): void {
     // Nothing selected and nothing left to clear: every drawn entity asks each frame, so skip the
     // two map lookups below.
     if (style === undefined && flash === undefined && this.lit.size === 0 && this.outlines.size === 0) return;
-    if (style === 'pulse' || flash !== undefined || this.lit.has(pe)) {
+    if (style === 'pulse' || flash !== undefined || markLift !== undefined || this.lit.has(pe)) {
       // A flash outshines the selection pulse while it plays.
       const flashed = flash === undefined ? 0 : targetFlashLight(flash.progress);
       const lift =
         flash !== undefined && flashed > 0
           ? packLift(flashed, LIFT_TONE_CODE[flash.tone])
-          : packLift(style === 'pulse' ? selectionLight(seconds) : 0, WHITE);
+          : style === 'pulse' || markLift === undefined
+            ? packLift(style === 'pulse' ? selectionLight(seconds) : 0, WHITE)
+            : packLift(markLift, LIFT_TONE_CODE[markTone]);
       this.light(pe, lift);
       if (lift === 0) this.lit.delete(pe);
       else this.lit.set(pe, lift);
@@ -74,7 +90,7 @@ export class SelectionEffects {
       pe.container.addChildAt(outline, 0);
     }
     let count = 0;
-    for (const pass of OUTLINE_PASSES) {
+    for (const pass of markLift !== undefined ? WIDE_OUTLINE_PASSES : OUTLINE_PASSES) {
       const reach = pass.radius / zoom;
       const colour = pass.colour ?? outlineColour;
       for (let i = 0; i < pe.sprites.length; i++) {

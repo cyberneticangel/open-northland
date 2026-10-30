@@ -58,42 +58,43 @@ export function buildingModels(
 ): { readonly geometryOf: GeometryBuildingInfoOf; readonly infoOf: BuildingDoorInfoOf } {
   const byType = lastByTypeId(buildings);
   const anchorsOf = buildingSignAnchorsFor(ir, tribes);
-  // Memoized per `(typeId, tribe)`: the door-badge and sign projections ask for every building on every
-  // new snapshot, and the answer only changes when the content does.
+  // Memoized per `(typeId, tribe, record)`: the door-badge and sign projections ask for every building on
+  // every new snapshot, and the answer only changes when the content does.
   const geometryCache = new Map<string, GeometryBuildingInfo | undefined>();
-  const geometryOf: GeometryBuildingInfoOf = (typeId, tribe) => {
+  const geometryOf: GeometryBuildingInfoOf = (typeId, tribe, record) => {
     if (typeId === undefined) return undefined;
     const skin = tribe ?? tribes[0];
-    const key = `${typeId}:${skin}`;
+    const key = `${typeId}:${skin}:${record ?? ''}`;
     const held = geometryCache.get(key);
     if (held !== undefined || geometryCache.has(key)) return held;
     const b = byType.get(typeId);
-    const geometry = b === undefined ? undefined : { id: b.id, footprint: buildingFootprintFor(b, skin) };
+    const geometry =
+      b === undefined ? undefined : { id: b.id, footprint: buildingFootprintFor(b, skin, record) };
     geometryCache.set(key, geometry);
     return geometry;
   };
   const cache = new Map<string, BuildingDoorInfo | undefined>();
-  const canonicalInfoOf: BuildingDoorInfoOf = (typeId, tribe) => {
+  const canonicalInfoOf: BuildingDoorInfoOf = (typeId, tribe, _entity, record) => {
     if (typeId === undefined) return undefined;
-    const key = `${typeId}:${tribe ?? tribes[0]}`;
+    const key = `${typeId}:${tribe ?? tribes[0]}:${record ?? ''}`;
     const held = cache.get(key);
     if (held !== undefined || cache.has(key)) return held;
-    const geometry = geometryOf(typeId, tribe);
+    const geometry = geometryOf(typeId, tribe, record);
     const info = geometry === undefined ? undefined : { ...geometry, ...anchorsOf(typeId, tribe) };
     cache.set(key, info);
     return info;
   };
-  const authoredInfo = new Map<number, BuildingDoorInfo>();
-  for (const [id, row] of authored ?? []) {
-    const info = canonicalInfoOf(row.typeId, row.tribe);
-    if (info !== undefined) authoredInfo.set(id, { ...info, flagPoint: row.flagPoint });
-  }
-  const infoOf: BuildingDoorInfoOf = (typeId, tribe, entity) => {
+  const authoredInfo = new Map<number, BuildingDoorInfo | undefined>();
+  const infoOf: BuildingDoorInfoOf = (typeId, tribe, entity, record) => {
     const row = entity === undefined ? undefined : authored?.get(entity);
-    if (entity !== undefined && row !== undefined && row.typeId === typeId && row.tribe === tribe) {
-      return authoredInfo.get(entity);
+    if (entity === undefined || row === undefined || row.typeId !== typeId || row.tribe !== tribe) {
+      return canonicalInfoOf(typeId, tribe, entity, record);
     }
-    return canonicalInfoOf(typeId, tribe);
+    if (!authoredInfo.has(entity)) {
+      const info = canonicalInfoOf(typeId, tribe, entity, record);
+      authoredInfo.set(entity, info === undefined ? undefined : { ...info, flagPoint: row.flagPoint });
+    }
+    return authoredInfo.get(entity);
   };
   return { geometryOf, infoOf };
 }

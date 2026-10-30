@@ -15,6 +15,7 @@ import {
 } from '@open-northland/sim';
 import { forEachPlacement } from '../../content/map/placements.js';
 import {
+  buildingRecordOf,
   buildingTribeOf,
   buildingTypeOf,
   isBuilding,
@@ -22,14 +23,21 @@ import {
   type SnapshotEntity,
 } from '../../game/snapshot/index.js';
 import type { StaticDrawSurface } from './harvestable-handover.js';
+import type { SightDeferral } from './sight-deferral.js';
 
-/** The slice of a building type the clearing reads: each tribe's walk-block cells. */
+/** The slice of a building type the clearing reads: each tribe's and each house record's walk-block
+ *  cells. */
 export interface FootprintBuildingType {
   readonly typeId: number;
   readonly footprint?: Pick<BuildingFootprint, 'blocked'> | undefined;
   readonly tribeVariants: readonly {
     readonly tribe: number;
     readonly footprint?: Pick<BuildingFootprint, 'blocked'> | undefined;
+  }[];
+  readonly recordFootprints?: readonly {
+    readonly tribe: number;
+    readonly editName: string;
+    readonly footprint: Pick<BuildingFootprint, 'blocked'>;
   }[];
 }
 
@@ -41,9 +49,10 @@ function nodeKey(hx: number, hy: number): string {
  * A building's walk-block footprint and the nodes a road or wall covers are bare ground: the static
  * sprites on them leave the layer when the building is placed or upgraded or the road or wall ordered,
  * and at bind for every building, road, road site and wall already there (original behavior: a house's
- * placement removes the landscape objects in its walk-block area). Approximation: ground cleared under
- * the viewer's fog clears the same tick, where a remembered static would otherwise linger.
- * `nodeWidth` is the map's width in half-cell nodes, the stride of the road network's node ids.
+ * placement removes the landscape objects in its walk-block area). Ground cleared later under the
+ * viewer's fog keeps its scenery until the viewer sees it. `deferAtBind` holds back the clearing at bind
+ * too, for a layer restored as the viewer last saw it. `nodeWidth` is the map's width in half-cell nodes,
+ * the stride of the road network's node ids.
  */
 export function bindFootprintClearing<Sprite>(
   surface: Pick<StaticDrawSurface<Sprite>, 'removeMapObject'>,
@@ -52,25 +61,32 @@ export function bindFootprintClearing<Sprite>(
   content: { readonly buildings: readonly FootprintBuildingType[] },
   snapshot: () => WorldSnapshot,
   nodeWidth: number,
+  sight: SightDeferral,
+  deferAtBind = false,
 ): (events: readonly SimEvent[]) => void {
   // First-wins, the index the sim resolves a type's footprint through.
   const buildingsByType = firstByTypeId(content.buildings);
-  const standing = new Map<string, Sprite[]>();
+  const standing = new Map<string, { readonly placement: number; readonly sprite: Sprite }[]>();
   forEachPlacement(placements, (hx, hy, _type, ordinal) => {
     const sprite = spriteByPlacement.get(ordinal);
     if (sprite === undefined) return;
     const key = nodeKey(hx, hy);
     const at = standing.get(key);
-    if (at === undefined) standing.set(key, [sprite]);
-    else at.push(sprite);
+    if (at === undefined) standing.set(key, [{ placement: ordinal, sprite }]);
+    else at.push({ placement: ordinal, sprite });
   });
 
+  // The map's own buildings, roads and walls clear at once; later ones wait for the viewer's sight.
+  let deferred = deferAtBind;
   const clearAt = (hx: number, hy: number): void => {
     const key = nodeKey(hx, hy);
     const at = standing.get(key);
     if (at === undefined) return;
     standing.delete(key);
-    for (const sprite of at) surface.removeMapObject(sprite);
+    for (const { placement, sprite } of at) {
+      if (deferred) sight.defer(placement, hx, hy, () => surface.removeMapObject(sprite));
+      else surface.removeMapObject(sprite);
+    }
   };
 
   const clearUnder = (building: SnapshotEntity): void => {
@@ -79,7 +95,10 @@ export function bindFootprintClearing<Sprite>(
     if (type === undefined || pos === undefined) return;
     const def = buildingsByType.get(type);
     const cells =
-      (def === undefined ? undefined : buildingFootprintFor(def, buildingTribeOf(building)))?.blocked ?? [];
+      (def === undefined
+        ? undefined
+        : buildingFootprintFor(def, buildingTribeOf(building), buildingRecordOf(building))
+      )?.blocked ?? [];
     const { hx, hy } = nodeOfPosition(pos.x, pos.y);
     for (const cell of cells) clearAt(hx + footprintCellDx(hy, cell), hy + cell.dy);
   };
@@ -95,6 +114,7 @@ export function bindFootprintClearing<Sprite>(
       clearAt(hx, (node - hx) / nodeWidth);
     }
   }
+  deferred = true;
 
   return (events) => {
     let snap: WorldSnapshot | undefined;

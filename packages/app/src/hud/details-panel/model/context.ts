@@ -197,7 +197,7 @@ export function goodLabel(ctx: Pick<UnitPanelModelContext, 'goods'>, goodType: n
 
 /**
  * A job's display name, shared by the worker-slot rows and a settler's profession title. Roles outside the
- * profession picker (life stages, the jester) are keyed by the content job's string id through the locale
+ * profession picker (the life stages) are keyed by the content job's string id through the locale
  * catalog. Every hero role is shown as the generic role "Hero": maps reuse one hero body for different
  * named characters, so the job id is not a reliable personal name.
  */

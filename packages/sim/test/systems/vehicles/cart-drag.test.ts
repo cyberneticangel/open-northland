@@ -5,9 +5,12 @@ import type { Entity } from '../../../src/ecs/world.js';
 import { nodeOfPosition, playerCommand, Simulation } from '../../../src/index.js';
 import {
   cartDragTicks,
+  cartLiftTicks,
   cartSpeedLossPercent,
   DRAWN_CART_FULL_SPEED_LOSS_PERCENT,
+  DRAWN_CART_LIFT_PERCENT,
   HANDCART_FULL_SPEED_LOSS_PERCENT,
+  HANDCART_LIFT_PERCENT,
 } from '../../../src/systems/vehicles/drag.js';
 import { boardRider, createVehicle } from '../../../src/systems/vehicles/index.js';
 import { stockVehicleGoods } from '../../../src/systems/vehicles/stock.js';
@@ -18,7 +21,8 @@ import { grassNodeMap } from '../../fixtures/terrain.js';
 /**
  * A laden cart drags (owner's feature, a named addition): a vehicle's leg and a carrier's step with the
  * cart in hand cost extra ticks in proportion to how full the hold is, a handcart more than a cart an
- * animal draws, and an empty cart, a ship or the catapult nothing.
+ * animal draws, and an empty cart, a ship or the catapult nothing. A handcart lifts a unit faster than
+ * an ox cart.
  */
 
 const VIKING = 1;
@@ -118,9 +122,22 @@ describe('cartSpeedLossPercent', () => {
 
   it('turns the speed loss into whole extra ticks of the move: half the speed doubles the ticks', () => {
     const groundPeriod = 6;
-    expect(cartDragTicks(groundPeriod, HANDCART_FULL_SPEED_LOSS_PERCENT)).toBe(groundPeriod);
-    expect(cartDragTicks(groundPeriod, DRAWN_CART_FULL_SPEED_LOSS_PERCENT)).toBe(2);
+    const halfSpeed = 50;
+    expect(cartDragTicks(groundPeriod, halfSpeed)).toBe(groundPeriod);
     expect(cartDragTicks(groundPeriod, 0)).toBe(0);
+  });
+});
+
+describe('cartLiftTicks', () => {
+  it('lifts a unit faster than the clip with a handcart and slower with an ox cart', () => {
+    const s = sim();
+    const clipTicks = 20;
+    const hand = cartLiftTicks(s.content, typeOf(s, HANDCART), clipTicks);
+    const ox = cartLiftTicks(s.content, typeOf(s, OXCART), clipTicks);
+    expect(hand).toBe((clipTicks * HANDCART_LIFT_PERCENT) / 100);
+    expect(ox).toBe((clipTicks * DRAWN_CART_LIFT_PERCENT) / 100);
+    expect(hand).toBeLessThan(clipTicks);
+    expect(ox).toBeGreaterThan(clipTicks);
   });
 });
 

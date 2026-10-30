@@ -1,6 +1,7 @@
 import type { ConstructionSign } from '@open-northland/render';
 import { entitiesWith, nodeOfPosition, positionOfNode, type WorldSnapshot } from '@open-northland/sim';
 import {
+  buildingRecordOf,
   buildingTribeOf,
   buildingTypeOf,
   isBuilding,
@@ -24,7 +25,7 @@ export function computeConstructionSigns(
     if (!isBuilding(e)) continue;
     const pos = positionOf(e);
     if (pos === undefined) continue;
-    const info = buildingInfoOf(buildingTypeOf(e), buildingTribeOf(e), e.id);
+    const info = buildingInfoOf(buildingTypeOf(e), buildingTribeOf(e), e.id, buildingRecordOf(e));
     const player = ownerPlayerOf(e);
     if (info?.flagPoint !== undefined) {
       out.push({

@@ -34,7 +34,12 @@ export interface PlacementOverlayFrame {
   readonly maxRow: number;
   readonly blocked: readonly PlacementOverlayCell[];
   readonly reserved: readonly PlacementOverlayCell[];
+  /** How the open side's edge is drawn: node diamonds (the default), or `round`, a soft ground ellipse
+   *  per open node that a thin band, such as the shore a ship moors at, reads as one rounded strip. */
+  readonly brush?: OverlayBrush;
 }
+
+export type OverlayBrush = 'diamond' | 'round';
 
 /** The dim wash: near-black at a moderate alpha - enough to read "blocked" without hiding the ground. */
 const DIM_COLOR = 0x000000;
@@ -51,6 +56,18 @@ const COMPOSITE_RESOLUTION = 0.5;
  *  exceed 2 composite px (2 / COMPOSITE_RESOLUTION world px); below that the pad is sub-pixel and
  *  neighbouring AA edges leave a visible seam lattice. */
 const CELL_OVERLAP = 5;
+/** The `round` brush's ground ellipse per open node, wide enough to fuse with its row and diagonal
+ *  neighbours (nodes stand `TILE_HALF_W` apart in a row, a quarter cell between rows), and its feather:
+ *  concentric steps from the rim inward, each scale with the alpha it adds. Tuned by eye. */
+const ROUND_RADIUS = { x: 38, y: 22 } as const;
+const ROUND_FEATHER: readonly { readonly scale: number; readonly alpha: number }[] = [
+  { scale: 1, alpha: 0.3 },
+  { scale: 0.85, alpha: 0.5 },
+  { scale: 0.7, alpha: 1 },
+];
+/** The `round` brush's open side, lifted a little more than a building's buildable ground: the strip is
+ *  the only thing a dock pick shows. Tuned by eye. */
+const ROUND_BRIGHT_ALPHA = 0.18;
 /** Composite-texture allocation step (texture px). */
 const TEXTURE_QUANT = 128;
 
@@ -104,6 +121,10 @@ export class PlacementOverlayLayer {
   private readonly blockedG = new Graphics();
   private readonly buildableG = new Graphics();
   private readonly reservedG = new Graphics();
+  /** The `round` brush's cut: the open side's texture erased out of the dim. A child's blend mode is
+   *  honoured in a render where a root's is not, so the sprite renders under a host container. */
+  private readonly eraseHost = new Container();
+  private readonly eraser = new Sprite();
   /** Signature of the frame last composited - an unchanged signature skips the rebuild. */
   private key = '';
 
@@ -119,6 +140,8 @@ export class PlacementOverlayLayer {
     this.reserve.alpha = RESERVE_ALPHA;
     this.reserve.visible = false;
     this.container.addChild(this.dim, this.reserve, this.bright);
+    this.eraser.blendMode = 'erase';
+    this.eraseHost.addChild(this.eraser);
   }
 
   /** Recomposite the wash for a build-mode frame; `null` clears it. Diamonds are lifted onto the terrain
@@ -145,6 +168,12 @@ export class PlacementOverlayLayer {
     // ensureTextures always sets them
     if (dimTexture === null || brightTexture === null || reserveTexture === null) return;
 
+    if (frame.brush === 'round') {
+      this.composeRound(frame, elevation, bounds, dimTexture, brightTexture, reserveTexture);
+      this.show(bounds, dimTexture, brightTexture, reserveTexture, ROUND_BRIGHT_ALPHA);
+      this.key = key;
+      return;
+    }
     const blocked = new Set<string>();
     for (const c of frame.blocked) blocked.add(`${c.col},${c.row}`);
     const reserved = new Set<string>();
@@ -177,17 +206,72 @@ export class PlacementOverlayLayer {
     this.renderer.render({ container: buildableG, target: brightTexture, clear: true });
     this.renderer.render({ container: reservedG, target: reserveTexture, clear: true });
 
+    this.show(bounds, dimTexture, brightTexture, reserveTexture, BRIGHT_ALPHA);
+    // Marked only now: a failed alloc or lost context above retries next frame instead of skipping on a
+    // stale signature.
+    this.key = key;
+  }
+
+  /**
+   * The `round` brush: the dim covers the whole band less a feathered ground ellipse around every open
+   * node, erased out of it, and the lift is those ellipses themselves, so both sides meet on one soft,
+   * rounded edge. The band's reserved nodes, which only line tools name, draw nothing here.
+   */
+  private composeRound(
+    frame: PlacementOverlayFrame,
+    elevation: ElevationField,
+    bounds: OverlayBounds,
+    dimTexture: RenderTexture,
+    brightTexture: RenderTexture,
+    reserveTexture: RenderTexture,
+  ): void {
+    const closed = new Set<string>();
+    for (const c of frame.blocked) closed.add(`${c.col},${c.row}`);
+    for (const c of frame.reserved) closed.add(`${c.col},${c.row}`);
+    const fullG = this.blockedG.clear();
+    const openG = this.buildableG.clear();
+    fullG
+      .rect(0, 0, bounds.width * COMPOSITE_RESOLUTION, bounds.height * COMPOSITE_RESOLUTION)
+      .fill(0xffffff);
+    const rx = ROUND_RADIUS.x * COMPOSITE_RESOLUTION;
+    const ry = ROUND_RADIUS.y * COMPOSITE_RESOLUTION;
+    for (let row = frame.minRow; row <= frame.maxRow; row++) {
+      for (let col = frame.minCol; col <= frame.maxCol; col++) {
+        if (closed.has(`${col},${row}`)) continue;
+        const p = projectNode(elevation, col, row);
+        const cx = (p.x - bounds.x) * COMPOSITE_RESOLUTION;
+        const cy = (p.y - bounds.y) * COMPOSITE_RESOLUTION;
+        for (const step of ROUND_FEATHER) {
+          openG
+            .ellipse(cx, cy, rx * step.scale, ry * step.scale)
+            .fill({ color: 0xffffff, alpha: step.alpha });
+        }
+      }
+    }
+    this.renderer.render({ container: fullG, target: dimTexture, clear: true });
+    this.renderer.render({ container: openG, target: brightTexture, clear: true });
+    // The same ellipses cut out of the dim; `erase` keeps the destination less the source's alpha.
+    this.eraser.texture = brightTexture;
+    this.renderer.render({ container: this.eraseHost, target: dimTexture, clear: false });
+    this.renderer.render({ container: this.reservedG.clear(), target: reserveTexture, clear: true });
+  }
+
+  private show(
+    bounds: OverlayBounds,
+    dimTexture: RenderTexture,
+    brightTexture: RenderTexture,
+    reserveTexture: RenderTexture,
+    brightAlpha: number,
+  ): void {
     for (const spr of [this.dim, this.bright, this.reserve]) {
       spr.position.set(bounds.x, bounds.y);
       spr.scale.set(1 / COMPOSITE_RESOLUTION);
       spr.visible = true;
     }
+    this.bright.alpha = brightAlpha;
     this.dim.texture = dimTexture;
     this.bright.texture = brightTexture;
     this.reserve.texture = reserveTexture;
-    // Marked only now: a failed alloc or lost context above retries next frame instead of skipping on a
-    // stale signature.
-    this.key = key;
   }
 
   /** Grow-only quantized (re)allocation of the composite textures. The visible col/row count flaps
@@ -216,6 +300,7 @@ export class PlacementOverlayLayer {
     this.blockedG.destroy();
     this.buildableG.destroy();
     this.reservedG.destroy();
+    this.eraseHost.destroy({ children: true });
     this.container.destroy({ children: true });
   }
 }
@@ -225,5 +310,6 @@ export class PlacementOverlayLayer {
 function signatureOf(frame: PlacementOverlayFrame): string {
   const band = `${frame.minCol},${frame.maxCol},${frame.minRow},${frame.maxRow}`;
   const blocked = `${frame.blocked.length}:${hashCells(frame.blocked, frame.blocked.length)}`;
-  return `${band}:${blocked}:${frame.reserved.length}:${hashCells(frame.reserved, frame.reserved.length)}`;
+  const reserved = `${frame.reserved.length}:${hashCells(frame.reserved, frame.reserved.length)}`;
+  return `${frame.brush ?? 'diamond'}:${band}:${blocked}:${reserved}`;
 }

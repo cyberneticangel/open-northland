@@ -2,14 +2,20 @@ import { entityById, MAX_UNIT_ORDER_MEMBERS, systems, type WorldSnapshot } from 
 import { holdsHaulFlagPost, isSettler, isVehicle, settlerJobType } from '../../game/snapshot/index.js';
 import { pickableSeat } from '../../game/viewer-seat.js';
 import type { ActionOrderId } from '../../hud/action-ring/index.js';
+import { jobDisplayName } from '../../hud/details-panel/model/context.js';
 import { createGoodIconPainter } from '../../hud/dom/good-art.js';
 import { isActionHotkey, isFieldKey, isOrderHotkey } from '../../hud/hotkeys.js';
-import { matchesMouseBinding } from '../../hud/keybindings.js';
+import { type ModifierState, matchesMouseBinding } from '../../hud/keybindings.js';
 import { clientToScreen } from '../camera/index.js';
 import { setCanvasCursor } from '../cursors/element.js';
 import { nodeBounds, pickInRect, pickTopAt, screenToWorld, type Tile, worldToTile } from '../picking.js';
 import { entityAnchor } from '../projections/entity-anchor.js';
 import { memoBySnapshot, rangeRingsOf } from '../projections/index.js';
+import { createActionHint } from './action-hint/controller.js';
+import { createHintLabel, hintLine } from './action-hint/label.js';
+import { natureName, natureTargetOf } from './action-hint/nature-name.js';
+import { pickHint } from './action-hint/pick-hint.js';
+import { type HintContext, planHint } from './action-hint/plan-hint.js';
 import { orderRecipients } from './action-ring/index.js';
 import { createClickHits } from './click-hits.js';
 import {
@@ -23,6 +29,7 @@ import { jobMateArea, jobMatesIn } from './job-mates.js';
 import { createLostGoals } from './lost-goals.js';
 import { createSelectionMarquee } from './marquee.js';
 import { createAnsweredOrders } from './orders/answered.js';
+import { DOCK_PICK_SNAP_NODES, RIGHT_CLICK_SNAP_NODES } from './orders/berths.js';
 import { createUnitOrderController } from './orders/controller.js';
 import { createOrderFeedback } from './orders/feedback.js';
 import { createKeyboardOrders } from './orders/keyboard.js';
@@ -32,11 +39,20 @@ import { createOverviewOrders } from './orders/overview.js';
 import { createPendingGroundOrders } from './orders/pending-ground.js';
 import { issueRingCommand } from './orders/ring-commands.js';
 import { createTargetFlashes } from './orders/target-flashes.js';
+import { tradeRefusal } from './orders/trade-refusal.js';
 import { createVehicleOrderController } from './orders/vehicle.js';
 import { createUnitChrome } from './panels/chrome.js';
 import { type EquipPickController, mountEquipPicker } from './panels/equip-picker.js';
 import { pickCursor } from './pick-cursor.js';
 import { createPickModeController, pickPressCue } from './pick-mode.js';
+import {
+  type RightClickContext,
+  type RightClickMods,
+  rightClickHitAt,
+  rightClickMods,
+} from './right-click/context.js';
+import { type RightClickOrders, resolveRightClick, resolveRightClickOrders } from './right-click/press.js';
+import { resolveVehicleRightClick, type VehiclePlan } from './right-click/vehicles.js';
 import { createUnitSelection } from './selection.js';
 import { createSelectionCursor } from './selection-cursor.js';
 import { createSelectionVoice } from './selection-voice.js';
@@ -48,15 +64,16 @@ export type { UnitControls, UnitControlsOptions } from './types.js';
 
 /** The browser's click count (`MouseEvent.detail`) on the second press of a double-click. */
 const DOUBLE_CLICK = 2;
+/** `MouseEvent.button` of the right button. */
+const RIGHT_BUTTON = 2;
 
-/** A right-click press as it landed. A fallback that runs once the sim's answer arrives replays it, so
- *  the order controllers resolve its client point to the press's world point and read the press's
- *  selection, however far the camera or the selection moved meanwhile. */
+/** A right-click press as it landed. A fallback that runs once the sim's answer arrives resolves the
+ *  press again at its world point for its selection, however far the camera or the selection moved
+ *  meanwhile. */
 interface RightClickPress {
-  readonly clientX: number;
-  readonly clientY: number;
   readonly world: { readonly x: number; readonly y: number };
   readonly selected: ReadonlySet<number>;
+  readonly mods: RightClickMods;
 }
 
 /**
@@ -87,6 +104,18 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     cue('fail');
   };
   const answered = createAnsweredOrders();
+  const stancesToward = opts.tradeStances;
+  const offersTrade = opts.offersTrade;
+  const noteTradeRefused = opts.noteTradeRefused;
+  const refuseTradeHouse =
+    stancesToward === undefined || offersTrade === undefined || noteTradeRefused === undefined
+      ? undefined
+      : (house: number): void => {
+          answered.after(offersTrade(house), (offers) => {
+            const refusal = tradeRefusal(opts.snapshot(), house, opts.viewer.seat(), offers, stancesToward);
+            if (refusal !== null) noteTradeRefused(refusal.owner, refusal.at);
+          });
+        };
   const controlGroups = createControlGroups(opts.controlGroups);
   const goodIcons = createGoodIconPainter(opts.domHud.pack, opts.content);
   // Without the sim's pick-list seam the panel's equip and swap buttons stay inert.
@@ -183,14 +212,11 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     return screenToWorld(opts.camera(), c.x, c.y);
   };
 
+  /** While a fallback runs, the order controllers read its press's selection. */
   let replaying: RightClickPress | null = null;
-  const orderToWorld = (clientX: number, clientY: number): { x: number; y: number } =>
-    replaying !== null && replaying.clientX === clientX && replaying.clientY === clientY
-      ? replaying.world
-      : toWorld(clientX, clientY);
   const orderSelection = (): ReadonlySet<number> => replaying?.selected ?? selection.ids();
   const replayed =
-    (press: RightClickPress, run: () => void): (() => void) =>
+    (press: RightClickPress, run: () => unknown): (() => void) =>
     () => {
       const outer = replaying;
       replaying = press;
@@ -231,7 +257,11 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     canAttachToVehicle: opts.canAttachToVehicle,
     canAttachTradeHouse: opts.canAttachTradeHouse,
     askAttachTradeHouse: opts.askAttachTradeHouse,
+    onTradeRefused: refuseTradeHouse,
     askPlaceSignpostAt: opts.askPlaceSignpostAt,
+    signpostAnswerAt: opts.signpostAnswerAt,
+    tradeHouseAttachAnswer: opts.tradeHouseAttachAnswer,
+    vehicleAttachAnswer: opts.vehicleAttachAnswer,
     cue,
     answered,
     ...(opts.attachPicksVersion !== undefined ? { answersVersion: opts.attachPicksVersion } : {}),
@@ -260,6 +290,20 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     if (units.length === 0 && vehicles.length === 0) return;
     chrome.actions().close();
     pickMode.arm({ kind: 'attack-move', units, vehicles });
+  };
+
+  /** Arm the dock pick for the ships the selection docks: the one selected ship, or a group's; a group
+   *  past the order cap is told so. */
+  const armDock = (): boolean => {
+    if (vehicleOrders.selectedOwnVehicles().length > MAX_UNIT_ORDER_MEMBERS) {
+      refuseOrderLimit();
+      return true;
+    }
+    const ships = vehicleOrders.rightClickShips();
+    if (ships.length === 0) return false;
+    chrome.actions().close();
+    pickMode.arm({ kind: 'vehicle-dock', vehicles: ships });
+    return true;
   };
 
   const keyboardOrders = createKeyboardOrders({
@@ -322,8 +366,7 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     snapshot: opts.snapshot,
     content: opts.content,
     mapSize: opts.mapSize,
-    ...(opts.elevation !== undefined ? { elevation: opts.elevation } : {}),
-    toWorld: orderToWorld,
+    toWorld,
     enqueue: opts.enqueue,
     selectOwnSettler: (id) => applySelection([id], false),
     openActions: (atClient) => chrome.actions().open(atClient),
@@ -334,6 +377,7 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
         ? undefined
         : (movers) => opts.voices?.refuse({ members: movers, fallback: 'fail' }),
     askAttachTradeHouse: opts.askAttachTradeHouse,
+    onTradeRefused: refuseTradeHouse,
     markOrder: orderMarkers.place,
     flashTarget: targetFlashes.flash,
   });
@@ -345,12 +389,12 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     snapshot: opts.snapshot,
     content: opts.content,
     mapSize: opts.mapSize,
-    ...(opts.elevation !== undefined ? { elevation: opts.elevation } : {}),
     viewer: opts.viewer,
-    toWorld: orderToWorld,
+    toWorld,
     enqueue: opts.enqueue,
     askAttachToVehicle: opts.askAttachToVehicle,
-    askMoorAt: opts.askMoorAt,
+    askMooring: opts.askMooring,
+    mooring: opts.mooring,
     answered,
     pendingGroundOrders,
     markOrder: orderMarkers.place,
@@ -365,6 +409,63 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     cue,
   });
 
+  const hintContext = (): HintContext => ({
+    ...rightClickContext(),
+    answers: {
+      tradeHouseAttach: (trader, house) => opts.tradeHouseAttachAnswer?.(trader, house),
+      vehicleAttach: (settler, vehicle) => opts.vehicleAttachAnswer?.(settler, vehicle),
+      jobChoice: (entity, jobType) => opts.jobChoiceAnswer?.(entity, jobType),
+      docks: (ships, tile) =>
+        ships.length > 0 && vehicleOrders.previewBerths(ships, tile, RIGHT_CLICK_SNAP_NODES).length > 0,
+    },
+  });
+
+  /** The label names what the armed pick's press, else a right press, would do at the point, resolved
+   *  as that press resolves it. */
+  const hintLineAt = (clientX: number, clientY: number, mods: ModifierState) => {
+    const world = toWorld(clientX, clientY);
+    const selected = selection.ids();
+    const hit = rightClickHitAt(unitTargets, world, opts.elevation);
+    const hint = pickMode.isArmed()
+      ? pickHint(opts.snapshot(), pickMode.aimAt(clientX, clientY, mods.ctrlKey || mods.metaKey))
+      : selected.size === 0
+        ? null
+        : planHint(hintContext(), {
+            hit,
+            doorMarker: clickHits.doorMarkerAt(world.x, world.y),
+            selected,
+            settlers: unitTargets.ownedSettlersIn(selected),
+            mods: rightClickMods(mods),
+            workFlag: matchesMouseBinding({ ...mods, button: RIGHT_BUTTON }, opts.bindings.workFlagOrder),
+          });
+    const target = natureTargetOf(hit, hint);
+    const nameContext = { snapshot: opts.snapshot(), content: opts.content, uiString: opts.domHud.uiString };
+    const name = target === null ? null : natureName(nameContext, target, hit);
+    return hintLine(name, hint, (jobType) => jobDisplayName(opts.content, jobType));
+  };
+
+  const actionHint = createActionHint({
+    canvas,
+    label: createHintLabel(opts.domHud.plane, opts.domHud.scale),
+    camera: opts.camera,
+    versions: [
+      selection.version,
+      pickMode.version,
+      opts.viewer.version,
+      opts.jobChoicesVersion,
+      ...(opts.attachPicksVersion !== undefined ? [opts.attachPicksVersion] : []),
+      ...(opts.placementAnswersVersion !== undefined ? [opts.placementAnswersVersion] : []),
+    ],
+    blocked: (x, y) =>
+      opts.hintSuppressed?.() === true ||
+      marquee.active() ||
+      opts.claimPointer?.(x, y) === true ||
+      chrome.claimsPointer(x, y) ||
+      chrome.actions().claimsPointer(x, y),
+    lineAt: hintLineAt,
+    enabled: opts.cursorHints ?? true,
+  });
+
   const onMouseDown = (e: MouseEvent): void => {
     pointer = { x: e.clientX, y: e.clientY };
     // The HUD claims its own clicks before any world picking. The ring's buttons take their own presses;
@@ -377,56 +478,98 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
       if (pickCue !== null) cue(pickCue);
       return;
     }
-    if (matchesMouseBinding(e, opts.bindings.workFlagOrder)) {
-      if (orders.issueSetWorkFlagAt(e)) cue('confirm');
+    const workFlag = matchesMouseBinding(e, opts.bindings.workFlagOrder);
+    if (e.button === RIGHT_BUTTON) {
+      rightPress(e, workFlag);
       return;
     }
-    if (e.button === 2) {
-      const w = toWorld(e.clientX, e.clientY);
-      const marker = clickHits.doorMarkerAt(w.x, w.y);
-      if (marker?.kind === 'settler') {
-        // The marker stands for the person inside, so it takes the right click the figure would.
-        applySelection([marker.ref], false);
-        chrome.actions().open({ x: e.clientX, y: e.clientY });
-        cue('confirm');
-      } else {
-        // Refuse a whole mixed gesture before either its settlers or vehicles submit anything.
-        if (
-          pickTopAt(unitTargets.owned('settler'), w.x, w.y) === null &&
-          [...selection.ids()].filter(isUnit).length > MAX_UNIT_ORDER_MEMBERS
-        ) {
-          refuseOrderLimit();
-          return;
-        }
-        // Settlers the vehicle under the cursor refuses take the usual right-click once it answered.
-        const onBuilding = marker?.kind === 'building' ? marker.ref : null;
-        const press: RightClickPress = {
-          clientX: e.clientX,
-          clientY: e.clientY,
-          world: w,
-          selected: new Set(selection.ids()),
-        };
-        const fallback = replayed(press, () => rightClickOrders(e, onBuilding, press));
-        if (vehicleOrders.issueAttachSelected(e, fallback)) cue('confirm');
-        else if (rightClickOrders(e, onBuilding, press)) cue('confirm');
-      }
+    if (workFlag) {
+      const hit = rightClickHitAt(unitTargets, toWorld(e.clientX, e.clientY), opts.elevation);
+      if (orders.issueWorkFlagAt(hit.tile, hit.resource?.goodType ?? null)) cue('confirm');
       return;
     }
     if (e.button !== 0) return; // middle belongs to the camera controller's pan
     marquee.begin(e.clientX, e.clientY);
   };
 
-  /** Settlers and vehicles selected together both take the click. One that picks an own settler replaces
-   *  the selection first, which leaves no vehicle selected to drive. */
-  const rightClickOrders = (e: MouseEvent, onBuilding: number | null, press: RightClickPress): boolean => {
-    const settlersTook = orders.issueRightClick(e, onBuilding);
+  const rightClickContext = (): RightClickContext => ({
+    snapshot: opts.snapshot(),
+    content: opts.content,
+    viewer: opts.viewer,
+    asks: {
+      tradeHouse: opts.askAttachTradeHouse !== undefined,
+      equip: opts.requestEquipPicks !== undefined,
+      mooring: opts.askMooring !== undefined,
+      attach: opts.askAttachToVehicle !== undefined,
+      formation: opts.requestFormationSlots !== undefined,
+    },
+  });
+
+  /** What the frame now drawn shows at the press's world point, for its selection: read as the press
+   *  lands, and again as a fallback runs. */
+  const inputAt = (press: RightClickPress) => ({
+    hit: rightClickHitAt(unitTargets, press.world, opts.elevation),
+    selected: press.selected,
+    settlers: unitTargets.ownedSettlersIn(press.selected),
+    mods: press.mods,
+  });
+
+  /** The click executes the plan it resolved, so a hover reading the same plan names what it does. */
+  const rightPress = (e: MouseEvent, workFlag: boolean): void => {
+    const world = toWorld(e.clientX, e.clientY);
+    const press: RightClickPress = { world, selected: new Set(selection.ids()), mods: rightClickMods(e) };
+    const input = inputAt(press);
+    const plan = resolveRightClick(rightClickContext(), {
+      ...input,
+      doorMarker: clickHits.doorMarkerAt(world.x, world.y),
+      workFlag,
+    });
+    switch (plan.kind) {
+      case 'workFlag':
+        if (orders.issueWorkFlagAt(plan.tile, plan.goodType, plan.units)) cue('confirm');
+        return;
+      case 'doorSettler':
+        applySelection([plan.settler], false);
+        chrome.actions().open({ x: e.clientX, y: e.clientY });
+        cue('confirm');
+        return;
+      case 'orderLimit':
+        refuseOrderLimit();
+        return;
+      case 'attach': {
+        // Settlers the vehicle under the cursor refuses take the usual right-click once it answered.
+        const refused = replayed(press, () =>
+          issueOrders(
+            resolveRightClickOrders(rightClickContext(), inputAt(press), plan.onBuilding),
+            e,
+            press,
+          ),
+        );
+        const took =
+          vehicleOrders.issueAttachPlan(plan.attach, press.mods.queued, refused) ||
+          issueOrders(resolveRightClickOrders(rightClickContext(), input, plan.onBuilding), e, press);
+        if (took) cue('confirm');
+        return;
+      }
+      case 'orders':
+        if (issueOrders(plan, e, press)) cue('confirm');
+    }
+  };
+
+  const vehiclesAt = (press: RightClickPress): VehiclePlan => {
+    const { hit, selected, mods } = inputAt(press);
+    return resolveVehicleRightClick(rightClickContext(), selected, hit, mods);
+  };
+
+  /** Settlers and vehicles selected together both take the click. */
+  const issueOrders = (plan: RightClickOrders, e: MouseEvent, press: RightClickPress): boolean => {
+    const settlersTook = orders.issueSettlerPlan(plan.settlers, e);
     // A trader riding its cart takes a house onto its route instead of driving the cart there.
     const vehiclesTook =
-      orders.issueRiderTradeHouse(
-        e,
-        onBuilding,
-        replayed(press, () => vehicleOrders.issueRightClick(e)),
-      ) || vehicleOrders.issueRightClick(e);
+      orders.issueRiderPlan(
+        plan.riders,
+        replayed(press, () => vehicleOrders.issueVehiclePlan(vehiclesAt(press), press.mods.queued)),
+      ) || vehicleOrders.issueVehiclePlan(plan.vehicles, press.mods.queued);
     return settlersTook || vehiclesTook;
   };
 
@@ -544,11 +687,18 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     } else if (isOrderHotkey(e, opts.bindings, 'attackMove')) {
       e.preventDefault();
       armAttackMove();
+    } else if (isOrderHotkey(e, opts.bindings, 'dockShips')) {
+      e.preventDefault();
+      // A selection without a ship is told so; an empty one stays silent like the other order keys.
+      if (!armDock() && selection.ids().size > 0) cue('fail');
     } else if (isActionHotkey(e, opts.bindings, 'upgradeBuilding')) {
       e.preventDefault();
       // The owned-order gate cues a sent or refused press; a selection without an upgrade tile is
       // told here, an empty one stays silent like the other order keys.
       if (!chrome.upgradeBuilding() && selection.ids().size > 0) cue('fail');
+    } else if (isActionHotkey(e, opts.bindings, 'buildingAlarm')) {
+      e.preventDefault();
+      if (!chrome.buildingAlarm() && selection.ids().size > 0) cue('fail');
     } else if (keyboardOrders(e)) {
       e.preventDefault();
     } else if (e.code === 'Tab' && browsesTrade(e) && chrome.browse(e.shiftKey ? -1 : 1)) {
@@ -594,7 +744,13 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     orderMarkers: orderMarkers.live,
     targetFlashes: targetFlashes.live,
     lostGoals: () => lostGoals(opts.snapshot(), selection.ids(), pickableSeat(opts.viewer)),
-    assignHighlight: pickMode.highlight,
+    targetMarks: pickMode.highlight,
+    aimTarget: (pointer) => {
+      const mark = pointer === null ? null : pickMode.aimedAt(pointer.clientX, pointer.clientY);
+      const refused = mark?.tone === 'refused';
+      setCanvasCursor(canvas, 'pick', refused ? 'not-allowed' : pickCursor(pickMode.armed()));
+      return mark === null || refused ? null : mark.id;
+    },
     ownWallsAt: (points) => {
       const walls = unitTargets.owned('palisade');
       return points.map(({ x, y }) => {
@@ -610,13 +766,22 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
       pickMode.isArmed() ||
       selection.ids().size > 0,
     dockPickVehicle: pickMode.dockVehicle,
+    berthPreview: (tile) => {
+      const docking = pickMode.dockShips();
+      if (docking.length > 0) return vehicleOrders.previewBerths(docking, tile, DOCK_PICK_SNAP_NODES);
+      if (pickMode.isArmed()) return [];
+      return vehicleOrders.previewBerths(vehicleOrders.rightClickShips(), tile, RIGHT_CLICK_SNAP_NODES);
+    },
     // Includes the details panel, so a consumer gating on this treats a point over the panel as HUD
     // rather than world.
     claimsPointer: (x, y) =>
       opts.claimPointer?.(x, y) === true ||
       chrome.claimsPointer(x, y) ||
       chrome.actions().claimsPointer(x, y),
-    refreshCursor: selectionCursor.update,
+    refreshCursor: (snapshot) => {
+      selectionCursor.update(snapshot);
+      actionHint.update(snapshot);
+    },
     tick: (snapshot) => {
       dropGoneMembers(snapshot);
       orders.refresh();
@@ -627,11 +792,13 @@ export async function createUnitControls(opts: UnitControlsOptions): Promise<Uni
     },
     presentFigures: chrome.presentFigures,
     setHudHidden: chrome.setHudHidden,
+    setCursorHints: actionHint.setEnabled,
     setUiScale: async (scale) => {
       await Promise.all([chrome.setUiScale(scale), orders.setUiScale(scale)]);
     },
     dispose: () => {
       selectionCursor.dispose();
+      actionHint.dispose();
       orderLimitNotice.dispose();
       pickMode.cancel(); // an armed mode owns the canvas cursor, which teardown must not leave set
       canvas.removeEventListener('mousedown', onMouseDown);

@@ -12,6 +12,8 @@ export const HOUSE_B = 20;
 /** The fixture's goods: swords both houses store, food only A stores. */
 export const SWORD = 42;
 export const FOOD = 7;
+/** A dish that travels as {@link FOOD}. */
+export const BREAD = 8;
 /** The stock categories the fixture's goods sit in (food, military). */
 export const FOOD_TAB = 0;
 export const MILITARY_TAB = 6;

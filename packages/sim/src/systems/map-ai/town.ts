@@ -5,6 +5,7 @@ import {
   Female,
   JobAssignment,
   ownerOf,
+  Palisade,
   Position,
   Residence,
   Settler,
@@ -145,8 +146,9 @@ function spareMen(world: World, ctx: SystemContext, terrain: TerrainGraph, seat:
   return men;
 }
 
-/** Turn the nearest spare men builders until the sites and repairs have their crews; the builders find
- *  their sites themselves. A workshop's vehicle yard is its own crew's work and wants no builder. */
+/** Turn the nearest spare men builders until the house and wall sites and the repairs have their crews;
+ *  the builders find their sites themselves. A workshop's vehicle yard is its own crew's work and wants
+ *  no builder. */
 function builderOrders(
   world: World,
   ctx: SystemContext,
@@ -169,7 +171,10 @@ function builderOrders(
     if (world.has(e, UnderConstruction) && kind !== BUILDING_KIND.vehicle)
       consider(e, repairCrewLimit(world, e));
   }
-  // Damaged walls carry no Building, so the repairs come from the damage index.
+  // Walls carry no Building, so their sites and repairs come from the wall and damage indexes.
+  for (const e of world.query(Palisade, UnderConstruction)) {
+    if (ownerOf(world, e) === seat) consider(e, repairCrewLimit(world, e));
+  }
   for (const e of world.query(Damaged)) {
     if (ownerOf(world, e) !== seat || world.has(e, UnderConstruction) || !needsRepair(world, e)) continue;
     consider(e, Math.min(repairCrewLimit(world, e), TOWN_REPAIR_BUILDERS));

@@ -21,6 +21,7 @@ import {
   HOLY_FIRE_EFFECT_NAME,
   holyFireLookup,
   inHouseProgramLookup,
+  playerPaletteAtlasStem,
   sequencesFor,
   shadowStemsByAtlasStem,
 } from '../ir/joins.js';
@@ -67,8 +68,7 @@ const UNDRAWN_LAYER: SpriteLayer = {
  *  indexed+LUT so the bob's graded edge alpha survives; the `bridge01` bake is the single-colour
  *  fallback. */
 const GUIDEPOST_ATLAS_BAKED = 'ls_guidepost.bridge01';
-const guidepostPlayerAtlas = (player: number): string =>
-  `ls_guidepost.player_${String(player).padStart(2, '0')}`;
+const guidepostPlayerAtlas = (player: number): string => playerPaletteAtlasStem('ls_guidepost', player);
 const GUIDEPOST_POST_BOB = 0;
 const GUIDEPOST_BOARD_BOBS = Array.from({ length: 18 }, (_, i) => i + 1);
 

@@ -35,8 +35,8 @@ converted content over the `app://` protocol. The root [`AGENTS.md`](../../AGENT
   asks the player to restart or quit instead. Main-process errors keep Electron's own handling.
 - `src/faults/shell-run.ts` keeps `shell-run.json` while the shell runs and removes it on quit. One
   left at the next start tells the page how that run ended: a minidump newer than the run's start
-  and its last child-process death plus a grace (a native crash), a system shutdown (no report for a
-  page that stopped with it), or neither. Dumps are never
+  and its last child-process death plus a grace (a native crash), a system shutdown or a sleep it
+  never woke from (no report for a page that stopped with either), or none of these. Dumps are never
   uploaded; the start deletes them once judged.
 - A packaged build (or a run with `ON_ORIGINAL_GAME_CHECK=1`) requires an installed original game
   through `src/original-game/`. Before the window opens, a profile without `original-game.json`

@@ -1,10 +1,16 @@
-import type { AssistantCounterKind, AssistantGrantAudience } from '../../components/assistant.js';
+import type {
+  AssistantArmingIntent,
+  AssistantCounterKind,
+  AssistantGrantAudience,
+} from '../../components/assistant.js';
 
 /** Commands that configure the per-player settlement assistant. */
 export type AssistantCommand =
   | AssistantGrantCommand
   | AssistantGrantAudienceCommand
   | AssistantWeaponVetoCommand
+  | AssistantArmorOrderCommand
+  | AssistantWeaponOrderCommand
   | AssistantCounterCommand
   | AssistantPostGraduatesCommand
   | AssistantMoveFlagsCommand;
@@ -51,6 +57,36 @@ type AssistantWeaponVetoCommand = {
   /** The content good type id; a good that arms no class is skipped. */
   readonly goodType: number;
   readonly vetoed: boolean;
+};
+
+type AssistantArmorOrderCommand = {
+  /**
+   * Set the armor choice of one weapon class in `player`'s recruit arming, held on the per-player
+   * `AssistantArmorOrders` carrier: the order its recruits shop the armor goods in, and the goods they are
+   * never handed. A recruit takes the first `order` good a reachable store holds that is not `off`, and
+   * goes without armor when none is.
+   */
+  readonly kind: 'setAssistantArmorOrder';
+  /** The player slot (`[0, MAX_PLAYERS)`); an out-of-range slot skips the command. */
+  readonly player: number;
+  readonly intent: AssistantArmingIntent;
+  /** Every armor good of the content, once each; any other list skips the command. */
+  readonly order: readonly number[];
+  /** Goods of `order`; any other good skips the command. */
+  readonly off: readonly number[];
+};
+
+type AssistantWeaponOrderCommand = {
+  /**
+   * Set the order one weapon class's recruits shop its weapon goods in, held on the per-player
+   * `AssistantWeaponOrders` carrier. Which of them a recruit never takes stays `setAssistantWeaponVeto`'s.
+   */
+  readonly kind: 'setAssistantWeaponOrder';
+  /** The player slot (`[0, MAX_PLAYERS)`); an out-of-range slot skips the command. */
+  readonly player: number;
+  readonly intent: AssistantArmingIntent;
+  /** Every weapon good of the class, once each; any other list skips the command. */
+  readonly order: readonly number[];
 };
 
 /**

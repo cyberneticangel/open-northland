@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { devRelayIdentity, relayIdentity } from '../../../src/entries/relay/identity.js';
+import {
+  devRelayIdentity,
+  relayIdentity,
+  rememberFlag,
+  storedFlag,
+} from '../../../src/entries/relay/identity.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -39,4 +44,23 @@ it('gives each nick the developer URL names its own token, and leaves the menu n
   expect(devRelayIdentity(relay, ' Gracz 2 ')).toEqual(first);
   expect(devRelayIdentity(relay, null)).toEqual(relayIdentity(relay, null));
   expect(JSON.parse(storage.get('open-northland.settings') ?? '{}').netNick).toBe('Ania');
+});
+
+it('says hello with the flag the player chose, a choice of none included, and keeps it for later', () => {
+  const storage = new Map<string, string>();
+  vi.stubGlobal('window', {
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+    },
+  });
+  const relay = 'wss://relay.example';
+  expect(storedFlag()).toBeUndefined();
+  expect(relayIdentity(relay, 'Ania')).not.toHaveProperty('flag');
+  rememberFlag('PL');
+  expect(storedFlag()).toBe('PL');
+  expect(relayIdentity(relay, null).flag).toBe('PL');
+  rememberFlag(undefined);
+  expect(storedFlag()).toBeNull();
+  expect(relayIdentity(relay, null)).not.toHaveProperty('flag');
 });

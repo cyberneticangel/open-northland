@@ -112,6 +112,11 @@ export class SeatTable {
       return { code: 'seatTribeUnavailable', player };
     if (change.difficulty !== undefined && seat.difficulty === undefined)
       return { code: 'seatDifficultyUnavailable', player };
+    // A map may author one colour on two seats; a pick only refuses a colour another seat wears.
+    if (change.color !== undefined && change.color !== seat.color) {
+      const wearer = this.seats.find((other) => other !== seat && other.color === change.color);
+      if (wearer !== undefined) return { code: 'colorTaken', player, wearer: wearer.player };
+    }
     if (change.mode !== undefined) {
       if (seat.member !== null) return { code: 'seatTaken', player, nick: seat.member.nick };
       if (!seat.offers.includes(change.mode))

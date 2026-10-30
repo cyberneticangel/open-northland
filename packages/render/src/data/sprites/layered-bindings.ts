@@ -130,6 +130,9 @@ export interface ResourceTypeBinding {
  *  shortest construction post to the completed full-height post. */
 export interface PalisadeBinding {
   readonly byGfxIndex: Readonly<Record<number, readonly LayeredBobRef[]>>;
+  /** The same frames from each team colour's `player_NN` bake, indexed by colour slot: the original draws
+   *  an owned wall through its owner's palette. A missing slot or record falls back to {@link byGfxIndex}. */
+  readonly byPlayer?: readonly (Readonly<Record<number, readonly LayeredBobRef[]>> | undefined)[];
   /** The source record order cycled by the two connection posts. */
   readonly variantOrder?: readonly number[];
   readonly default: LayeredBobRef;

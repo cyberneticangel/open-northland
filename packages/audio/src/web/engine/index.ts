@@ -27,8 +27,11 @@ export {
 export { BUS_DUCK_RAMP_S } from './bus-duck.js';
 export { MUSIC_STOP_FADE_S, MUSIC_SWITCH_TIMING, SPARE_DECODED_TRACKS } from './music-player.js';
 export {
+  isNarrationRate,
   NARRATION_IDLE,
+  NARRATION_RATES,
   type NarrationCue,
+  type NarrationRate,
   type NarrationState,
   type NarrationStatus,
   narratable,

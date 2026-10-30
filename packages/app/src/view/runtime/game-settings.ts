@@ -9,6 +9,7 @@ export interface GameSettingsRuntime {
   readonly pinnedUiScale: number | null;
   effectiveUiScaleFor(factor: number): number;
   readonly bootOwnedChangesDeferred: true;
+  readonly inGame: true;
   update(patch: Partial<MenuSettings>): Promise<boolean>;
   /** Play the clip that previews a bus's slider; absent without a sound driver. */
   readonly previewBus?: (bus: SoundBus) => void;
@@ -26,6 +27,7 @@ export interface GameSettingsRuntimeDeps {
   readonly setMonoSound: (mono: boolean) => void;
   readonly setJinglesEnabled: (on: boolean) => void;
   readonly setUnitResponses: (mode: MenuSettings['unitResponses']) => void;
+  readonly setMusicSource: (source: MenuSettings['musicSource']) => void;
   readonly setLanguage: (language: MenuSettings['language']) => void;
   readonly setKeyBindings: (bindings: MenuSettings['keyBindings']) => void;
   readonly setCameraInputSettings: (settings: CameraInputSettings) => void;
@@ -33,6 +35,7 @@ export interface GameSettingsRuntimeDeps {
   readonly setSelectionStyle: (style: MenuSettings['selectionStyle']) => void;
   /** The outline a hovered unit or building draws; off draws none. */
   readonly setHoverOutline: (enabled: boolean) => void;
+  readonly setCursorHints: (shown: boolean) => void;
   readonly setGroupNumbersShown: (shown: boolean) => void;
   readonly setGraphicsEnhancements: (settings: WorldEnhancements) => void;
   readonly setMinimapFrame: (frame: MenuSettings['minimapFrame']) => void;
@@ -67,6 +70,7 @@ export function createGameSettingsRuntime(deps: GameSettingsRuntimeDeps): GameSe
     if (patch.monoSound !== undefined) deps.setMonoSound(patch.monoSound);
     if (patch.jinglesEnabled !== undefined) deps.setJinglesEnabled(patch.jinglesEnabled);
     if (patch.unitResponses !== undefined) deps.setUnitResponses(patch.unitResponses);
+    if (patch.musicSource !== undefined) deps.setMusicSource(patch.musicSource);
     if (patch.language !== undefined) deps.setLanguage(patch.language);
     if (patch.keyBindings !== undefined) deps.setKeyBindings(patch.keyBindings);
     if (
@@ -83,6 +87,7 @@ export function createGameSettingsRuntime(deps: GameSettingsRuntimeDeps): GameSe
     if (patch.minimapFrame !== undefined) deps.setMinimapFrame(patch.minimapFrame);
     if (patch.selectionStyle !== undefined) deps.setSelectionStyle(patch.selectionStyle);
     if (patch.hoverOutline !== undefined) deps.setHoverOutline(patch.hoverOutline);
+    if (patch.cursorHints !== undefined) deps.setCursorHints(patch.cursorHints);
     if (patch.groupNumbers !== undefined) deps.setGroupNumbersShown(patch.groupNumbers);
     if (patch.blood !== undefined) deps.setBloodEnabled(patch.blood);
     if (patch.bonesFade !== undefined) deps.setBonesFade(patch.bonesFade);
@@ -98,6 +103,7 @@ export function createGameSettingsRuntime(deps: GameSettingsRuntimeDeps): GameSe
     pinnedUiScale: deps.pinnedUiScale,
     effectiveUiScaleFor: deps.effectiveUiScaleFor,
     bootOwnedChangesDeferred: true,
+    inGame: true,
     ...(deps.previewBus !== undefined ? { previewBus: deps.previewBus } : {}),
     update(patch): Promise<boolean> {
       const patchRevision = ++revision;

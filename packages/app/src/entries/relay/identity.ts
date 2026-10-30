@@ -1,22 +1,44 @@
 import { newToken } from '@open-northland/net-client';
+import { type PlayerFlag, parseFlag, withFlag } from '@open-northland/net-protocol';
 import { messages } from '../../i18n/index.js';
 import { patchStoredSettings, readStoredSettings } from '../../view/settings/store.js';
 
 const tokens = new Map<string, string>();
+/** The stored `netFlag` of a player who chose to show no flag. */
+const NO_FLAG = 'none';
 
 export interface RelayIdentity {
   readonly token: string;
   readonly nick: string;
+  readonly flag?: PlayerFlag;
 }
 
-/** A reconnect secret belongs to one relay endpoint; the display name is shared across relays, and a
- *  player who never chose one shows up under the catalog's default. */
+/** The flag the player last chose, null for a choice of none; undefined while they never chose. */
+export function storedFlag(): PlayerFlag | null | undefined {
+  const { netFlag } = readStoredSettings();
+  if (netFlag === NO_FLAG) return null;
+  if (netFlag === null) return undefined;
+  // Anything else the relay would refuse counts as no choice.
+  try {
+    return parseFlag({ flag: netFlag }, 'netFlag').flag;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The player's flag from now on, on every relay; none when absent. */
+export function rememberFlag(flag: PlayerFlag | undefined): void {
+  patchStoredSettings({ netFlag: flag ?? NO_FLAG });
+}
+
+/** A reconnect secret belongs to one relay endpoint; the display name and flag are shared across
+ *  relays, and a player who never chose a name shows up under the catalog's default. */
 export function relayIdentity(relayUrl: string, requestedNick: string | null): RelayIdentity {
   const stored = readStoredSettings();
   const token = storedToken(tokenKey(relayUrl));
   const nick = requestedNick?.trim() || stored.netNick || messages().net.defaultNick;
   if (nick !== stored.netNick) patchStoredSettings({ netNick: nick });
-  return { token, nick };
+  return { token, nick, ...withFlag(storedFlag() ?? undefined) };
 }
 
 /** The developer entry's identity: a nick the URL names gets a secret of its own, so two tabs of one
@@ -24,7 +46,11 @@ export function relayIdentity(relayUrl: string, requestedNick: string | null): R
 export function devRelayIdentity(relayUrl: string, urlNick: string | null): RelayIdentity {
   const nick = urlNick?.trim() ?? '';
   if (nick.length === 0) return relayIdentity(relayUrl, null);
-  return { token: storedToken(`${tokenKey(relayUrl)}#${nick}`), nick };
+  return {
+    token: storedToken(`${tokenKey(relayUrl)}#${nick}`),
+    nick,
+    ...withFlag(storedFlag() ?? undefined),
+  };
 }
 
 function tokenKey(relayUrl: string): string {

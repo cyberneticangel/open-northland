@@ -36,7 +36,7 @@ import {
   unclaimedStockOf,
 } from '../../targets/index.js';
 import { unreachableGoalVeto } from '../../unreachable-goals.js';
-import { carriedGoodForm, deliverySinkProbe } from './delivery-targets.js';
+import { carriedGoodForm, deliverySinkProbe, homeBoundGoodProbe } from './delivery-targets.js';
 import { haulFlagArea, workAreaGate } from './haul-flag-area.js';
 import { isFarmCarrierHaulOutRole } from './store-policy.js';
 
@@ -50,10 +50,9 @@ import { isFarmCarrierHaulOutRole } from './store-policy.js';
  *
  * A ground pile is an {@link isLoosePile} heap not buried under a building's walls or out of every unit's
  * reach; a wall or road site's delivered material is never one. The good lifted is the pile's lowest-id
- * stocked one, and the scan is canonical by Manhattan distance then ascending cell id. A good this porter
- * could not deliver is skipped, since lifting it would only make it shed the load at its feet. The tests
- * run per candidate, so a lift or claim earlier in the pass is seen by the next porter, and a good every
- * unit of which a walker already claimed is passed over.
+ * stocked one passing `deliverable`, and the scan is canonical by Manhattan distance then ascending cell
+ * id. The tests run per candidate, so a lift or claim earlier in the pass is seen by the next porter, and
+ * a good every unit of which a walker already claimed is passed over.
  */
 function nearestLoosePickup(
   plan: PlannerContext,
@@ -63,8 +62,12 @@ function nearestLoosePickup(
   const walls = buildingBlockedCells(world, ctx, terrain);
   const groundPileGood = (e: Entity): Qualified<number> | null => {
     if (!isLoosePile(world, e)) return null;
-    const good = lowestStockedGood(world.get(e, Stockpile), unclaimedGoodsAt(world, ctx, supply, e));
-    if (good === null || !deliverable(good)) return null;
+    const unclaimed = unclaimedGoodsAt(world, ctx, supply, e);
+    const good = lowestStockedGood(
+      world.get(e, Stockpile),
+      (g) => (unclaimed?.(g) ?? true) && deliverable(g),
+    );
+    if (good === null) return null;
     return strandedPile(world, ctx, terrain, walls, e) ? null : { payload: good };
   };
   const avoid = unreachableGoalVeto(world, ctx, plan.entity);
@@ -203,7 +206,8 @@ export function boundProducerOutputToHaul(
 /**
  * The porter rung's pickup decision, side-effect-free so the dormancy verifier can re-run it without
  * mutating state: the bound producer's output out first, then a good short of its storage minimum, else
- * the nearest deliverable loose pickup in.
+ * the nearest loose pickup in. The loose pickup, like a flagged porter's output pickup, lifts only a
+ * good bound for the porter's own store.
  */
 export function porterPickupTarget(plan: PlannerContext): { from: Entity; goodType: number } | null {
   // One routing memo for both probes.
@@ -218,5 +222,5 @@ export function porterPickupTarget(plan: PlannerContext): { from: Entity; goodTy
     plan.supply,
   );
   if (haul !== null) return { from: haul.home, goodType: haul.goodType };
-  return nearestMinimumRestock(plan, sinkOf) ?? nearestLoosePickup(plan, deliverable);
+  return nearestMinimumRestock(plan, sinkOf) ?? nearestLoosePickup(plan, homeBoundGoodProbe(plan));
 }

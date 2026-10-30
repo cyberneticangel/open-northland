@@ -122,7 +122,8 @@ describe('compound selection orders', () => {
   it('applies every compound member on one tick and round-trips their serialized save and replay', () => {
     const { sim, units } = fixture(SQUAD);
     const house = sim.world.create();
-    for (const entity of units) sim.world.add(entity, TrainingOrder, { house, drillTicksLeft: 100 });
+    for (const entity of units)
+      sim.world.add(entity, TrainingOrder, { house, drillTicksLeft: 100, enrolled: 0, seated: true });
     const order: PlayerCommand = {
       kind: 'unitOrdersGroup',
       members: units.map((entity, i) => ({

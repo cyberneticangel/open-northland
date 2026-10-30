@@ -1,6 +1,7 @@
 import type { components } from '@open-northland/sim';
 import type { ActionOrderId } from '../../action-ring/index.js';
 import type { GroupStance } from '../../details-panel/model/index.js';
+import type { KeybindingAction } from '../../keybindings.js';
 import type { GoodIconPainter } from '../good-art.js';
 import type { TipChip } from '../parts/tip-layer.js';
 import type { OrdersPress } from '../selection-panel.js';
@@ -22,6 +23,10 @@ export interface GroupPanelActions {
   readonly setStance: (ids: readonly number[], stance: GroupStance) => void;
   readonly setRegeneration: (ids: readonly number[], allowed: boolean) => void;
   readonly setVehicleStance: (ids: readonly number[], stance: components.VehicleStance) => void;
+  /** Arm the dock pick for these ships: each moors at its own berth along the shore picked. */
+  readonly dockShips: (ids: readonly number[]) => void;
+  /** Land the crews of these moored ships. */
+  readonly unloadShips: (ids: readonly number[]) => void;
 }
 
 export interface GroupPanelDeps {
@@ -29,8 +34,10 @@ export interface GroupPanelDeps {
   readonly actions: GroupPanelActions;
   readonly icons: GoodIconPainter;
   readonly tooltip: TipChip;
-  /** The player-facing label of the ring hotkey's current binding, for the orders tooltip. */
-  readonly keyLabel: (action: 'actionRing') => string;
+  /** The player-facing label of an action's current binding, for a control's tooltip. */
+  readonly keyLabel: (action: KeybindingAction) => string;
+  /** Whether the dock pick armed for these ships still waits for its shore; read once a frame. */
+  readonly dockArmed: (ids: readonly number[]) => boolean;
   /** How many of `ids` an action-ring order reaches through the ring's own gates. */
   readonly reach: (order: ActionOrderId, ids: readonly number[]) => number;
 }

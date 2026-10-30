@@ -74,6 +74,7 @@ export function createVehicle(
     passengers: emptySeats(commanderSlotOf(type.passengerSlots) + 1),
     vehicles: emptySeats(type.vehicleSlots),
     heldGoal: null,
+    heldDock: null,
     stance: 'hold',
     guard: { hx: anchor.hx, hy: anchor.hy },
     attack: null,

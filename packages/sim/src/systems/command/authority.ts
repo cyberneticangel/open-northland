@@ -33,7 +33,8 @@ export function authorizedCommand(
   if (envelope.origin === 'setup' || envelope.origin === 'admin') return envelope.command;
   if (envelope.origin === 'ai' && !decisionStillAllowed(world, envelope)) return undefined;
   const command = envelope.command;
-  if (!seatMayIssue(world, envelope.player, command, terrain)) return undefined;
+  const mapAi = envelope.origin === 'ai' && envelope.decisionSource === 'map-ai';
+  if (!seatMayIssue(world, envelope.player, command, terrain, mapAi)) return undefined;
   const commanded = (e: Entity): boolean => seatCommandsUnit(world, envelope, e);
   // A crew and a hold are a player's own, never an ally's: the ordered vehicle and the carrier it is
   // loaded into must both be the seat's.
@@ -114,12 +115,13 @@ function seatMayIssue(
   seat: number,
   command: PlayerCommand,
   terrain: TerrainGraph | undefined,
+  mapAi: boolean,
 ): boolean {
   if (COMMAND_ISSUER[command.kind] !== 'seat') return false;
   // Only a trusted local continuation restores a defeated seat's orders.
   if (isPlayerDead(world, seat) && !isContinuingMatch(world, seat)) return false;
   if (command.kind === 'placeBuilding' || command.kind === 'placePalisade') {
-    if (hasAuthoredOptions(command)) return false;
+    if (hasAuthoredOptions(command, mapAi)) return false;
   }
   // Houses may be any nation the seat builds; roads and walls stay its declared nations, since a gate
   // joins only segments of one tribe.
@@ -131,8 +133,14 @@ function seatMayIssue(
     if (command.force !== undefined || command.laid !== undefined) return false;
     if (!playerPlacementTribes(world, seat)?.includes(command.tribe)) return false;
   }
-  // A seat cuts a gate into its own finished run; only a map stands one on open ground.
-  if (command.kind === 'placePalisade' && terrain !== undefined && isGateRow(terrain, command.gfxIndex)) {
+  // A seat cuts a gate into its own finished run; only a map stands one on open ground, and the map AI
+  // where the seat's gate stood.
+  if (
+    command.kind === 'placePalisade' &&
+    !mapAi &&
+    terrain !== undefined &&
+    isGateRow(terrain, command.gfxIndex)
+  ) {
     return false;
   }
   if ('player' in command && command.player !== seat) return false;
@@ -156,16 +164,19 @@ function isGateRow(terrain: TerrainGraph, gfxIndex: number): boolean {
   return palisadeType(terrain, gfxIndex)?.wall?.gate !== undefined;
 }
 
-/** Only trusted origins may place finished buildings or supply authored placement options. */
+/** Only trusted origins may place finished buildings or supply authored placement options. The map AI
+ *  waives the ground the map stood the seat's wall on. */
 function hasAuthoredOptions(
   command: PlaceBuildingCommand | Extract<PlayerCommand, { kind: 'placePalisade' }>,
+  mapAi: boolean,
 ): boolean {
   if (command.kind === 'placePalisade')
     return (
       command.underConstruction === false ||
       command.valency !== undefined ||
       command.landscapeId !== undefined ||
-      command.force !== undefined
+      command.force !== undefined ||
+      (command.waivedGround !== undefined && !mapAi)
     );
   return (
     command.underConstruction === false ||
@@ -174,7 +185,8 @@ function hasAuthoredOptions(
     command.fillStock !== undefined ||
     command.initialGoods !== undefined ||
     command.missionId !== undefined ||
-    command.level !== undefined
+    command.level !== undefined ||
+    command.record !== undefined
   );
 }
 

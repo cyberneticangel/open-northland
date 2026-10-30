@@ -1,5 +1,7 @@
 import type { ContentSet, EquipCategory } from '@open-northland/data';
 import type {
+  AssistantArmingIntent,
+  AssistantArmorOrder,
   AssistantCounterValues,
   ConstructionPlot,
   ConstructionSupply,
@@ -134,6 +136,11 @@ export interface SessionHost {
   assistantSoldierOnlyGrants(player: number): readonly number[];
   /** The good types `player`'s assistant hands to civilians alone. */
   assistantCivilianOnlyGrants(player: number): readonly number[];
+  /** The armor choice of `player`'s `intent` class: the order its recruits shop the armor goods in, and
+   *  those they are never handed. */
+  assistantArmorOrder(player: number, intent: AssistantArmingIntent): AssistantArmorOrder;
+  /** The order `player`'s `intent` class shops its weapon goods in. */
+  assistantWeaponOrder(player: number, intent: AssistantArmingIntent): readonly number[];
   /** Whether `player`'s assistant sends graduates straight to a free workplace. */
   assistantPostsGraduates(player: number): boolean;
   /** Whether `player`'s gatherers move their own flags after the resources. */

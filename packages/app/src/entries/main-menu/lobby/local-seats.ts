@@ -8,7 +8,7 @@ import { seatModeControl } from '../lobby-controls/seat-mode.js';
 import { tribePicker } from '../lobby-controls/tribe.js';
 import type { MapSelectItem } from '../map-select/model.js';
 import type { LobbySlotRow } from './model.js';
-import { type RosterState, type VacantMode, vacantOffers, wornByAnother } from './roster-state.js';
+import { type RosterState, type VacantMode, vacantOffers, wearerOf } from './roster-state.js';
 
 interface SeatActions {
   readonly togglePicker: (player: number) => void;
@@ -45,12 +45,13 @@ export function localSeatElements(
       {
         label: lobby.teamColour,
         name: colorName,
+        taken: (seat) => formatMessage(lobby.teamColourTaken, { seat: seat + 1 }),
         change: (color) => actions.pickColor(row.slot.player, color),
       },
       {
         value: row.colorId,
         disabled: item.fixedColors,
-        unavailable: (color) => wornByAnother(state, row.slot.player, color),
+        wearer: (color) => wearerOf(state, row.slot.player, color),
       },
       row.slot.player,
     );

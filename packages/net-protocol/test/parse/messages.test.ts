@@ -79,6 +79,7 @@ function wire<T>(value: T): unknown {
 const CLIENT_MESSAGES: readonly ClientMessage[] = [
   { kind: 'finish', tick: 12, hash: '0123abcd', world: 0 },
   { kind: 'hello', protocol: PROTOCOL_VERSION, token: TOKEN, nick: 'Ania' },
+  { kind: 'hello', protocol: PROTOCOL_VERSION, token: TOKEN, nick: 'Ania', flag: 'PL' },
   { kind: 'listRooms' },
   {
     kind: 'createRoom',
@@ -171,6 +172,15 @@ describe('client messages', () => {
       expect(parseClientMessage(wire(message))).toEqual(message);
     });
   }
+
+  it.each(['🇵🇱', 'pl', null])(
+    'leaves out a hello flag %j it cannot read, so any hello still parses',
+    (flag) => {
+      expect(
+        parseClientMessage({ kind: 'hello', protocol: 1, token: TOKEN, nick: 'A', flag }),
+      ).not.toHaveProperty('flag');
+    },
+  );
 
   it.each<[string, unknown, RegExp]>([
     ['an unknown kind', { kind: 'teleport' }, /message\.kind/],
@@ -413,12 +423,13 @@ const SERVER_MESSAGES: readonly ServerMessage[] = [
   {
     kind: 'presence',
     online: [
-      { nick: 'Ania', room: 'a1b2c3d4' },
+      { nick: 'Ania', flag: 'PL', room: 'a1b2c3d4' },
       { nick: 'Bartek', room: null },
     ],
     recent: [{ nick: 'Celina', at: 1_767_297_600_000 }],
   },
   { kind: 'hallChat', from: 'Ania', text: 'ktoś gra?', at: 1_767_297_600_000 },
+  { kind: 'hallChat', from: 'Li', flag: 'CN', text: 'hello', at: 1_767_297_600_000 },
   {
     kind: 'hallChatHistory',
     lines: [{ from: 'Ania', text: 'ktoś gra?', at: 1_767_297_600_000 }],
@@ -465,6 +476,7 @@ const SERVER_MESSAGES: readonly ServerMessage[] = [
       members: [
         {
           nick: 'Ania',
+          flag: 'PL',
           seat: 0,
           connected: true,
           compatibility: COMPATIBILITY,
@@ -555,7 +567,7 @@ const SERVER_MESSAGES: readonly ServerMessage[] = [
       },
     ],
   },
-  { kind: 'chat', from: 'Ania', text: 'gotowi?', at: 1_767_297_600_000, tick: null },
+  { kind: 'chat', from: 'Ania', flag: 'PL', text: 'gotowi?', at: 1_767_297_600_000, tick: null },
   { kind: 'chat', from: 'Ania', text: 'atak!', at: 1_767_297_660_500, tick: 1200 },
   {
     kind: 'chatHistory',
@@ -579,6 +591,12 @@ const SERVER_MESSAGES: readonly ServerMessage[] = [
 ];
 
 describe('server messages', () => {
+  it('refuses a flag beside a nick the relay sent that is no code', () => {
+    expect(() =>
+      parseServerMessage({ kind: 'hallChat', from: 'A', flag: 'pl', text: 'hej', at: 1 }, parseSession),
+    ).toThrow(/hallChat\.flag/);
+  });
+
   const parseSession = (value: unknown): GameSession => {
     expect(value).toEqual(wire(session));
     return session;

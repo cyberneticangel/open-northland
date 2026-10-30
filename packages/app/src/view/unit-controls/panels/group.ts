@@ -8,6 +8,7 @@ import type { GroupPanelActions } from '../../../hud/dom/group-panel/actions.js'
 import type { OrdersPress } from '../../../hud/dom/selection-panel.js';
 import { orderRecipients } from '../action-ring/menu-state.js';
 import { enqueueArmyOrder } from '../orders/group.js';
+import type { PickMode } from '../pick-mode.js';
 import type { UnitControlsOptions } from '../types.js';
 
 /** What the unit controls do for the group panel beyond submitting a command. */
@@ -19,6 +20,7 @@ export interface GroupPanelHost {
   readonly openOrders: (press: OrdersPress) => void;
   readonly closeOrders: () => void;
   readonly ringCommand: (id: ActionOrderId, targets: readonly number[]) => boolean;
+  readonly arm: (mode: PickMode) => void;
   readonly cue: (cue: UiCue) => void;
 }
 
@@ -55,6 +57,20 @@ export function groupPanelActions(
     }
     host.cue(host.ringCommand(order, targets) === false ? 'fail' : 'confirm');
   };
+  /** The owned vehicles of `ids`, or null after the press failed: none owned, or more than one order takes. */
+  const ownedVehicles = (ids: readonly number[]): number[] | null => {
+    const vehicles = owned(ids);
+    if (vehicles.length === 0) {
+      host.cue('fail');
+      return null;
+    }
+    if (vehicles.length > MAX_UNIT_ORDER_MEMBERS) {
+      if (host.onOrderLimit !== undefined) host.onOrderLimit();
+      else host.cue('fail');
+      return null;
+    }
+    return vehicles;
+  };
   const view =
     <A extends unknown[]>(run: (...args: A) => void) =>
     (...args: A): void => {
@@ -72,16 +88,8 @@ export function groupPanelActions(
     setStance: (ids, stance) => ring(STANCE_ORDER[stance], ids),
     setRegeneration: (ids, allowed) => ring(allowed ? 'allowRegeneration' : 'prohibitRegeneration', ids),
     setVehicleStance: (ids, stance) => {
-      const vehicles = owned(ids);
-      if (vehicles.length === 0) {
-        host.cue('fail');
-        return;
-      }
-      if (vehicles.length > MAX_UNIT_ORDER_MEMBERS) {
-        if (host.onOrderLimit !== undefined) host.onOrderLimit();
-        else host.cue('fail');
-        return;
-      }
+      const vehicles = ownedVehicles(ids);
+      if (vehicles === null) return;
       const accepted = enqueueArmyOrder(
         {
           kind: 'setVehicleStanceGroup',
@@ -91,6 +99,18 @@ export function groupPanelActions(
         opts.enqueue,
       );
       host.cue(accepted ? 'confirm' : 'fail');
+    },
+    dockShips: (ids) => {
+      const ships = ownedVehicles(ids);
+      if (ships === null) return;
+      host.arm({ kind: 'vehicle-dock', vehicles: ships });
+      host.cue('confirm');
+    },
+    unloadShips: (ids) => {
+      const ships = ownedVehicles(ids);
+      if (ships === null) return;
+      for (const ship of ships) opts.enqueue({ kind: 'unloadPeople', vehicle: ship as Entity });
+      host.cue('confirm');
     },
   };
 }

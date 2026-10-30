@@ -1,4 +1,4 @@
-import { type BuildingType, buildingHitpointsFor } from '@open-northland/data';
+import { type BuildingType, buildingHitpointsFor, hasRecordFootprint } from '@open-northland/data';
 import {
   Building,
   DefenceMode,
@@ -118,6 +118,7 @@ export function placeBuilding(
     fillStock: paper === undefined ? command.fillStock === true : paper.kind === 'placeStockedHouse',
     initialGoods: command.initialGoods,
     level: command.level,
+    record: command.record,
   });
 }
 
@@ -135,6 +136,8 @@ export interface BuildingSpec {
   readonly initialGoods?: readonly { readonly good: number; readonly amount: number }[] | undefined;
   /** An authored level, kept when the type's record draws it above the type's rung. */
   readonly level?: number | undefined;
+  /** An authored house record, kept when it stands on a footprint of its own. */
+  readonly record?: string | undefined;
 }
 
 /**
@@ -159,7 +162,15 @@ export function assembleBuilding(
   const rung = buildingLevelOf(index, spec.buildingType);
   const drawnTop = index.buildingTopLevel.get(spec.buildingType) ?? rung;
   const level = spec.level !== undefined && spec.level > rung && spec.level <= drawnTop ? spec.level : rung;
-  world.add(e, Building, { buildingType: spec.buildingType, tribe: spec.tribe, built, level });
+  const record =
+    spec.record !== undefined && hasRecordFootprint(type, spec.tribe, spec.record) ? spec.record : undefined;
+  world.add(e, Building, {
+    buildingType: spec.buildingType,
+    tribe: spec.tribe,
+    built,
+    level,
+    ...(record !== undefined ? { record } : {}),
+  });
   const amounts = new Map<number, number>();
   const hitpoints = buildingHitpointsFor(type, spec.tribe);
   if (underConstruction) {

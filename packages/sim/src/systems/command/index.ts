@@ -51,11 +51,13 @@ import {
   orderOpenChest,
   placeSignpost,
   renameSettler,
+  setAssistantArmorOrder,
   setAssistantCounter,
   setAssistantGrant,
   setAssistantGrantAudience,
   setAssistantMoveFlags,
   setAssistantPostGraduates,
+  setAssistantWeaponOrder,
   setAssistantWeaponVeto,
   setDefenceMode,
   setGatherGood,
@@ -483,6 +485,12 @@ function applyCommand(
       return;
     case 'setAssistantWeaponVeto':
       setAssistantWeaponVeto(world, ctx, command);
+      return;
+    case 'setAssistantArmorOrder':
+      setAssistantArmorOrder(world, ctx, command);
+      return;
+    case 'setAssistantWeaponOrder':
+      setAssistantWeaponOrder(world, ctx, command);
       return;
     case 'setAssistantCounter':
       setAssistantCounter(world, ctx, command);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Building, MoveGoal, Owner, Position } from '../../../../src/components/index.js';
 import type { Entity } from '../../../../src/ecs/world.js';
-import { positionOfNode, Simulation } from '../../../../src/index.js';
+import { fx, positionOfNode, Simulation } from '../../../../src/index.js';
 import { hexNeighboursOf } from '../../../../src/nav/halfcell.js';
 import { hasOpenSide, nearestUnblockedNode } from '../../../../src/nav/nearest.js';
 import type { NodeId, TerrainGraph } from '../../../../src/nav/terrain/index.js';
@@ -154,7 +154,12 @@ describe('stands keep an exit', () => {
     const f = fixture();
     const site = f.sim.world.create();
     f.sim.world.add(site, Position, positionOfNode(SITE.x, SITE.y));
-    f.sim.world.add(site, Building, { buildingType: SITE_TYPE, tribe: VIKING, built: 0, level: 0 });
+    f.sim.world.add(site, Building, {
+      buildingType: SITE_TYPE,
+      tribe: VIKING,
+      built: fx.fromInt(0),
+      level: 0,
+    });
     const ctx = ctxOf(f.sim);
     const [kept] = constructionWorkCells(f.sim.world, ctx, f.terrain, site, new Set<NodeId>());
     if (kept === undefined) throw new Error('setup: the site has no perimeter');

@@ -77,7 +77,7 @@ export const Vehicle = defineComponent<{
   harnessed: boolean;
   /** The ship carrying this vehicle, or null while it stands on the map. */
   carrier: Entity | null;
-  /** The posted carrier this cart is the hauling cart of ({@link HaulingCart}), set from the order so
+  /** The posted carrier or trader this cart is the hauling cart of ({@link HaulingCart}), set from the order so
    *  nobody else takes or boards it meanwhile; null for a cart nobody pulls. */
   hauler: Entity | null;
   passengers: (VehicleSeat | null)[];
@@ -85,6 +85,8 @@ export const Vehicle = defineComponent<{
   /** The point an order holds while the vehicle boards its crew, a goto under `waitsForHuman` or a
    *  dock under `docks`; the drive starts once everyone is inside. */
   heldGoal: HalfCellNode | null;
+  /** The dock node a held dock order names for the ship to lie at, or null for its ring's first. */
+  heldDock: HalfCellNode | null;
   stance: VehicleStance;
   /** The position a holding or defending siege vehicle scans around: where it stood when its stance was
    *  set or its last goto ended. A chase, ordered or scanned, leaves it behind (original behavior).
@@ -102,6 +104,7 @@ export const QUEUEABLE_VEHICLE_ORDER_KINDS = [
   'dockVehicle',
   'attackWithVehicle',
   'loadIntoVehicle',
+  'unloadPeople',
 ] as const;
 
 export type QueueableVehicleOrderCommand = Extract<
@@ -112,7 +115,7 @@ export type QueueableVehicleOrderCommand = Extract<
 export type QueuedVehicleOrder = QueueableVehicleOrderCommand & { readonly aiOrder?: AiOrderOrigin };
 
 /**
- * The drives a vehicle carries out one after another once its current order is done, oldest first;
+ * The orders a vehicle carries out one after another once its current order is done, oldest first;
  * `vehicleOrderQueueSystem` starts the next, at most `ORDER_QUEUE_LIMIT` waiting. Any other order to the
  * vehicle drops them, and so does a hand-over (`owner` as a settler's `OrderQueue` keeps it). Named
  * addition, the vehicle twin of a settler's `OrderQueue`.
@@ -145,7 +148,7 @@ export const Rider = defineComponent<{ vehicle: Entity; boarding: boolean; leavi
 );
 
 /**
- * A lift a carrier makes with its hauling cart standing beside it, one clip a unit the way a trader loads
+ * A lift a carrier makes with its hauling cart standing beside it, one lift a unit the way a trader loads
  * its cart: units off `from`'s shelf or heap into the hold, or out of the hold onto `store`'s shelf.
  */
 export type HaulingLift =
@@ -160,12 +163,13 @@ export type HaulingLift =
   | { readonly kind: 'unload'; readonly store: Entity };
 
 /**
- * A posted carrier's hauling cart (named addition, owner's choice; the original's carrier only ever serves a
- * cart's hold from outside): the cart it pulls on its hauls for its workplace, its lifts filling the
- * cart's hold instead of its hands. `taken`, the cart leaves the map (no `Position`) and travels with the
- * carrier, its load riding as the carrier's `Carrying`; `parked`, the carrier has set it down for a `lift`
- * beside a heap or a shelf or for a break and comes back for it; neither from the order until the first
- * take, the carrier walking to the cart where the order found it.
+ * A posted carrier's or a trader's hauling cart (named addition, owner's choice; the original's carrier
+ * only ever serves a cart's hold from outside, and its trader commands the cart): the cart it pulls on its
+ * hauls or its route, its lifts filling the cart's hold instead of its hands. `taken`, the cart leaves the
+ * map (no `Position`) and travels with the puller, a carrier's load riding as its `Carrying` and a
+ * trader's staying in the hold; `parked`, the puller has set it down for a `lift` beside a heap or a
+ * shelf, a trader's stop or a break and comes back for it; neither from the order until the first take,
+ * the puller walking to the cart where the order found it.
  */
 export const HaulingCart = defineComponent<{
   vehicle: Entity;

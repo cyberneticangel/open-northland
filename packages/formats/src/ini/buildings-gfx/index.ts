@@ -5,7 +5,10 @@ export {
   extractBuildingFootprints,
   extractConstructionCosts,
   extractHouseHitpoints,
+  extractRecordFootprints,
   extractUpgradeTargets,
+  type RecordFootprint,
+  widenRecordFootprints,
 } from './structure.js';
 export {
   extractBuildingBobs,

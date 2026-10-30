@@ -42,6 +42,7 @@ import {
   routeRegions,
 } from '../footprint/index.js';
 import { isTravelling, onNodeCentre, stopAtNextNode } from '../movement/nav-state.js';
+import { clickSides } from '../movement/structure-route.js';
 import { breakThroughWall } from '../palisades/breach.js';
 import { atomicHoldsSettler } from '../settlers/atomics/busy.js';
 import { startDrop } from '../settlers/atomics/start.js';
@@ -90,8 +91,10 @@ export function reachableMoveGoal(
  * {@link reachableMoveGoal} for a walker standing on `from`: a goal proven to lie in another region than
  * the walker's (a spot ringed by deposits, the far side of a closed gate, or open ground seen from a
  * walker sealed in itself) moves to the nearest node not proven apart from the walker, so the unit walks
- * up to the barrier instead of failing the route and wandering off lost. A goal with no such node within
- * the search is kept. Approximation of the original's click handling.
+ * up to the barrier instead of failing the route and wandering off lost. A click on a blocker itself,
+ * such as a closed gate between regions too large to prove a pocket, snaps to the nearest node joined to
+ * the walker around structures. A goal with no such node within the search is kept. Approximation of the
+ * original's click handling.
  */
 function walkerSideMoveGoal(
   world: World,
@@ -102,13 +105,24 @@ function walkerSideMoveGoal(
 ): NodeId {
   const goal = reachableMoveGoal(world, ctx, terrain, clicked);
   const regions = routeRegions(world, ctx, terrain);
-  if (!regions.unroutable(from, goal)) return goal;
   // Authored cost guard: the visits count blocked nodes too, so this reaches out about nine cells, past
   // a pocket and a thin wall but not through a thick one.
-  const outside = ringSearch(terrain, clicked, 2 * ROUTE_REGION_POCKET_CAP, {
-    accept: (node) => regions.standable(node) && !regions.unroutable(from, node),
+  const visits = 2 * ROUTE_REGION_POCKET_CAP;
+  if (regions.unroutable(from, goal)) {
+    const outside = ringSearch(terrain, clicked, visits, {
+      accept: (node) => regions.standable(node) && !regions.unroutable(from, node),
+    });
+    return outside ?? goal;
+  }
+  // Open ground clicked is the player's own stand, kept even past a wall the pocket proof cannot see; a
+  // walker on a blocked node has no side to judge from.
+  if (goal === clicked || !regions.standable(from)) return goal;
+  const sides = clickSides(world, ctx, terrain, clicked);
+  if (sides.reaches(from, goal)) return goal;
+  const nearSide = ringSearch(terrain, clicked, visits, {
+    accept: (node) => regions.standable(node) && sides.reaches(from, node),
   });
-  return outside ?? goal;
+  return nearSide ?? goal;
 }
 
 /**

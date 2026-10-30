@@ -124,11 +124,15 @@ describe('the Pojazd row', () => {
       armed: () => armed.at(-1) ?? null,
       signpostActive: () => false,
       dockVehicle: () => null,
+      dockShips: () => [],
       flagActive: () => false,
       handleMouseDown: () => null,
       handleOverviewPress: () => null,
       endShiftChain: () => {},
       highlight: () => null,
+      aimedAt: () => null,
+      aimAt: () => null,
+      version: () => 0,
     };
     const content = createSceneSim(sandboxScene).content;
     const { actions } = harness(fixedViewerSeat(SEAT), (id, targets) =>

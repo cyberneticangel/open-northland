@@ -56,3 +56,4 @@ export {
   waterCellFractions,
   waterSurfaceAt,
 } from './water.js';
+export { WaterClock } from './water-clock.js';

@@ -20,7 +20,7 @@ import { gameSoundEnabled } from './game-settings.js';
 
 /** Hand the driver the map's `musictype` and the rendered-music manifest, after which each frame picks
  *  the mood variant; playback starts once audio is unlocked. A missing manifest degrades to "no music". */
-async function startMapMusic(sound: SoundDriver, musicType: number): Promise<void> {
+async function startMapMusic(sound: SoundDriver, musicType: number | null): Promise<void> {
   const manifest = await loadMusicManifest();
   if (manifest === null) return;
   sound.setMusicMap({ musicType, manifest });
@@ -49,8 +49,9 @@ export async function mountGamePresentation(
   renderer: WorldRenderer,
   /** The running content's job rows, which decide who never wears the import marker. */
   jobs: readonly JobType[],
-  /** The map's `[misc_music]` code; null for a world that plays no music. */
-  musicType: number | null,
+  /** The map's `[misc_music]` code, null for a map that names none (it plays the nation's music);
+   *  undefined for a world without music, such as a scene. */
+  musicType: number | null | undefined,
   /** The view's lifetime; it ends the gesture listeners that start and restore audio. */
   signal: AbortSignal,
 ): Promise<ReturnType<typeof createSoundDriver> | null> {
@@ -68,11 +69,12 @@ export async function mountGamePresentation(
       sound.setMono(settings.monoSound);
       sound.setJinglesEnabled(settings.jinglesEnabled);
       sound.setUnitResponses(settings.unitResponses);
+      sound.setMusicSource(settings.musicSource);
       startSound(sound, { signal });
       followPageFocus(sound, { signal });
       // A game started muted decodes on demand if it is unmuted later.
       if (enabled) void preloadSounds(sound);
-      if (musicType !== null) void startMapMusic(sound, musicType);
+      if (musicType !== undefined) void startMapMusic(sound, musicType);
     }
     if (presentationPack(params) !== null) return sound;
     renderer.setCombatBonesGfx(ir !== null ? await loadCombatBones(ir) : null);

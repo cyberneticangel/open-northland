@@ -1,5 +1,7 @@
 import type { FootprintCell } from '@open-northland/data';
 import type { ErasedRegion } from '@open-northland/render';
+import { BUILDING_HOME_03, BUILDING_HOME_04 } from '../game/sandbox/ids/buildings.js';
+import { VIKING } from './buildings.js';
 
 /**
  * Where the worker-icon and occupancy badges anchor, as an offset from the door node. The default of one
@@ -64,3 +66,20 @@ export const GARRISON_FINIALS: ReadonlyMap<string, ErasedRegion> = new Map([
   ],
   ['saracen tower', [{ minX: 14, minY: -289, maxX: 41, maxY: -266 }]],
 ]);
+
+/**
+ * `GfxPalette` skins appended to one building type's `[GfxHouse]` rows, so its buildings cycle them by id
+ * like the records that list several. Intentional deviation: the original draws every viking home in
+ * `house01`; `house02`, which the viking workshops already carry, turns the tiled roofs of home levels 4
+ * and 5 blue-grey. Level 3 keeps one look because its upper plank roof stays brown in either palette.
+ */
+export interface AddedHousePalettes {
+  readonly tribeId: number;
+  readonly typeId: number;
+  readonly palettes: readonly string[];
+}
+
+export const ADDED_HOUSE_PALETTES: readonly AddedHousePalettes[] = [
+  { tribeId: VIKING, typeId: BUILDING_HOME_03, palettes: ['house02'] },
+  { tribeId: VIKING, typeId: BUILDING_HOME_04, palettes: ['house02'] },
+];

@@ -65,6 +65,9 @@ const SCHOOLING_REPEATS = 5;
 const HEADQUARTERS_TYPE = 1;
 const FOOD_GOOD = 3;
 const LARDER_FOOD = 5;
+const WOOD_GOOD = 1;
+/** The barracks' construction bill: two loads, so the recruit makes more than one trip. */
+const BARRACKS_WOOD = 2;
 /** Well over the drive threshold - this recruit seeks food before anything else. */
 const STARVING = fx.div(fx.fromInt(9), fx.fromInt(10));
 /** The planner's yard around a door, where a settler waiting at a foundation stands. */
@@ -73,6 +76,8 @@ const DOOR_YARD_RADIUS_NODES = 4;
 const WALK_TICKS = 100;
 /** Long enough for the walk plus the whole drill and its overshoot repetition. */
 const RUN_TICKS = WALK_TICKS + BARRACKS_DRILL_TICKS + EXERCISE_CLIP_TICKS;
+/** Two round trips between the fixture's store and the foundation, with slack. */
+const SUPPLY_TICKS = 4 * WALK_TICKS;
 
 function barracksContent(): ContentSet {
   const base = testContent();
@@ -92,6 +97,7 @@ function barracksContent(): ContentSet {
         // Flagged `logicCanEnableDefenceMode` like the real one; the single seat is fixture scale.
         canEnableDefenceMode: true,
         shelterCapacity: 1,
+        construction: [{ goodType: WOOD_GOOD, amount: BARRACKS_WOOD }],
       },
     ],
     atomicAnimations: [
@@ -144,6 +150,13 @@ function larderAt(sim: Simulation, x: number, y: number): Entity {
   sim.world.add(e, Building, { buildingType: HEADQUARTERS_TYPE, tribe: VIKING, built: ONE, level: 0 });
   sim.world.add(e, Owner, { player: HUMAN_PLAYER });
   sim.world.add(e, Stockpile, { amounts: new Map([[FOOD_GOOD, LARDER_FOOD]]) });
+  return e;
+}
+
+/** A built headquarters holding `wood` - the store a recruit fetches a foundation's material from. */
+function woodStoreAt(sim: Simulation, x: number, y: number, wood: number): Entity {
+  const e = larderAt(sim, x, y);
+  sim.world.mut(e, Stockpile).amounts.set(WOOD_GOOD, wood);
   return e;
 }
 
@@ -294,6 +307,22 @@ describe('trainSoldier - the barracks drill', () => {
     const events = run(sim, RUN_TICKS);
     expect(jobOf(sim, recruit)).toBe(SOLDIER_JOB);
     expect(events.some((event) => event.kind === 'settlerTrained')).toBe(true);
+  });
+
+  it('carries the material a barracks foundation still needs while it waits', () => {
+    const sim = simWithBarracks();
+    const house = barracksAt(sim, 6, 3);
+    sim.world.add(house, UnderConstruction, { labor: fx.fromInt(0) });
+    sim.world.mut(house, Building).built = fx.fromInt(0);
+    sim.world.add(house, Stockpile, { amounts: new Map() });
+    const store = woodStoreAt(sim, 2, 5, BARRACKS_WOOD + 1);
+    const recruit = settlerAt(sim, CIVILIST_JOB, 2, 3);
+
+    sim.enqueueSetup({ kind: 'trainSoldier', entity: recruit, house });
+    run(sim, SUPPLY_TICKS);
+    expect(sim.world.get(house, Stockpile).amounts.get(WOOD_GOOD)).toBe(BARRACKS_WOOD);
+    expect(sim.world.get(store, Stockpile).amounts.get(WOOD_GOOD)).toBe(1); // only the bill is lifted
+    expect(sim.world.get(recruit, TrainingOrder).drillTicksLeft).toBe(BARRACKS_DRILL_TICKS);
   });
 
   it('drops the errand when the barracks foundation lies across water', () => {

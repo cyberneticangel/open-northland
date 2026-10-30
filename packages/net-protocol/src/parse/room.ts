@@ -46,7 +46,7 @@ import {
   keysOf,
 } from '../untrusted.js';
 import { fingerprint, parseCompatibility } from './compatibility.js';
-import { assertNever, parseLine, parseNick } from './text.js';
+import { assertNever, parseFlag, parseLine, parseNick } from './text.js';
 
 const ROOM_STATES = ['lobby', 'running', 'ended'] as const satisfies readonly RoomState[];
 
@@ -283,6 +283,7 @@ function parseRoomMemberView(value: unknown, at: string): RoomMemberView {
   const raw = asRecord(value, at);
   return {
     nick: parseNick(raw.nick, `${at}.nick`),
+    ...parseFlag(raw, `${at}.flag`),
     seat: raw.seat === null ? null : parseSeatIndex(raw.seat, `${at}.seat`),
     connected: asBoolean(raw.connected, `${at}.connected`),
     compatibility: parseCompatibility(raw.compatibility, `${at}.compatibility`),

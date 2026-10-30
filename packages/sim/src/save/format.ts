@@ -10,7 +10,7 @@ export const SAVE_KIND = 'open-northland-save';
 
 /** Single monotonic version of the whole persisted layout; any layout change bumps it. A reader accepts
  *  exactly this version and rejects any other, never migrating. */
-export const SAVE_FORMAT_VERSION = 122;
+export const SAVE_FORMAT_VERSION = 129;
 
 /** The single key wrapping a serialized `Map`'s entry pairs; reserved, so a plain record carrying it
  *  is rejected at export. */
@@ -111,5 +111,12 @@ export type SaveGameSection =
 export interface SaveGame {
   readonly header: SaveGameHeader;
   readonly sections: readonly SaveGameSection[];
+  /** Caller-owned text of the saving client's presentation (the app keeps the viewer's fog memory
+   *  there), outside the header so a save list never reads it; null when none was recorded. Never part
+   *  of simulated state. */
+  readonly presentation: string | null;
   readonly parent?: SaveGame;
 }
+
+/** UTF-16 units a save's {@link SaveGame.presentation} may hold. */
+export const MAX_PRESENTATION_TEXT = 32 * 1024 * 1024;

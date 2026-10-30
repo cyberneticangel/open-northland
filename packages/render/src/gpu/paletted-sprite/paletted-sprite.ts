@@ -127,6 +127,17 @@ export class PalettedSprite extends Mesh<MeshGeometry, Shader> {
     this.vars.update();
   }
 
+  /** The night's lit mask share over the mesh, 0 unlit (see `world-batch/shader.ts`'s `aNight`). */
+  set nightLit(share: number) {
+    const u = this.vars.uniforms.uNight;
+    if (u[0] === share) return;
+    u[0] = share;
+    this.vars.update();
+  }
+  get nightLit(): number {
+    return this.vars.uniforms.uNight[0] ?? 0;
+  }
+
   /** X shift per unit of y about the feet anchor: a ship's roll. `0` draws upright. */
   set shear(shear: number) {
     const u = this.vars.uniforms.uShear;

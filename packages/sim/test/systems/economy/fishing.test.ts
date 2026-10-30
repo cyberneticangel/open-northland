@@ -653,12 +653,14 @@ describe('workplaceShoreSearchRadius', () => {
 
   it("shrinks the shore search by the door's Manhattan offset from the anchor, row parity included", () => {
     const content = doorContent();
-    expect(workplaceShoreSearchRadius(content, LODGE, TRIBE, EVEN_ROW)).toBe(
+    expect(workplaceShoreSearchRadius(content, { buildingType: LODGE, tribe: TRIBE }, EVEN_ROW)).toBe(
       FISH_SHORE_SEARCH_RADIUS - DOOR.dx - DOOR.dy,
     );
-    expect(workplaceShoreSearchRadius(content, LODGE, TRIBE, ODD_ROW)).toBe(
+    expect(workplaceShoreSearchRadius(content, { buildingType: LODGE, tribe: TRIBE }, ODD_ROW)).toBe(
       FISH_SHORE_SEARCH_RADIUS - (DOOR.dx + 1) - DOOR.dy,
     );
-    expect(workplaceShoreSearchRadius(content, BARE, TRIBE, EVEN_ROW)).toBe(FISH_SHORE_SEARCH_RADIUS);
+    expect(workplaceShoreSearchRadius(content, { buildingType: BARE, tribe: TRIBE }, EVEN_ROW)).toBe(
+      FISH_SHORE_SEARCH_RADIUS,
+    );
   });
 });

@@ -13,14 +13,18 @@ export interface GroundWave {
   readonly lift?: number;
   /** The displacement atlas: the lift in red, the written mask in alpha, loaded straight. */
   readonly source: TextureSource;
-  /** The looping frame list, one frame per sim tick. */
+  /** The looping frame list, one frame per step of {@link groundWaveFrameAt}'s clock. */
   readonly frames: readonly AtlasFrame[];
   /** The start offset into {@link frames}. */
   readonly phase: number;
 }
 
-/** Original behavior: every tick advances every wave one frame, offset by its node position. */
-export function groundWaveFrameAt(wave: GroundWave, tick: number): AtlasFrame | undefined {
+/**
+ * Original behavior: every tick advances every wave one frame, offset by its node position. `step` is the
+ * water clock in base-rate ticks, so above speed 1 the waves keep that pace instead of the sim's
+ * (an approximation of the original, which plays them per tick at every speed).
+ */
+export function groundWaveFrameAt(wave: GroundWave, step: number): AtlasFrame | undefined {
   const count = wave.frames.length;
-  return count === 0 ? undefined : wave.frames[(tick + wave.phase) % count];
+  return count === 0 ? undefined : wave.frames[(step + wave.phase) % count];
 }

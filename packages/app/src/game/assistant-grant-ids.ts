@@ -1,7 +1,7 @@
-/** The assistant's switch rows: the "give …" grants (gear, drinks and charms), three that let recruits be
- *  armed with a class's weaker weapon, one that sends school graduates straight to a free workplace and
- *  one that lets gatherers move their flags after the resources. */
-export type AssistantGrantId = GiveSwitchId | WeaponSwitchId | 'postGraduates' | 'moveFlags';
+/** The assistant's switch rows: the "give …" grants (gear, drinks and charms), one that sends school
+ *  graduates straight to a free workplace and one that lets gatherers move their flags after the
+ *  resources. */
+export type AssistantGrantId = GiveSwitchId | 'postGraduates' | 'moveFlags';
 
 export type GiveSwitchId =
   | 'giveBoots'
@@ -17,7 +17,6 @@ export type GiveSwitchId =
   | 'giveDefenseAmulet'
   | 'giveCriticalHitAmulet'
   | 'giveSpeedAmulet';
-export type WeaponSwitchId = 'allowShortSwords' | 'allowWoodenSpears' | 'allowShortBows';
 
 export const GRANT_IDS: readonly AssistantGrantId[] = [
   'giveBoots',
@@ -33,9 +32,6 @@ export const GRANT_IDS: readonly AssistantGrantId[] = [
   'giveDefenseAmulet',
   'giveCriticalHitAmulet',
   'giveSpeedAmulet',
-  'allowShortSwords',
-  'allowWoodenSpears',
-  'allowShortBows',
   'postGraduates',
   'moveFlags',
 ];
@@ -62,12 +58,6 @@ export const GIVE_SWITCH_GOODS: Readonly<Record<GiveSwitchId, readonly [string, 
 export const GIVE_SWITCH_IDS: readonly GiveSwitchId[] = GRANT_IDS.filter(
   (id): id is GiveSwitchId => id in GIVE_SWITCH_GOODS,
 );
-/** The good a weapon switch lifts the recruit-arming veto of. */
-export const WEAPON_SWITCH_GOOD: Readonly<Record<WeaponSwitchId, string>> = {
-  allowShortSwords: 'sword_shord',
-  allowWoodenSpears: 'spear_wooden',
-  allowShortBows: 'bow_short',
-};
 /** The give switches that choose their audience as well: off, everyone, or soldiers alone. Gear has no
  *  audience, since tools already go only to the trades that work with them. */
 export const AUDIENCE_SWITCH_IDS: readonly GiveSwitchId[] = [

@@ -166,6 +166,8 @@ export function watchWindowFaults(
   // Windows ends a session through the window, macOS and Linux through the power monitor.
   win.on('session-end', () => run.shuttingDown());
   powerMonitor.on('shutdown', () => run.shuttingDown());
+  powerMonitor.on('suspend', () => run.suspended());
+  powerMonitor.on('resume', () => run.resumed());
 
   ipcMain.handle(PENDING_FAULTS_CHANNEL, (event) => {
     if (!fromGame(event)) throw new Error('Refused');

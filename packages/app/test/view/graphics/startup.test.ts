@@ -68,6 +68,7 @@ describe('first-start graphics settings', () => {
       environmentMotion: true,
       groundedBuildings: true,
       buildingDamage: true,
+      nightLights: true,
       weather: true,
       postFxEnabled: true,
     });
@@ -153,6 +154,7 @@ describe('first-start graphics settings', () => {
       environmentMotion: scenario.enabled,
       groundedBuildings: scenario.enabled,
       buildingDamage: scenario.enabled,
+      nightLights: scenario.enabled,
       weather: scenario.enabled,
       postFxEnabled: scenario.enabled,
       renderScale: 1.5,

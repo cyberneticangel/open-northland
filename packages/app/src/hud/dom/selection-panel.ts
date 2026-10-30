@@ -1,3 +1,4 @@
+import { isFieldKey } from '../hotkeys.js';
 import { navBeamRect } from '../nav-beam.js';
 import { SELECTION_PANEL_W, TOP_BAR_HEIGHT } from '../regions.js';
 import { GLYPH } from './icons.js';
@@ -175,8 +176,8 @@ export function createSelectionPanel(
     field.select();
   });
   field.addEventListener('keydown', (event) => {
-    // The field keeps every key: Escape must not also clear the selection underneath.
-    event.stopPropagation();
+    // The field keeps its keys: Escape must not also clear the selection underneath.
+    if (isFieldKey(event)) event.stopPropagation();
     if (event.key === 'Enter') endRename(true);
     else if (event.key === 'Escape') endRename(false);
   });

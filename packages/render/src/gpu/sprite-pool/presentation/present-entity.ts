@@ -18,6 +18,7 @@ export function presentEntity(
     sheet,
     frame.environmentMotion === true,
     frame.wind,
+    frame.seaClock,
   );
   pe.container.position.set(pe.motion.drawX, pe.motion.drawY);
   return layers;

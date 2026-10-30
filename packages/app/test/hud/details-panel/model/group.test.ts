@@ -1,6 +1,7 @@
-import { systems } from '@open-northland/sim';
+import { cellAnchorNode, systems } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
-import { JOB_ARCHER, JOB_BABY_FEMALE, JOB_CHILD_FEMALE } from '../../../../src/catalog/jobs.js';
+import { JOB_ARCHER, JOB_BABY_FEMALE, JOB_CARRIER, JOB_CHILD_FEMALE } from '../../../../src/catalog/jobs.js';
+import { HUMAN_PLAYER, PRIMARY_TRIBE } from '../../../../src/game/rules.js';
 import { isSettler, isVehicle, settlerJobType } from '../../../../src/game/snapshot/index.js';
 import { jobDisplayName } from '../../../../src/hud/details-panel/model/context.js';
 import {
@@ -11,7 +12,11 @@ import {
 } from '../../../../src/hud/details-panel/model/index.js';
 import { createSceneSim } from '../../../../src/scenes/index.js';
 import { groupPanelScene, groupSelectionScene } from '../../../../src/scenes/interface/group-panel.js';
+import { vehicleDockFleetScene } from '../../../../src/scenes/vehicles/vehicle-dock-fleet.js';
 import { ctxOf, sandboxCtx, snapshotOf } from '../../../support/sandbox.js';
+
+/** A land cell west of the fleet scene's coast. */
+const SHORE_CELL = { x: 4, y: 4 } as const;
 
 /** The scene's whole company, boxed: 35 settlers, two catapults and a handcart. */
 function company(
@@ -124,6 +129,33 @@ describe('group panel model', () => {
     expect(all?.siege?.ids).toHaveLength(2);
     expect(all?.siege?.stance).toBe('hold');
     expect(scope(model, 'Wózki ręczne').siege?.ids).toEqual([]);
+  });
+
+  it('lists the ships a dock order moors and none to land at sea, only for a group of ships alone', () => {
+    const ships = company((kind) => kind === 'vehicle', vehicleDockFleetScene);
+    const fleet = ships.scopes[0]?.fleet;
+    expect(fleet?.ids).toEqual(ships.members.map((m) => m.id));
+    expect(fleet?.ids).toHaveLength(5);
+    expect(fleet?.landable).toEqual([]);
+    expect(model.scopes.every((s) => s.fleet === null)).toBe(true);
+    // A settler on the shore selected with the ships makes a mixed group, which gets no ship row.
+    const sim = createSceneSim(vehicleDockFleetScene);
+    const shore = cellAnchorNode(SHORE_CELL.x, SHORE_CELL.y);
+    sim.enqueueSetup({
+      kind: 'spawnSettler',
+      jobType: JOB_CARRIER,
+      tribe: PRIMARY_TRIBE,
+      owner: HUMAN_PLAYER,
+      x: shore.hx,
+      y: shore.hy,
+    });
+    sim.step();
+    const snapshot = sim.snapshot();
+    const ids = snapshot.entities.filter((e) => isVehicle(e) || isSettler(e)).map((e) => e.id);
+    const mixed = buildUnitPanelModel(snapshot, new Set(ids), ctxOf(sim));
+    if (mixed.kind !== 'group') throw new Error(`expected a group, got ${mixed.kind}`);
+    expect(mixed.members.some((m) => m.look === 'settler')).toBe(true);
+    expect(mixed.scopes.every((s) => s.fleet === null)).toBe(true);
   });
 
   it('gives every member its health and every settler its hunger', () => {

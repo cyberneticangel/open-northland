@@ -136,6 +136,7 @@ export const deSurfaces = {
       overseerTaken: 'Du leitest das Spiel',
       teamColour: 'Teamfarbe',
       teamColourLocked: 'die Farben sind auf dieser Karte festgelegt',
+      teamColourTaken: 'belegt von Spieler {seat}',
       tribe: 'Stamm',
       difficultyHeader: 'Schwierigkeit',
       difficultyTitle:
@@ -254,6 +255,9 @@ export const deSurfaces = {
       hoverOutline: 'Umriss beim Überfahren',
       hoverOutlineTip:
         'Die Kontur, die eine Einheit oder ein Gebäude zeichnet, während der Mauszeiger darüber steht, wie im Original. Änderungen werden im Spiel sofort sichtbar.',
+      cursorHints: 'Hinweise am Mauszeiger',
+      cursorHintsTip:
+        'Ein Text am Mauszeiger nennt, was ein Klick bewirkt, und das Ding darunter, etwa ein Tier, einen Warenhaufen oder eine Truhe.',
       groupNumbers: 'Gruppennummern',
       groupNumbersTip:
         'Eine winzige Gruppennummer an jeder Einheit in einer Gruppe. Eine Einheit in mehreren Gruppen zeigt bis zu drei, etwa 1,2,3.',
@@ -284,10 +288,13 @@ export const deSurfaces = {
         'Verstärkt und glättet die Schatten von Gebäuden, Bäumen und Dekorationen. Siedler und Tiere werfen Schatten ihrer eigenen Umrisse, ausgerichtet nach derselben Lichtquelle wie die Gebäude. Aus verwendet die Originalschatten.',
       enhancedWater: 'Verbessertes Wasser',
       enhancedWaterTip:
-        'Sich kreuzende Wellen, dunklere flache und noch dunklere tiefe Stellen, kühlere Blautöne und wandernde Lichtreflexe auf tiefem Wasser. Aus verwendet das Originalwasser.',
+        'Sich kreuzende Wellen mit ruhigen und rauen Bereichen, wandernder Schimmer, Brandung, die den Strand hinaufläuft und zurückweicht, dunklere flache und noch dunklere tiefe Stellen und kühlere Blautöne. Aus verwendet das Originalwasser.',
       buildingDamage: 'Gebäudeschäden',
       buildingDamageTip:
         'Beschädigte Dächer, freiliegende Balken, Rauch, Feuer und Trümmer. Ausschalten reduziert die Grafiklast auf einfachen Rauch.',
+      nightLights: 'Nachtlicht',
+      nightLightsTip:
+        'Nachts erhellen Feuer, Häuser und Siedler die Karte: warmer Schein um jedes Feuer, Figuren und Häuser behalten einen Teil ihrer Tagesfarben. Ausschalten ergibt eine gleichmäßig abgedunkelte Nacht und reduziert die Grafiklast.',
       environmentMotion: 'Bewegte Umgebung',
       environmentMotionTip:
         'Bäume, die im Original nur ein Einzelbild haben, wiegen sich samt Schatten im Wind. Fische schwimmen flüssig, und die Bewegung der eigenen Pflanzengrafiken wird geglättet. Siedler und Tiere behalten ihre ursprünglichen Bewegungsschritte; Originalanimationen erhalten keine zusätzlichen Bilder. In geladenen Spielständen stehen Bäume still.',
@@ -322,6 +329,10 @@ export const deSurfaces = {
       unitResponsesTip:
         'Ob die Siedler auf Befehle und auf die Auswahl laut antworten. Ohne Antwort bestätigt allein der Klick einen Befehl.',
       unitResponseModes: { all: 'Immer', selection: 'Nur bei Auswahl', off: 'Nie' },
+      musicSource: 'Musik',
+      musicSourceTip:
+        'Kartenmusik spielt das Stück der Karte und wechselt im Kampf die Stimmung. Volksmusik spielt die Stücke deines Volkes im Wechsel.',
+      musicSources: { map: 'Karte', nation: 'Volk' },
       soundQuality: 'Klangqualität',
       soundQualityTip:
         'Verlustfrei behält die Originalaufnahmen. Leicht komprimiert sie auf ein Vielfaches weniger, was das Laden im Browser verkürzt. Der Unterschied ist kaum hörbar.',
@@ -386,6 +397,7 @@ export const deSurfaces = {
         professionPicker: 'Berufsliste des Siedlers',
         equipmentPicker: 'Ausrüstungsfenster der Siedler',
         attackMove: 'Angriffsbewegung',
+        dockShips: 'Ausgewählte Schiffe anlegen',
         hudToggle: 'Oberfläche aus-/einblenden',
         speedCycle: 'Spieltempo ×1 / ×2 / ×3',
         loadGame: 'Spiel laden',
@@ -397,6 +409,7 @@ export const deSurfaces = {
         upgradeBuilding: 'Ausgewähltes Gebäude ausbauen',
         defenceOn: 'Verteidigungsmodus in allen Gebäuden einschalten',
         defenceOff: 'Verteidigungsmodus in allen Gebäuden ausschalten',
+        buildingAlarm: 'Verteidigungsmodus im gewählten Gebäude starten oder beenden',
         nextCivilian: 'Nächsten Zivilisten auswählen',
         nextScout: 'Nächsten Kundschafter auswählen',
         nextSingleWoman: 'Nächste unverheiratete Frau ohne Wohnhaus auswählen',
@@ -572,6 +585,8 @@ export const deSurfaces = {
         'Halte beim Platzieren eines Gebäudes {shift} gedrückt, um mehrere davon zu setzen, eines pro Klick.',
       attackMove:
         '{key} befiehlt eine Angriffsbewegung: Einheiten gehen zum Ziel und greifen Gegner auf dem Weg an.',
+      dockShips:
+        '{key} legt die ausgewählten Schiffe an der angeklickten Küste an, jedes an einem eigenen Liegeplatz. Mit Strg/Cmd (Klick nach {key} oder Rechtsklick am Ufer) gehen die Besatzungen nach dem Anlegen an Land.',
       postGraduates:
         'Im Assistentenfenster ({key}) schickt „{graduatesOption}“ frisch ausgebildete Siedler von der Schule in die Werkstätten.',
       moveFlags:
@@ -727,10 +742,18 @@ export const deSurfaces = {
       'Indigo',
       'Magenta',
       'Rosa',
+      'Weinrot',
+      'Marineblau',
+      'Oliv',
+      'Braun',
+      'Waldgrün',
+      'Pflaume',
+      'Weiß',
+      'Lavendel',
     ],
     summaryAnimations: 'Alle verfügbaren Animationssequenzen der ausgewählten Figur.',
     summaryHeads: 'Derselbe Gehzyklus mit allen verfügbaren Kopfvarianten.',
-    summaryColors: 'Derselbe Gehzyklus in allen sechzehn Spielerfarben.',
+    summaryColors: 'Derselbe Gehzyklus in allen vierundzwanzig Spielerfarben.',
     missingAtlas:
       'Führe die Asset-Pipeline mit dem Open-Northland-Datenpaket aus, um den dekodierten Atlas für „{character}“ zu laden ({stem}).',
     missingFrames:

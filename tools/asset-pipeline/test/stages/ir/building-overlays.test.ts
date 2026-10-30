@@ -2,6 +2,7 @@ import { BuildingType, buildingFootprintFor, buildingHitpointsFor } from '@open-
 import {
   extractBuildingFootprints,
   extractHouseHitpoints,
+  extractRecordFootprints,
   parseIniSections,
 } from '@open-northland/formats/ini';
 import { describe, expect, it } from 'vitest';
@@ -33,6 +34,18 @@ EditName "frank hut"
 LogicTribeType 2
 LogicType 0 2
 LogicWalkBlockArea 0 -1 0 2
+[GfxHouse]
+EditName "viking hall"
+LogicTribeType 1
+LogicType 0 2
+LogicWalkBlockArea 0 0 0 1
+LogicDoorPoint 0 0 1
+[GfxHouse]
+EditName "viking hut copy"
+LogicTribeType 1
+LogicType 0 2
+LogicWalkBlockArea 0 0 0 3
+LogicDoorPoint 0 1 1
 `;
 
 function joinedHut(): BuildingType {
@@ -44,6 +57,7 @@ function joinedHut(): BuildingType {
       hitpoints: extractHouseHitpoints(sections),
       upgradeTargets: new Map(),
       footprints: extractBuildingFootprints(sections),
+      recordFootprints: extractRecordFootprints(sections),
     },
   );
   if (hut === undefined) throw new Error('the join dropped the building');
@@ -70,5 +84,14 @@ describe('applyBuildingGraphicsOverlays', () => {
     expect(buildingHitpointsFor(hut, SARACEN)).toBe(20000);
     expect(buildingHitpointsFor(hut, FRANK)).toBe(30000);
     expect(buildingHitpointsFor(hut, undefined)).toBe(30000);
+  });
+
+  it('keeps a named record of the same tribe that stands on another footprint', () => {
+    const hut = joinedHut();
+    // The copy stands on the default footprint, so only the hall is kept.
+    expect(hut.recordFootprints.map((r) => r.editName)).toEqual(['viking hall']);
+    expect(buildingFootprintFor(hut, VIKING, 'viking hall')?.blocked).toEqual([{ dx: 0, dy: 0 }]);
+    expect(buildingFootprintFor(hut, VIKING, 'viking hut copy')).toEqual(hut.footprint);
+    expect(buildingFootprintFor(hut, FRANK, 'viking hall')).toEqual(buildingFootprintFor(hut, FRANK));
   });
 });

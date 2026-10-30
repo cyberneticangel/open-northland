@@ -35,13 +35,13 @@ export function isCandyMeal(content: ContentSet, goodType: number): boolean {
   return id !== undefined && CANDY_MEAL_GOOD_IDS.has(id);
 }
 
-/** Whether `good` is food in a home, which is never taken back out of it: original behavior of the
- *  trader, and the rule a vehicle's hold keeps too (owner's choice). */
-export function isFoodKeptAtHome(world: World, ctx: SystemContext, house: Entity, good: number): boolean {
+/** Whether `good` is food in a home, which is never taken back out of it: the family eats it there.
+ *  Original behavior of the trader; every other fetch keeps the rule too (owner's choice). */
+export function isFoodKeptAtHome(world: World, ctx: ContentContext, house: Entity, good: number): boolean {
   const type = world.tryGet(house, Building)?.buildingType;
   return (
     type !== undefined &&
-    isFood(ctx, good) &&
+    isFoodIn(ctx.content, good) &&
     contentIndex(ctx.content).buildings.get(type)?.kind === BUILDING_KIND.home
   );
 }

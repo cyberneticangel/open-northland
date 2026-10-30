@@ -5,7 +5,12 @@ import {
   RelayRefusal,
   type TickDigest,
 } from '@open-northland/net-client';
-import type { RelayReason, ResponsivenessMode, ServerMessage } from '@open-northland/net-protocol';
+import type {
+  PlayerFlag,
+  RelayReason,
+  ResponsivenessMode,
+  ServerMessage,
+} from '@open-northland/net-protocol';
 import {
   errorFromWire,
   type FromWorker,
@@ -77,7 +82,13 @@ type SessionMessage = Exclude<ToWorker<never>, { readonly kind: 'boot' }>;
 
 export type ToNetWorker<B> =
   | SessionMessage
-  | { readonly kind: 'connect'; readonly url: string; readonly token: string; readonly nick: string }
+  | {
+      readonly kind: 'connect';
+      readonly url: string;
+      readonly token: string;
+      readonly nick: string;
+      readonly flag?: PlayerFlag;
+    }
   | { readonly kind: 'lobby'; readonly name: LobbyAction; readonly args: readonly unknown[] }
   | { readonly kind: 'clock'; readonly paused?: boolean; readonly speed?: number }
   /** The runtime has shown the world numbered `worldId`: the client may report it loaded. */

@@ -90,7 +90,6 @@ export class BindStamp {
   epoch = -1;
   /** The frame alpha of the last present, which may have run without a bind. */
   alpha = Number.NaN;
-  highlight: boolean | undefined;
   erased: ErasedRegion | undefined;
   private bindEpoch = -1;
   private drawX = Number.NaN;
@@ -114,27 +113,15 @@ export class BindStamp {
   /** Whether a bound layer leans with the vegetation clock or steps a looping record. */
   private clocked = false;
 
-  /** Whether the bind reads the same item, frame-wide inputs, highlight and erased region it last read. */
-  holds(
-    item: DrawItem,
-    epoch: number,
-    highlight: boolean | undefined,
-    erased: ErasedRegion | undefined,
-  ): boolean {
-    return (
-      this.item === item && this.epoch === epoch && this.highlight === highlight && this.erased === erased
-    );
+  /** Whether the bind reads the same item, frame-wide inputs and erased region it last read. */
+  holds(item: DrawItem, epoch: number, erased: ErasedRegion | undefined): boolean {
+    return this.item === item && this.epoch === epoch && this.erased === erased;
   }
 
   /** Whether a bind of `item` under these bind inputs reads what the last one did, apart from the layers
    *  and the drawn anchor {@link presents} compares. */
-  bindHolds(
-    item: DrawItem,
-    bindEpoch: number,
-    highlight: boolean | undefined,
-    erased: ErasedRegion | undefined,
-  ): boolean {
-    if (this.bindEpoch !== bindEpoch || this.highlight !== highlight || this.erased !== erased) return false;
+  bindHolds(item: DrawItem, bindEpoch: number, erased: ErasedRegion | undefined): boolean {
+    if (this.bindEpoch !== bindEpoch || this.erased !== erased) return false;
     // Draw items are immutable, so the item last bound or carried still holds its fields. Reading them
     // off the many item shapes would box every numeric one on each frame of a still scene.
     if (this.item === item) return true;
@@ -209,7 +196,6 @@ export class BindStamp {
   record(
     item: DrawItem,
     epoch: FrameEpoch,
-    highlight: boolean | undefined,
     erased: ErasedRegion | undefined,
     motion: MotionTrack,
     layers: readonly ResolvedLayer[] | null,
@@ -217,7 +203,6 @@ export class BindStamp {
     this.item = item;
     this.epoch = epoch.current;
     this.bindEpoch = epoch.bind;
-    this.highlight = highlight;
     this.erased = erased;
     this.kind = item.kind;
     this.ghost = item.ghost === true;

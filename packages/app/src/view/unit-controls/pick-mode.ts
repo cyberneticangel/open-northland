@@ -1,6 +1,6 @@
 import type { UiCue } from '@open-northland/audio';
 import { type BuildingType, type ContentSet, lastByTypeId } from '@open-northland/data';
-import type { BuildingHighlightItem, TargetFlashTone } from '@open-northland/render';
+import type { TargetFlashTone, TargetMark } from '@open-northland/render';
 import {
   type Entity,
   entitiesWith,
@@ -19,6 +19,7 @@ import {
   computeHouseHighlight,
   drillPick,
   houseAssignableAt,
+  markOf,
   schoolPick,
   sitePick,
   type TradeHouseRule,
@@ -26,10 +27,13 @@ import {
   workerGroupAt,
 } from './highlights/index.js';
 import type { AnsweredOrders } from './orders/answered.js';
+import { DOCK_PICK_SNAP_NODES } from './orders/berths.js';
 import type { UnitOrderController } from './orders/controller.js';
 import { enqueueUnitSelection } from './orders/group.js';
 import type { VehicleOrderController } from './orders/vehicle.js';
-import type { UnitTargets } from './unit-targets.js';
+import { enemyAt, ownSettlerAt, ownVehicleAt, preyAt } from './pick-targets.js';
+import { isShip } from './right-click/vehicles.js';
+import type { UnitTargetKind, UnitTargets } from './unit-targets.js';
 
 const MIDDLE_BUTTON = 1;
 
@@ -51,6 +55,8 @@ export type PickMode =
   | { readonly kind: StrikePickKind; readonly units: readonly number[] }
   | { readonly kind: 'vehicle'; readonly settler: number }
   | { readonly kind: VehicleSpotPickKind; readonly vehicle: number }
+  /** The dock order for one ship or a fleet: each moors at its own berth along the shore picked. */
+  | { readonly kind: 'vehicle-dock'; readonly vehicles: readonly number[] }
   | { readonly kind: VehicleTargetPickKind; readonly vehicle: number };
 
 /** The orders one scout resolves by clicking a spot on the map. */
@@ -66,8 +72,8 @@ type SpotPickKind = 'destination' | 'work-area';
 /** The selection-wide orders that resolve against the unit or building drawn under the cursor. */
 type StrikePickKind = 'attack-settler' | 'attack-building' | 'attack-animal' | 'attack-vehicle';
 
-/** The vehicle window's orders that resolve against a spot: a drive, a mooring point, a bombardment. */
-export type VehicleSpotPickKind = 'vehicle-destination' | 'vehicle-dock' | 'vehicle-attack-position';
+/** The vehicle window's orders that resolve against a spot: a drive or a bombardment. */
+type VehicleSpotPickKind = 'vehicle-destination' | 'vehicle-attack-position';
 
 /** The vehicle panel's orders that resolve against what is drawn under the cursor: an enemy of one
  *  kind, one of the player's own ships to ride in, an own settler to seat, or an own land vehicle to
@@ -84,7 +90,7 @@ export type VehicleTargetPickKind =
  *  can resolve it. */
 type SpotMode = Extract<
   PickMode,
-  { readonly kind: SpotPickKind | 'attack-move' | ScoutPickKind | VehicleSpotPickKind }
+  { readonly kind: SpotPickKind | 'attack-move' | ScoutPickKind | VehicleSpotPickKind | 'vehicle-dock' }
 >;
 
 interface BuildingPick {
@@ -93,7 +99,7 @@ interface BuildingPick {
     settlers: readonly number[],
     byType: ReadonlyMap<number, BuildingType>,
     canTrade: TradeHouseRule,
-  ) => BuildingHighlightItem[];
+  ) => TargetMark[];
   /** The orders a click on `building` issues, empty when it orders nothing; null for
    *  the trade-house pick, whose click asks the sim first. */
   readonly orders:
@@ -169,7 +175,7 @@ const buildingPickOf = (mode: PickMode): BuildingPickKind | null => {
 };
 
 const SPOT_MODES: ReadonlySet<PickMode['kind']> = new Set<
-  SpotPickKind | 'attack-move' | ScoutPickKind | VehicleSpotPickKind
+  SpotPickKind | 'attack-move' | ScoutPickKind | VehicleSpotPickKind | 'vehicle-dock'
 >([
   'destination',
   'work-area',
@@ -181,6 +187,46 @@ const SPOT_MODES: ReadonlySet<PickMode['kind']> = new Set<
 ]);
 
 const isSpotMode = (mode: PickMode): mode is SpotMode => SPOT_MODES.has(mode.kind);
+
+/** The enemies each strike pick takes; an army's strike also takes the unowned walls. */
+const STRIKE_KINDS: Readonly<Record<Exclude<StrikePickKind, 'attack-animal'>, readonly UnitTargetKind[]>> = {
+  'attack-settler': ['settler'],
+  'attack-building': ['building', 'palisade'],
+  'attack-vehicle': ['vehicle'],
+};
+
+/** The enemy each vehicle strike pick takes. */
+const VEHICLE_STRIKE_KIND: Readonly<
+  Record<Extract<VehicleTargetPickKind, `vehicle-attack-${string}`>, UnitTargetKind>
+> = {
+  'vehicle-attack-settler': 'settler',
+  'vehicle-attack-building': 'building',
+  'vehicle-attack-vehicle': 'vehicle',
+};
+
+/**
+ * What a left press at a point would do in the armed mode, read off the same lookups and verdicts the
+ * press resolves by; `fits` false where the press would refuse. Null where the press names no target.
+ */
+export type PickAim =
+  | { readonly kind: 'strike'; readonly target: number; readonly creature: boolean }
+  | { readonly kind: 'attackMove' }
+  | { readonly kind: 'walk' }
+  | { readonly kind: 'workArea' }
+  | { readonly kind: 'signpost'; readonly fits: boolean }
+  | { readonly kind: 'drive'; readonly ship: boolean }
+  | { readonly kind: 'dock'; readonly fits: boolean; readonly lands: boolean }
+  | { readonly kind: 'bombard' }
+  | {
+      readonly kind: 'building';
+      readonly pick: BuildingPickKind;
+      readonly building: number;
+      readonly fits: boolean;
+      /** A school offers its courses to the settlers that may learn there. */
+      readonly school: boolean;
+    }
+  | { readonly kind: 'board'; readonly fits: boolean }
+  | { readonly kind: 'loadAboard'; readonly fits: boolean };
 
 /** The orders a Shift press queues behind each settler's or vehicle's current order (the sim's
  *  `QUEUEABLE_ORDER_KINDS` and `QUEUEABLE_VEHICLE_ORDER_KINDS`), keeping the mode armed while Shift is
@@ -238,9 +284,16 @@ export interface PickModeDeps {
   /** The sim's trade-stop rule as its last answer, which the trade-house pick lights by; absent, the
    *  pick lights nothing. */
   readonly canAttachTradeHouse?: TradeHouseRule | undefined;
+  /** Says why the sim kept a house off a route; absent, the refusal is silent. */
+  readonly onTradeRefused?: ((house: number) => void) | undefined;
   /** The same rule asked as the pick's click lands, which it orders by; absent, it orders nothing. */
   readonly askAttachTradeHouse?: ((trader: number, house: number) => Promise<boolean>) | undefined;
   readonly askPlaceSignpostAt?: ((col: number, row: number) => Promise<boolean>) | undefined;
+  /** The signpost, trade-stop and vehicle attach rules' last answers, undefined while unanswered, which
+   *  the label beside the cursor reads; it names the press optimistically without one. */
+  readonly signpostAnswerAt?: ((col: number, row: number) => boolean | undefined) | undefined;
+  readonly tradeHouseAttachAnswer?: ((trader: number, house: number) => boolean | undefined) | undefined;
+  readonly vehicleAttachAnswer?: ((settler: number, vehicle: number) => boolean | undefined) | undefined;
   /** Feedback for a signpost click whose verdict arrives after the synchronous pointer handler. */
   readonly cue?: ((cue: UiCue) => void) | undefined;
   /** Where the orders a host answer decides wait for it. */
@@ -281,8 +334,11 @@ export interface PickModeController {
   /** The armed mode, for a control that lights while its pick waits; null when none is. */
   armed(): PickMode | null;
   signpostActive(): boolean;
-  /** The ship whose dock pick is armed, or null: the frame loop washes the map with its mooring spots. */
+  /** The first ship of the armed dock pick, or null: the frame loop washes the map with its mooring
+   *  spots. */
   dockVehicle(): number | null;
+  /** The ships of the armed dock pick, empty while none is armed: the cursor previews their berths. */
+  dockShips(): readonly number[];
   /** A pick that plants a work flag is armed (a flag trade's workplace pick or the work-area pick), so
    *  the flag ghost follows the cursor. */
   flagActive(): boolean;
@@ -293,27 +349,34 @@ export interface PickModeController {
    *  mode resolves; one that needs a picked unit or building stays armed, so scrolling the overview to
    *  find that target does not call it off. `shift` is a Shift press. Non-null when the armed mode took
    *  the press. */
-  handleOverviewPress(button: number, target: Tile, shift?: boolean): PickPress | null;
+  handleOverviewPress(button: number, target: Tile, shift?: boolean, primary?: boolean): PickPress | null;
   /** Shift was let go (or the window lost focus): a mode a Shift press kept armed ends with it. */
   endShiftChain(): void;
-  /** The lit and dimmed pick targets of the armed mode: a building pick's candidate buildings, the
-   *  "Assign Vehicle" pick's own vehicles. Null when the armed mode lights nothing. */
-  highlight(): readonly BuildingHighlightItem[] | null;
+  /** The armed mode's verdicts on its targets: a building pick's candidate buildings, the "Assign
+   *  Vehicle" pick's own vehicles. Null when the armed mode judges no targets. */
+  highlight(): readonly TargetMark[] | null;
+  /** The judged target a press at the client point would name, with its verdict; null off every one. */
+  aimedAt(clientX: number, clientY: number): TargetMark | null;
+  /** What a left press at the client point would do; `primary` is a held Ctrl (Cmd on a Mac). Null
+   *  while nothing is armed or where the press names no target. */
+  aimAt(clientX: number, clientY: number, primary: boolean): PickAim | null;
+  /** Bumped by every arm and cancel. */
+  version(): number;
 }
 
-/** The settler's owner's vehicles, green where the sim's attach rule takes the settler, red otherwise. */
+/** The settler's owner's vehicles, lit where the sim's attach rule takes the settler, refused otherwise. */
 function computeVehicleHighlight(
   snapshot: WorldSnapshot,
   settler: number,
   canAttach: (settler: number, vehicle: number) => boolean,
-): BuildingHighlightItem[] {
+): TargetMark[] {
   const self = entityById(snapshot, settler);
   const owner = self === undefined ? undefined : ownerPlayerOf(self);
   if (owner === undefined) return [];
-  const items: BuildingHighlightItem[] = [];
+  const items: TargetMark[] = [];
   for (const e of entitiesWith(snapshot, 'Vehicle')) {
     if (ownerPlayerOf(e) !== owner) continue;
-    items.push({ id: e.id, ok: canAttach(settler, e.id) });
+    items.push(markOf(e.id, canAttach(settler, e.id)));
   }
   return items;
 }
@@ -338,8 +401,8 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
   };
   const cancel = (): void => setMode(null);
 
-  const buildingUnder = (event: MouseEvent, kind: BuildingPickKind): number | null => {
-    const w = deps.toWorld(event.clientX, event.clientY);
+  const buildingAt = (clientX: number, clientY: number, kind: BuildingPickKind): number | null => {
+    const w = deps.toWorld(clientX, clientY);
     const candidates =
       kind === 'trade-house'
         ? deps.targets.buildings()
@@ -352,6 +415,8 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
           : deps.targets.owned('building');
     return pickTopAt(candidates, w.x, w.y);
   };
+  const buildingUnder = (event: MouseEvent, kind: BuildingPickKind): number | null =>
+    buildingAt(event.clientX, event.clientY, kind);
 
   /** The settlers among `settlers` that may take a course at the school `building`. */
   const learnersAt = (building: number, settlers: readonly number[]): readonly number[] =>
@@ -416,15 +481,17 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
           : [],
       );
       enqueueUnitSelection(commands, deps.enqueue, deps.onOrderLimit);
+      if (commands.length < traders.length) deps.onTradeRefused?.(house);
     });
     return true;
   };
 
-  /** `queued` applies to the {@link QUEUEABLE_MODES}. */
+  /** `queued` applies to the {@link QUEUEABLE_MODES}; `lands` has a dock land the crew once moored. */
   const resolveSpot = (
     mode: Exclude<SpotMode, { readonly kind: 'signpost' }>,
     named: Tile,
     queued: boolean,
+    lands = false,
   ): boolean => {
     const { width, height } = nodeBounds(deps.mapSize);
     const target = clampTile(named, width, height);
@@ -447,7 +514,7 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
       case 'vehicle-destination':
         return deps.vehicleOrders().issueMoveTo(mode.vehicle, target, queued);
       case 'vehicle-dock':
-        return deps.vehicleOrders().issueDock(mode.vehicle, target, queued);
+        return deps.vehicleOrders().issueDock(mode.vehicles, target, queued, lands);
       case 'vehicle-attack-position':
         return deps.vehicleOrders().issueAttackPosition(mode.vehicle, target, queued);
       default: {
@@ -535,21 +602,19 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
           : orderAtBuilding(building, 'workplace', mode.units);
       }
       case 'attack-settler':
-        return deps.orders().issueAttackTarget(event, 'settler', mode.units, queued);
       case 'attack-building':
-        return deps.orders().issueAttackTarget(event, ['building', 'palisade'], mode.units, queued);
+      case 'attack-vehicle':
+        return deps.orders().issueAttackTarget(event, STRIKE_KINDS[mode.kind], mode.units, queued);
       case 'attack-animal':
         return deps.orders().issueAttackAnimal(event, mode.units, queued);
-      case 'attack-vehicle':
-        return deps.orders().issueAttackTarget(event, 'vehicle', mode.units, queued);
       case 'vehicle':
         return deps.vehicleOrders().issueAttach(event, mode.settler, queued);
       case 'vehicle-attack-settler':
-        return deps.vehicleOrders().issueAttackTarget(event, mode.vehicle, 'settler', queued);
       case 'vehicle-attack-building':
-        return deps.vehicleOrders().issueAttackTarget(event, mode.vehicle, 'building', queued);
       case 'vehicle-attack-vehicle':
-        return deps.vehicleOrders().issueAttackTarget(event, mode.vehicle, 'vehicle', queued);
+        return deps
+          .vehicleOrders()
+          .issueAttackTarget(event, mode.vehicle, VEHICLE_STRIKE_KIND[mode.kind], queued);
       case 'vehicle-carrier':
         return deps.vehicleOrders().issueLoadInto(event, mode.vehicle, queued);
       case 'vehicle-rider':
@@ -585,7 +650,12 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
       return chained(mode, true, queued);
     }
     if (isSpotMode(mode))
-      return resolveSpotPress(mode, deps.nodeAt(event.clientX, event.clientY), event.shiftKey);
+      return resolveSpotPress(
+        mode,
+        deps.nodeAt(event.clientX, event.clientY),
+        event.shiftKey,
+        event.ctrlKey || event.metaKey,
+      );
     return chained(mode, resolvePicked(mode, event, queued), queued);
   };
 
@@ -608,13 +678,19 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
     return pressOutcome(ordered);
   };
 
-  const resolveSpotPress = (mode: SpotMode, target: Tile, shift: boolean): PickPress => {
+  /** `primary` is a Ctrl (Cmd on a Mac) press, which has a dock land the crew once the ships moor. */
+  const resolveSpotPress = (mode: SpotMode, target: Tile, shift: boolean, primary = false): PickPress => {
     const queued = shift && QUEUEABLE_MODES.has(mode.kind);
     if (mode.kind === 'signpost') return resolveSignpostPress(mode, target, queued);
-    return chained(mode, resolveSpot(mode, target, queued), queued);
+    return chained(mode, resolveSpot(mode, target, queued, primary), queued);
   };
 
-  const handleOverviewPress = (button: number, target: Tile, shift = false): PickPress | null => {
+  const handleOverviewPress = (
+    button: number,
+    target: Tile,
+    shift = false,
+    primary = false,
+  ): PickPress | null => {
     const mode = pickMode;
     if (mode === null || button === MIDDLE_BUTTON) return null;
     if (button !== 0) {
@@ -623,7 +699,7 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
     }
     if (!isSpotMode(mode)) return null;
     if (mode.kind !== 'signpost') cancel();
-    return resolveSpotPress(mode, target, shift);
+    return resolveSpotPress(mode, target, shift, primary);
   };
 
   /** Read every frame, so the O(entities) pass is memoized on everything it reads: the snapshot instance
@@ -644,13 +720,164 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
     () => pickVersion + (deps.answersVersion?.() ?? 0),
   );
 
+  /** The last aim, kept while the point, the snapshot and the verdicts hold still. */
+  const aim: {
+    marks: readonly TargetMark[] | null;
+    byId: ReadonlyMap<number, TargetMark>;
+    snapshot: WorldSnapshot | null;
+    x: number;
+    y: number;
+    target: number | null;
+    mark: TargetMark | null;
+  } = {
+    marks: null,
+    byId: new Map(),
+    snapshot: null,
+    x: Number.NaN,
+    y: Number.NaN,
+    target: null,
+    mark: null,
+  };
+
+  /** The judged mode's target under the client point and its mark; a target the highlight left unjudged
+   *  has none. Null while the armed mode judges no targets. */
+  const aimTarget = (
+    clientX: number,
+    clientY: number,
+  ): { readonly target: number | null; readonly mark: TargetMark | null } | null => {
+    const snapshot = deps.snapshot();
+    const marks = highlightFor(snapshot);
+    const mode = pickMode;
+    if (marks === null || mode === null) return null;
+    const kind = mode.kind === 'vehicle' ? 'vehicle' : buildingPickOf(mode);
+    if (kind === null) return null;
+    const w = deps.toWorld(clientX, clientY);
+    if (aim.marks === marks && aim.snapshot === snapshot && aim.x === w.x && aim.y === w.y) return aim;
+    aim.target = kind === 'vehicle' ? ownVehicleAt(deps.targets, w) : buildingAt(clientX, clientY, kind);
+    if (aim.marks !== marks) aim.byId = new Map(marks.map((mark) => [mark.id, mark]));
+    aim.marks = marks;
+    aim.snapshot = snapshot;
+    aim.x = w.x;
+    aim.y = w.y;
+    aim.mark = aim.target === null ? null : (aim.byId.get(aim.target) ?? null);
+    return aim;
+  };
+
+  /** A judged target takes the press where its mark is lit; an unjudged one orders nothing. */
+  const judgedAim = (clientX: number, clientY: number): { target: number; fits: boolean } | null => {
+    const judged = aimTarget(clientX, clientY);
+    if (judged === null || judged.target === null) return null;
+    return { target: judged.target, fits: judged.mark?.tone === 'candidate' };
+  };
+
+  const strikeAim = (target: number | null, creature = false): PickAim | null =>
+    target === null ? null : { kind: 'strike', target, creature };
+
+  const aimAt = (clientX: number, clientY: number, primary: boolean): PickAim | null => {
+    const mode = pickMode;
+    if (mode === null) return null;
+    const world = deps.toWorld(clientX, clientY);
+    switch (mode.kind) {
+      case 'trade-house': {
+        // The press asks every trader about any house, and takes it onto the route of each admitted.
+        const building = buildingAt(clientX, clientY, 'trade-house');
+        if (building === null) return null;
+        const fits =
+          deps.askAttachTradeHouse !== undefined &&
+          mode.units.some((trader) => deps.tradeHouseAttachAnswer?.(trader, building) !== false);
+        return { kind: 'building', pick: 'trade-house', building, fits, school: false };
+      }
+      case 'workplace':
+      case 'home':
+      case 'building-site':
+      case 'learning-place':
+      case 'workplace-or-flag': {
+        const pick = buildingPickOf(mode) ?? 'workplace';
+        const judged = judgedAim(clientX, clientY);
+        if (judged === null) {
+          const building = buildingAt(clientX, clientY, pick);
+          if (building !== null) return { kind: 'building', pick, building, fits: false, school: false };
+          return mode.kind === 'workplace-or-flag' ? { kind: 'workArea' } : null;
+        }
+        const school = pick === 'learning-place' && learnersAt(judged.target, mode.units).length > 0;
+        return { kind: 'building', pick, building: judged.target, fits: judged.fits, school };
+      }
+      case 'destination':
+        return { kind: 'walk' };
+      case 'work-area':
+        return { kind: 'workArea' };
+      case 'attack-move': {
+        const prey = mode.units.length > 0 ? strikeAim(preyAt(deps.targets, world), true) : null;
+        return prey ?? { kind: 'attackMove' };
+      }
+      case 'signpost': {
+        const node = clampedNode(clientX, clientY);
+        return { kind: 'signpost', fits: deps.signpostAnswerAt?.(node.col, node.row) !== false };
+      }
+      case 'vehicle-destination': {
+        const self = entityById(deps.snapshot(), mode.vehicle);
+        return { kind: 'drive', ship: self !== undefined && isShip(deps.content, self) };
+      }
+      case 'vehicle-dock': {
+        const berths = deps
+          .vehicleOrders()
+          .previewBerths(mode.vehicles, clampedNode(clientX, clientY), DOCK_PICK_SNAP_NODES);
+        return { kind: 'dock', fits: berths.length > 0, lands: primary };
+      }
+      case 'vehicle-attack-position':
+        return { kind: 'bombard' };
+      case 'attack-settler':
+      case 'attack-building':
+      case 'attack-vehicle':
+        return strikeAim(enemyAt(deps.targets, world, STRIKE_KINDS[mode.kind], true));
+      case 'attack-animal':
+        return strikeAim(preyAt(deps.targets, world), true);
+      case 'vehicle-attack-settler':
+      case 'vehicle-attack-building':
+      case 'vehicle-attack-vehicle':
+        return strikeAim(enemyAt(deps.targets, world, [VEHICLE_STRIKE_KIND[mode.kind]]));
+      case 'vehicle': {
+        const vehicle = ownVehicleAt(deps.targets, world);
+        return vehicle === null
+          ? null
+          : { kind: 'board', fits: deps.vehicleAttachAnswer?.(mode.settler, vehicle) !== false };
+      }
+      case 'vehicle-rider':
+        // The attach rule is asked as the press lands, so the seat is offered until it answers.
+        return ownSettlerAt(deps.targets, world) === null ? null : { kind: 'board', fits: true };
+      case 'vehicle-carrier': {
+        const carrier = ownVehicleAt(deps.targets, world);
+        return carrier === null
+          ? null
+          : { kind: 'loadAboard', fits: deps.vehicleOrders().loadsInto(mode.vehicle, carrier) };
+      }
+      case 'vehicle-deck': {
+        const vehicle = ownVehicleAt(deps.targets, world, mode.vehicle);
+        return vehicle === null
+          ? null
+          : { kind: 'loadAboard', fits: deps.vehicleOrders().loadsInto(vehicle, mode.vehicle) };
+      }
+      default: {
+        const unreachable: never = mode;
+        throw new Error(`unhandled pick mode: ${JSON.stringify(unreachable)}`);
+      }
+    }
+  };
+
+  /** The node a press at the client point names, clamped into the map as the spot presses clamp it. */
+  const clampedNode = (clientX: number, clientY: number): Tile => {
+    const { width, height } = nodeBounds(deps.mapSize);
+    return clampTile(deps.nodeAt(clientX, clientY), width, height);
+  };
+
   return {
     arm: setMode,
     cancel,
     isArmed: () => pickMode !== null,
     armed: () => pickMode,
     signpostActive: () => pickMode?.kind === 'signpost',
-    dockVehicle: () => (pickMode?.kind === 'vehicle-dock' ? pickMode.vehicle : null),
+    dockVehicle: () => (pickMode?.kind === 'vehicle-dock' ? (pickMode.vehicles[0] ?? null) : null),
+    dockShips: () => (pickMode?.kind === 'vehicle-dock' ? pickMode.vehicles : []),
     flagActive: () => pickMode?.kind === 'workplace-or-flag' || pickMode?.kind === 'work-area',
     handleMouseDown,
     handleOverviewPress,
@@ -659,5 +886,8 @@ export function createPickModeController(deps: PickModeDeps): PickModeController
       else if (shiftChain) cancel();
     },
     highlight: () => highlightFor(deps.snapshot()),
+    aimedAt: (clientX, clientY) => aimTarget(clientX, clientY)?.mark ?? null,
+    aimAt,
+    version: () => pickVersion,
   };
 }

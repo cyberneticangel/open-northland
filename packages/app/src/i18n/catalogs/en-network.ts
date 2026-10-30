@@ -16,6 +16,8 @@ export const enNetwork = {
   source: 'Game source',
   server: 'Server address',
   nick: 'Nickname',
+  flag: 'Flag',
+  noFlag: 'No flag',
   connect: 'Connect',
   disconnect: 'Disconnect',
   connecting: 'Connecting…',

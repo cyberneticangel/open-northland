@@ -42,7 +42,8 @@ export const plNetworkRoom: { readonly [Key in keyof typeof enNetworkRoom]: stri
   rejoin: 'Wróć do gry',
   reconnecting: 'Utracono połączenie. Łączenie ponownie…',
   settings: 'Ustawienia pokoju',
-  creatorSettings: 'Tylko twórca pokoju może zmieniać miejsca i ustawienia.',
+  creatorSettings:
+    'Ustawienia i miejsca zmienia twórca pokoju; kolor i plemię swojego miejsca wybierasz sam.',
   savedSettings: 'Zapisana gra zachowuje swoje pierwotne zasady i kolory.',
   progression: 'Rozwój zawodów',
   progressionDetail: 'Wymagania doświadczenia dla nowych zawodów i produkcji.',

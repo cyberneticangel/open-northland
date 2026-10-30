@@ -62,7 +62,17 @@ export function resolveLayers(
   vegetationClock: number = tick,
   wind?: WindSway,
 ): readonly ResolvedLayer[] | null {
-  return resolveLayersInto(new LayerBuffer(), sheet, item, tick, gaitClock, vegetationClock, undefined, wind);
+  return resolveLayersInto(
+    new LayerBuffer(),
+    sheet,
+    item,
+    tick,
+    gaitClock,
+    vegetationClock,
+    undefined,
+    wind,
+    tick,
+  );
 }
 
 /**
@@ -78,9 +88,11 @@ export function resolveLayersInto(
   vegetationClock: number,
   idleElapsed?: number,
   wind?: WindSway,
+  // A ship's swell and sail clock, in ticks; the water clock on the map.
+  seaClock: number = tick,
 ): readonly ResolvedLayer[] | null {
   out.reset();
-  return pushLayers(out, sheet, item, tick, gaitClock, vegetationClock, idleElapsed, wind)
+  return pushLayers(out, sheet, item, tick, gaitClock, vegetationClock, idleElapsed, wind, seaClock)
     ? out.finish()
     : null;
 }
@@ -95,6 +107,7 @@ function pushLayers(
   vegetationClock: number,
   idleElapsed: number | undefined,
   wind: WindSway | undefined,
+  seaClock: number,
 ): boolean {
   if (sheet === undefined) return false;
 
@@ -188,7 +201,7 @@ function pushLayers(
       return pushLayeredWithShadow(out, sheet, 'craftfx', draw);
     }
     case 'vehicle':
-      return pushVehicleLayers(out, sheet, item, tick, gaitClock, wind);
+      return pushVehicleLayers(out, sheet, item, tick, gaitClock, seaClock, wind);
     default: {
       const _exhaustive: never = item.kind;
       void _exhaustive;
@@ -238,8 +251,9 @@ function pushPalisadeLayers(out: LayerBuffer, sheet: SpriteSheet, item: DrawItem
   if (binding === undefined) return false;
   PALISADE_SHADOWS.reset();
   PALISADE_BODIES.reset();
-  if (!appendPalisadePost(sheet, binding, item, null)) return false;
-  for (const post of item.palisadePosts ?? NO_POSTS) appendPalisadePost(sheet, binding, post, post);
+  if (!appendPalisadePost(sheet, binding, item, null, item.player)) return false;
+  for (const post of item.palisadePosts ?? NO_POSTS)
+    appendPalisadePost(sheet, binding, post, post, item.player);
   for (const layer of PALISADE_SHADOWS.finish()) out.push(layer);
   // An edge's posts ride one endpoint's draw, and toward a neighbour further up the screen they stand
   // behind that endpoint: paint the bodies from the back row forward. The sort is stable, so the layers
@@ -257,9 +271,11 @@ function appendPalisadePost(
   binding: NonNullable<SpriteSheet['bindings']['palisade']>,
   draw: Pick<DrawItem, 'gfxIndex' | 'builtPct'> & { readonly variantStep?: number },
   post: PalisadePostDraw | null,
+  player: number | undefined,
 ): boolean {
   PALISADE_POST.reset();
-  if (!pushGroundedBody(PALISADE_POST, sheet, 'palisade', resolvePalisadeDraw(binding, draw))) return false;
+  if (!pushGroundedBody(PALISADE_POST, sheet, 'palisade', resolvePalisadeDraw(binding, draw, player)))
+    return false;
   for (const layer of PALISADE_POST.finish()) {
     const placed = post === null ? layer : shiftedLayer(layer, post);
     (layer.shadow === true ? PALISADE_SHADOWS : PALISADE_BODIES).push(placed);

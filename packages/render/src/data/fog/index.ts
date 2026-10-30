@@ -1,4 +1,10 @@
-export { type FogGhost, FogGhostStore, type GhostSource } from './ghosts.js';
+export {
+  type FogGhost,
+  type FogGhostMemory,
+  FogGhostStore,
+  type GhostSource,
+  type RememberedMarkers,
+} from './ghosts.js';
 export {
   FOG_EXPLORED_ALPHA,
   FOG_GHOST_TINT,
@@ -8,6 +14,8 @@ export {
   fogTileExplored,
   fogTileVisible,
 } from './mask.js';
+export { type SeenRoadNetwork, SeenRoads } from './seen-roads.js';
+export { type Sight, UnseenChanges } from './sight.js';
 export {
   ALPHA_BYTE,
   type FogWashLattice,

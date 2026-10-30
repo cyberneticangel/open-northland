@@ -75,7 +75,7 @@ export function spotAcceptor(
     const good = goodTypeByContentId(ctx.content, id);
     if (good !== undefined) deposits.add(good.typeId);
   }
-  const body = buildingFlagBody(ctx.content, buildingTypeId, tribe);
+  const body = buildingFlagBody(ctx.content, { buildingType: buildingTypeId, tribe });
   const roadSites = roadSitesByNode(world, terrain);
   let zones: Uint16Array | null = null;
   return {

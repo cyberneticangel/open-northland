@@ -3,6 +3,7 @@ import type { NeedKind } from '@open-northland/sim';
 import type { UiString } from '../../../content/gui/gfx.js';
 import type { EquipSlotRef } from '../../details-panel/model/index.js';
 import type { BuildingHoverModel } from '../../hover-card/model.js';
+import type { KeybindingAction } from '../../keybindings.js';
 import type { ResidentRow } from '../../tool-panel/residents/rows.js';
 import type { GoodIconPainter } from '../good-art.js';
 import type { HoverCard } from '../hover-card.js';
@@ -91,7 +92,7 @@ export interface SettlerPanelDeps {
    *  seconds, never per tick. */
   readonly residents: () => readonly ResidentRow[];
   /** The player-facing label of the ring hotkey's current binding, for the orders tooltip. */
-  readonly keyLabel: (action: 'actionRing') => string;
+  readonly keyLabel: (action: KeybindingAction) => string;
   /** The card the workplace link shows while the cursor rests on it. */
   readonly hoverCard: HoverCard;
   /** The cursor-following chip every control's tooltip shows in after the tip layer's delay, and a

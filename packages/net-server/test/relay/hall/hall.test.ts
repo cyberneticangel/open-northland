@@ -72,7 +72,7 @@ describe('hall', () => {
   it('survives a restart through its record, the connected seen as of the record', () => {
     let changes = 0;
     const hall = new Hall(null, () => changes++);
-    hall.say('Ania', 'hej', NOW - 5000);
+    hall.say('Ania', 'hej', NOW - 5000, 'PL');
     hall.saw('Bartek', NOW - 4000);
     const record = parseHallRecord(JSON.parse(JSON.stringify(hall.record(['Ania'], NOW))));
     expect(changes).toBe(2);

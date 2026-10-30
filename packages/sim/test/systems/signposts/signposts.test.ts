@@ -10,7 +10,6 @@ import {
   PlayerOrder,
   Position,
   Settler,
-  SettlerProgress,
   SIGNPOST_SPACING_NODES,
   Signpost,
 } from '../../../src/components/index.js';
@@ -20,7 +19,6 @@ import { Simulation } from '../../../src/index.js';
 import {
   BUILD_GUIDE_ATOMIC_ID,
   canPlaceSignpost,
-  SCOUT_EXPERIENCE_TYPE,
   signpostNetwork,
   signpostNetworkRevision,
 } from '../../../src/systems/index.js';
@@ -93,8 +91,6 @@ describe('placeSignpost - the scout erects a guidepost', () => {
     expect(sim.world.get(post, Owner).player).toBe(P0);
     expect(sim.world.get(post, Signpost).links).toEqual([]); // the first post of a network
     expect(sim.world.has(scout, ErectSignpostOrder)).toBe(false); // the order retired with the swing
-    // The erected post trained the scout's signpost craft (1 XP per standing post).
-    expect(sim.world.get(scout, SettlerProgress).experience.get(SCOUT_EXPERIENCE_TYPE)).toBe(1);
   });
 
   it('the placement answer keeps the spacing around the spot for the whole hammer swing', () => {

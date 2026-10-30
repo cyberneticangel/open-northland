@@ -87,7 +87,7 @@ export function houseRows(trade: TradePanelModel, slot: number): StockBrowserRow
   const rows = (slot === TRADE_SLOT_A ? trade.stock?.a : trade.stock?.b) ?? [];
   const moving = new Set(trade.transfers.map((transfer) => transfer.goodType));
   return rows.map((row) => {
-    const there = stockAt(trade, otherSlot(slot), row.goodType)?.amount ?? 0;
+    const there = stockAt(trade, otherSlot(slot), row.carriedAs ?? row.goodType)?.amount ?? 0;
     const [stockA, stockB] = slot === TRADE_SLOT_A ? [row.amount, there] : [there, row.amount];
     return {
       goodType: row.goodType,
@@ -135,7 +135,7 @@ export function transferLine(trade: TradePanelModel, transfer: TradeTransferMode
   const option = (direction: TradeDirection): SegmentedOption => {
     const enabled = good === null || flowAllowed(good, direction);
     const stops = oneWayStops(direction);
-    const lacking = good?.storedA === false ? TRADE_SLOT_A : TRADE_SLOT_B;
+    const lacking = stops?.into ?? (good?.storedA === false ? TRADE_SLOT_A : TRADE_SLOT_B);
     const tooltip = !enabled
       ? formatMessage(copy.cannotStore, { house: stopLabel(trade, lacking) })
       : stops === null

@@ -1,3 +1,4 @@
+import type { TargetMark } from '@open-northland/render';
 import type { Command, Entity, Paper, PlayerCommand } from '@open-northland/sim';
 import { formatMessage, messages } from '../../i18n/index.js';
 import type { PlacementStrip } from '../dom/placement-strip.js';
@@ -87,8 +88,8 @@ interface RoadHold {
 export interface GateSites extends LitNodes {
   /** The centre of the lit span nearest to a node on it, or null off every span. */
   centerFor(col: number, row: number): LineNode | null;
-  /** The walls on those spans, for the renderer's building tint. */
-  readonly highlight: readonly { readonly id: number; readonly ok: boolean }[];
+  /** The walls on those spans, outlined as the gate's candidates. */
+  readonly highlight: readonly TargetMark[];
 }
 
 /** The placement rules as a click asks them: each awaits the sim's answer as of now. */

@@ -2,7 +2,7 @@ import { terrainWorldBounds, type Viewport } from '@open-northland/render';
 import { FOG_MODE, FOG_STATE, fx } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
 import { workerRoleOf } from '../../../src/game/sandbox/index.js';
-import { trainingOccupancyOf } from '../../../src/game/snapshot/index.js';
+import { trainingOccupancyOf, trainingQueueOf } from '../../../src/game/snapshot/index.js';
 import { fixedViewerSeat, switchableViewerSeat } from '../../../src/game/viewer-seat.js';
 import { DEFAULT_MINIMAP_FILTERS } from '../../../src/hud/minimap/filters.js';
 import { createFogGates, createSnapshotProjections } from '../../../src/view/projections/index.js';
@@ -269,15 +269,20 @@ describe('per-tick projections - one walk of the map between them', () => {
   });
 });
 
-it('counts reserved training places from one index build and releases them next tick', () => {
+it('counts taken training seats from one index build and releases them next tick', () => {
   const entities = [
-    { id: 1, components: { Settler: {}, TrainingOrder: { house: 10 } } },
-    { id: 2, components: { Settler: {}, TrainingOrder: { house: 10 }, Indoors: { building: 10 } } },
-    { id: 3, components: { Settler: {}, TrainingOrder: { house: 20 } } },
+    { id: 1, components: { Settler: {}, TrainingOrder: { house: 10, seated: true } } },
+    {
+      id: 2,
+      components: { Settler: {}, TrainingOrder: { house: 10, seated: true }, Indoors: { building: 10 } },
+    },
+    { id: 3, components: { Settler: {}, TrainingOrder: { house: 20, seated: true } } },
+    { id: 4, components: { Settler: {}, TrainingOrder: { house: 10, seated: false } } },
     ...Array.from({ length: 400 }, (_, i) => ({ id: i + 30, components: { Settler: {} } })),
   ];
   const { snapshot, visits } = visitCountingSnapshot(snapshotOf(entities));
   expect(trainingOccupancyOf(snapshot, 10)).toBe(2);
+  expect(trainingQueueOf(snapshot, 10)).toBe(1);
   const before = visits();
   expect(trainingOccupancyOf(snapshot, 20)).toBe(1);
   expect(trainingOccupancyOf(snapshot, 30)).toBe(0);

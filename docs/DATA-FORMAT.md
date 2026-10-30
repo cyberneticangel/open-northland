@@ -225,7 +225,7 @@ A save is one JSON document produced by `exportSaveGame` and `serializeSaveGame`
 `WorldSnapshot`, and not a replay log.
 
 ```json
-{ "header": { "...": "..." }, "sections": [] }
+{ "header": { "...": "..." }, "sections": [], "presentation": null }
 ```
 
 - `header` holds `{kind, formatVersion, irVersion, contentFingerprint, missionScriptFingerprint, mapAiScriptFingerprint, savedAt, mapId, mapFingerprint, entry, session,
@@ -245,6 +245,15 @@ A save is one JSON document produced by `exportSaveGame` and `serializeSaveGame`
 - `header.view` is the saving client's view state, under the same caller-owned rules and bounds as
   `session`. The app writes `{seat, controlGroups}`: the seat that saved and each control group's
   member entity ids, keyed by group action. A load restores the groups only into the same seat.
+- `presentation` is the saving client's caller-owned text or null, outside the header so a save list
+  never reads it, at most 32 Mi UTF-16 units; restore never applies it to gameplay. The app writes its
+  fog memory there as versioned JSON, `{version, mapId, seat, statics, roads, layer}`: the remembered
+  statics of the viewed seat (their draw fields as last seen), the road nodes the viewer believes laid,
+  and the map's static layer (placements whose quad left it, and harvestables still drawn by quad as
+  `[entity, placement, state]`, the state being the node's `Resource.remaining` or a bush's stage). A load
+  restores it only into the same seat on the same map; a held quad whose entity is gone or whose state
+  moved since retires once the viewer sees it. Another layout or a malformed memory is dropped and the
+  load goes on. A network game started from a save uploads it without its presentation.
 - Optional `parent` stores the suspended map save, with at most 16 parent envelopes.
 - `sections` is an array of string-identified sections in a fixed order: `entities` (the
   allocation counter plus the alive list), one `component` section per store in first-registration
@@ -269,9 +278,9 @@ A save is one JSON document produced by `exportSaveGame` and `serializeSaveGame`
   as disconnected copies. The same state and export metadata serialize byte-identically, and parse plus
   re-serialize round-trips the bytes.
 
-A save records simulation state only. Presentation state - camera, selection, game speed, the
-render's fog ghosts - is not captured, so a loaded game reopens at the entry's default framing.
-Approximation: the original also restores the camera.
+Beyond `view` and `presentation`, a save records simulation state only. Camera, selection and game
+speed are not captured, so a loaded game reopens at the entry's default framing. Approximation: the
+original also restores the camera.
 
 Reading is split in two: `parseSaveGame` validates an untrusted document's structure (header
 identity, the exact section order, allocation coherence, pending envelopes), and `restoreSimulation`

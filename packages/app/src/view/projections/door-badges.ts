@@ -21,6 +21,7 @@ import {
 } from '@open-northland/sim';
 import type { WorkerRole } from '../../game/sandbox/index.js';
 import {
+  buildingRecordOf,
   buildingTribeOf,
   buildingTypeOf,
   type HomeFamily,
@@ -61,11 +62,13 @@ export interface BuildingDoorInfo {
     | undefined;
 }
 
-/** Body-relative anchors by type and tribe, with the entity's authored variant when present. */
+/** Body-relative anchors by type, tribe and house record, with the entity's authored variant when
+ *  present. */
 export type BuildingDoorInfoOf = (
   typeId: number | undefined,
   tribe: number | undefined,
   entity?: number,
+  record?: string,
 ) => BuildingDoorInfo | undefined;
 
 /** The building components a badge reads; a write to any other, such as its stock, keeps the badge. */
@@ -158,7 +161,7 @@ function doorBadgeOf(
   const garrison = e.components.UnderConstruction === undefined ? (counts?.garrison ?? 0) : 0;
   const pos = positionOf(e);
   if (pos === undefined) return null;
-  const info = buildingInfoOf(buildingTypeOf(e), buildingTribeOf(e), e.id);
+  const info = buildingInfoOf(buildingTypeOf(e), buildingTribeOf(e), e.id, buildingRecordOf(e));
   const player = ownerPlayerOf(e);
 
   // Bottom to top: family banners, then worker discs, then the carrier pennants.

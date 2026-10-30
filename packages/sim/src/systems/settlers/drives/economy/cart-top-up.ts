@@ -13,7 +13,7 @@ import {
   unclaimedStockOf,
 } from '../../targets/index.js';
 import { unreachableGoalVeto } from '../../unreachable-goals.js';
-import { deliverableGoodProbe } from './delivery-targets.js';
+import { homeBoundGoodProbe } from './delivery-targets.js';
 import { workAreaGate } from './haul-flag-area.js';
 import { isBoundToStorageSink } from './store-policy.js';
 
@@ -27,17 +27,16 @@ const CART_TOP_UP_REACH = 12;
 /**
  * CART TOP-UP - a store's porter whose cart has room left after a lift fills it from the nearest heap or
  * finished output of the same good within {@link CART_TOP_UP_REACH} of where it stands, and only then
- * takes the load home; with nothing of the good that close, or no store left that takes it, it delivers
- * what it has. The reach is from the porter, not the first heap, so a yard is cleared heap by heap up to
- * the cart's room. True while the porter walks to or lifts the top-up. Named addition.
+ * takes the load home; with nothing of the good that close, or its own store no longer taking it, it
+ * delivers what it has. The reach is from the porter, not the first heap, so a yard is cleared heap by
+ * heap up to the cart's room. True while the porter walks to or lifts the top-up. Named addition.
  */
 export function planCartTopUp(plan: PlannerContext, load: { goodType: number; amount: number }): boolean {
   const { world, ctx, terrain, entity: e, here, targets, supply } = plan;
   if (!pullsHaulingCart(world, e) || !isBoundToStorageSink(world, ctx, e)) return false;
   if (carryCapacityOf(world, ctx.content, e) <= 0) return false;
   const good = load.goodType;
-  const deliverable = deliverableGoodProbe(plan);
-  if (!deliverable(good)) return false;
+  if (!homeBoundGoodProbe(plan)(good)) return false;
   const sameGood = (goodType: number): boolean => goodType === good;
   const walls = buildingBlockedCells(world, ctx, terrain);
   const more = (candidate: Entity): Qualified<number> | null => {

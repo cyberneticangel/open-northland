@@ -1,6 +1,6 @@
 # Network protocol
 
-The wire contract between a game client and the relay server, version `PROTOCOL_VERSION = 45` in
+The wire contract between a game client and the relay server, version `PROTOCOL_VERSION = 48` in
 `packages/net-protocol`. A change one side of the current version could not honour (a message shape, or
 the value set of a validated field such as the fog mode ids) bumps the version; the relay refuses a
 `hello` that names another.
@@ -42,9 +42,14 @@ language. Only `malformed` carries text, the parser's `detail`, a developer diag
 
 ## Identity
 
-The first message on a connection is `hello { protocol, token, nick }`. The `token` is a secret the client
+The first message on a connection is `hello { protocol, token, nick, flag? }`. The `token` is a secret the client
 generated and stored: the identity, never shown to other clients. Browser clients keep one token per
-normalized relay origin and path, so another relay cannot impersonate them. The `nick` is display only.
+normalized relay origin and path, so another relay cannot impersonate them. The `nick` is display only,
+and so is `flag`: two capital letters naming the flag the player shows beside the nick, left out for none.
+The relay checks only that shape and leaves out a `hello` flag of another, so `hello` still parses for any
+version; a client draws the codes its flag set has and nothing for others. A member keeps the flag it joined its room with, as it keeps its nick. The online players of `presence`,
+`hallChat` and `chat` lines and room members carry that `flag` beside the nick, left out likewise; a
+client that knows no flags ignores the field.
 The relay answers `welcome { protocol, nick, build? }`, `build` being its `RELAY_BUILD` when set, or,
 speaking another version, `error { reason: { code: "protocolUnsupported", client, relay } }` and a close.
 `hello`, `welcome` and `error` keep their shapes across versions, so a mismatch reads the same on any
@@ -111,7 +116,7 @@ Every change to a room is broadcast to its members as `room { room }`, the whole
 
 | Field | Meaning |
 | --- | --- |
-| `nick`, `seat`, `connected`, `compatibility` | Identity, seat and report. |
+| `nick`, `flag`, `seat`, `connected`, `compatibility` | Identity, seat and report. |
 | `load` | What its last acknowledgement reported ([below](#acknowledgements-and-the-sync-check)); null before its first. |
 | `loading` | Boot progress in whole percent last reported before its world loaded; 100 once loaded; null before its first report. |
 | `roundTripMs` | The relay's smoothed round trip to it in ms, 0 until its first pong; null while disconnected. |
@@ -130,7 +135,8 @@ a view: a link measurement is stored and shown with the next view, and progress 
   setting; in a running game it releases control, marks the seat idle in the view and leaves the world
   unchanged. A running observer cannot reclaim a seat, and a reconnect keeps the observer role.
 - `setSeat { player, mode?, color?, tribe?, difficulty? }` is the creator's; a seated member may send
-  `tribe` alone for its own seat. `mode` applies only to a vacant seat that offers it. `tribe` needs an
+  `color` and `tribe` for its own seat. A `color` another seat wears is refused `colorTaken` (the
+  wearer's seat in `wearer`); a map's duplicate colours stand until changed. `mode` applies only to a vacant seat that offers it. `tribe` needs an
   `authoredTribe` (else `seatTribeUnavailable`) and reaches the start descriptor only when it differs from
   the authored one; a seat without it plays the roster tribe. `difficulty` needs a seat that has one (else
   `seatDifficultyUnavailable`) and reaches the start descriptor only while the computer plays it; a
@@ -647,12 +653,12 @@ client ends its game with a notice and leaves the room as the relay's `left` wou
 
 ## Chat
 
-`chat { text }` is broadcast to the room as `chat { from, text, at, tick }`: `at` is the relay's wall clock
+`chat { text }` is broadcast to the room as `chat { from, flag?, text, at, tick }`: `at` is the relay's wall clock
 when it received the line, in Unix epoch milliseconds, and `tick` the clock's next tick then, null before
 the clock has started. The text is one printable line of at most `MAX_CHAT_LENGTH` characters; Unicode
 line and paragraph separators are refused along with control characters. The relay keeps each room's
 newest `MAX_CHAT_HISTORY_LINES` lines, the lobby's included, and the log ends with the room. A member gets
-`chatHistory { lines: [{ from, text, at, tick }] }`, oldest first, right after the room view each time it
+`chatHistory { lines: [{ from, flag?, text, at, tick }] }`, oldest first, right after the room view each time it
 enters the room: on creating it, on joining it, and on every return of its token, before `start` and
 `clock`.
 
@@ -667,18 +673,18 @@ whole again when some it missed are no longer kept.
 Then, at most once per `HALL_REFRESH_MS`, it gets `rooms` and `presence` again when either changed. A running clock's advance alone is no
 change; the client counts `playedMs` on from when the list arrived. A member of a room gets none of these.
 
-`presence { online: [{ nick, room }], recent: [{ nick, at }] }` names each introduced connection by its
+`presence { online: [{ nick, flag?, room }], recent: [{ nick, at }] }` names each introduced connection by its
 last `welcome` nick, once per nick, with the id of the room it is in or null; `recent` lists the nicks seen within
 `SEEN_KEPT_MS` that are not online, newest first, `at` being when the relay last saw them, in Unix epoch
 milliseconds. Only an identity online for `SEEN_AFTER_MS`, across connections that replaced one another, is remembered. Each list carries at most `MAX_PRESENCE_ENTRIES`.
 
-`hallChat { text }` from a client in the hall is broadcast to the hall as `hallChat { from, text, at }`,
+`hallChat { text }` from a client in the hall is broadcast to the hall as `hallChat { from, flag?, text, at }`,
 `from` being the sender's last `welcome` nick; the text follows the room chat's rules. A connection may say
 `HALL_CHAT_BURST` lines at once and one more every `HALL_CHAT_REFILL_MS`, an allowance its peer address
 shares with its other connections (the proxy's `X-Forwarded-For`, else the socket's peer); past that it is
 refused with `retryTooSoon`. The relay keeps the newest `MAX_HALL_CHAT_LINES` lines of the last `HALL_CHAT_KEPT_MS`, and
-`hallChatHistory { lines: [{ from, text, at }], replaces }` replays them oldest first. With `RELAY_HALL_FILE` set the
-chat and the seen times survive a restart ([Relay image](BUILDING.md#relay-image)).
+`hallChatHistory { lines: [{ from, flag?, text, at }], replaces }` replays them oldest first. With `RELAY_HALL_FILE` set the
+chat, without its flags, and the seen times survive a restart ([Relay image](BUILDING.md#relay-image)).
 
 ## Refusal codes
 

@@ -86,8 +86,18 @@ export interface RoomSeatView {
   readonly ready: boolean;
 }
 
+/** A flag a player picked to show beside their nick: two capital letters, an ISO 3166-1 region
+ *  (`PL`) or another code a flag set draws (`EU`). Wherever a flag may stand, its absence is none. */
+export type PlayerFlag = string;
+
+/** A player's flag as a message carries it: the field is left out for no flag. */
+export function withFlag(flag: PlayerFlag | undefined): { readonly flag?: PlayerFlag } {
+  return flag === undefined ? {} : { flag };
+}
+
 export interface RoomMemberView {
   readonly nick: string;
+  readonly flag?: PlayerFlag;
   readonly seat: number | null;
   readonly connected: boolean;
   readonly compatibility: LobbyCompatibility | null;
@@ -129,6 +139,7 @@ export interface RoomSummary {
  *  the room they are in, null outside one. */
 export interface OnlinePlayer {
   readonly nick: string;
+  readonly flag?: PlayerFlag;
   readonly room: string | null;
 }
 
@@ -142,6 +153,8 @@ export interface RecentPlayer {
  *  clock in Unix epoch milliseconds. */
 export interface HallChatLine {
   readonly from: string;
+  /** The speaker's flag when they said the line. */
+  readonly flag?: PlayerFlag;
   readonly text: string;
   readonly at: number;
 }
@@ -210,10 +223,7 @@ export interface GovernedClock {
 
 /** One line of a room's chat as the relay logged it: `at` is the relay's wall clock when it received
  *  the line, in Unix epoch milliseconds, and `tick` the clock's next tick then, null before it started. */
-export interface ChatLine {
-  readonly from: string;
-  readonly text: string;
-  readonly at: number;
+export interface ChatLine extends HallChatLine {
   readonly tick: number | null;
 }
 
@@ -252,7 +262,13 @@ export interface ResponsivenessState {
 }
 
 export type ClientMessage =
-  | { readonly kind: 'hello'; readonly protocol: number; readonly token: string; readonly nick: string }
+  | {
+      readonly kind: 'hello';
+      readonly protocol: number;
+      readonly token: string;
+      readonly nick: string;
+      readonly flag?: PlayerFlag;
+    }
   | { readonly kind: 'listRooms' }
   | { readonly kind: 'requestInitialSave' }
   | { readonly kind: 'requestMap' }

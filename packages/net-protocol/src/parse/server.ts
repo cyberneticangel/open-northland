@@ -40,7 +40,7 @@ import {
   parseSeatIndex,
 } from './room.js';
 import { parseSaveOrders } from './save-orders.js';
-import { assertNever, asTimestamp, parseLine, parseNick, parseRelayBuild } from './text.js';
+import { assertNever, asTimestamp, parseFlag, parseLine, parseNick, parseRelayBuild } from './text.js';
 import { BLOB_TYPES, parseBlobBytes, parseStateHash, parseWireCommands, SYNC_DOMAINS } from './wire.js';
 
 const SERVER_KINDS = keysOf<ServerMessage['kind']>({
@@ -271,6 +271,7 @@ function parseChatLine(raw: Record<string, unknown>, at: string): ChatLine {
 function parseHallChatLine(raw: Record<string, unknown>, at: string): HallChatLine {
   return {
     from: parseNick(raw.from, `${at}.from`),
+    ...parseFlag(raw, `${at}.flag`),
     text: parseLine(raw.text, `${at}.text`, MAX_CHAT_LENGTH),
     at: asTimestamp(raw.at, `${at}.at`),
   };
@@ -280,6 +281,7 @@ function parseOnlinePlayer(value: unknown, at: string): OnlinePlayer {
   const raw = asRecord(value, at);
   return {
     nick: parseNick(raw.nick, `${at}.nick`),
+    ...parseFlag(raw, `${at}.flag`),
     room: raw.room === null ? null : asString(raw.room, `${at}.room`, MAX_ROOM_ID_LENGTH),
   };
 }

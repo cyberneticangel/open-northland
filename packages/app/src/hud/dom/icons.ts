@@ -95,8 +95,8 @@ export const GLYPH = {
     '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="m3 11 9-7 9 7M5 10v10h14V10M12 11c-2 2 1 3 0 5M14 13c1 1 0 3-2 3"/></svg>',
   crosshair:
     '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="4"/></svg>',
-  /* The building panel's orders: a house raised a tier, the raise called off, the alarm bell and a
-     house knocked down. */
+  /* The building panel's orders: a house raised a tier, the raise called off, the alarm trumpet, the
+     whole settlement's alarm and a house knocked down. */
   upgrade:
     '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="m3 12 9-7 9 7M6 11v9h12v-9M12 19v-7M9 15l3-3 3 3"/></svg>',
   cancelUpgrade:
@@ -104,7 +104,10 @@ export const GLYPH = {
   people:
     '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-1a6 6 0 0 1 12 0v1M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 5v1"/></svg>',
   book: '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="M4 5c3-1 6-1 8 1v14c-2-2-5-2-8-1ZM20 5c-3-1-6-1-8 1v14c2-2 5-2 8-1Z"/></svg>',
-  bell: '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0M12 3v2"/></svg>',
+  trumpet:
+    '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="M2.5 10.5v3M2.5 12H15M15 10.8 21 7v10l-6-3.8M7 12V9M10 12V9M6.5 12c0 3 1 4 3 4h2.5c2 0 3-1.2 3-4"/></svg>',
+  settlement:
+    '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="M2 20h20M3.5 20v-6l3-2.5 3 2.5v6M9.5 20V9l3-3 3 3v11M15.5 20v-6l3-2.5 3 2.5v6M12.5 11.5v1.5"/></svg>',
   demolish:
     '<svg aria-hidden="true" class="on-glyph" viewBox="0 0 24 24"><path d="m3 11 9-7 9 7M6 10v10h5l-1-3 2-2-1-3M14 20h4V10M16 4l2-2M19 6l2-1"/></svg>',
   /* A tick and a crossed circle: a household ware allowed or forbidden in every home. */

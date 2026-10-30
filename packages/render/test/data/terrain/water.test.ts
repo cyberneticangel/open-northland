@@ -54,6 +54,20 @@ describe('makeWaterField', () => {
     expect(wave(...cellNode(0, 6))).toBe(0);
   });
 
+  it('ramps the shore value across the coast: open water 1, inland 0, the coast between', () => {
+    // Row-major 5×1: two meadow cells, then three water cells.
+    const { shore } = makeWaterField(
+      groundOf(5, 1, (cell) => (cell < 2 ? MEADOW : DEEP)),
+      5,
+      1,
+    );
+    const at = (col: number): number => shore(...cellNode(col, 0));
+    expect(at(0)).toBe(0);
+    expect(at(4)).toBe(1);
+    expect(at(1)).toBeCloseTo(1 / 3);
+    expect(at(2)).toBeCloseTo(2 / 3);
+  });
+
   it('shades by the painted family: shallows are surface only, deep water both, a mixed cell half', () => {
     // Row-major 4×1: land | shallow | deep | one shallow and one deep triangle.
     const field = makeWaterField(

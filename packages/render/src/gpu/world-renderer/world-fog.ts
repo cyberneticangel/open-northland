@@ -1,6 +1,13 @@
-import type { FogView, WorldSnapshot } from '@open-northland/sim';
+import { FOG_STATE, type FogView, scanChangedBytes, systems, type WorldSnapshot } from '@open-northland/sim';
 import type { Container } from 'pixi.js';
-import { FogGhostStore, fogTileExplored, fogTileVisible } from '../../data/fog/index.js';
+import {
+  type FogGhostMemory,
+  FogGhostStore,
+  fogTileExplored,
+  fogTileVisible,
+  type RememberedMarkers,
+  type Sight,
+} from '../../data/fog/index.js';
 import type { Viewport } from '../../data/projection/index.js';
 import type { ElevationField } from '../../data/terrain/index.js';
 import { FogLayer, type FogWashMask } from '../overlays/index.js';
@@ -13,7 +20,27 @@ import type { PoolFrame } from '../sprite-pool/index.js';
 
 export type FogPoolFrame = Pick<PoolFrame, 'staticRefs' | 'fogVisible' | 'fogEpoch' | 'ghosts'>;
 
-export class WorldFog {
+/** The cell index of a node while no view gives the grid. */
+const NO_CELL = -1;
+
+/** The cells a step from view `was` to `view` turned visible, read off the two views' mask bytes; null
+ *  when the step cannot be diffed (fog turned on or off, another seat, mode or grid, a view over live
+ *  state), so every cell may have. */
+function openedCells(was: FogView | null, view: FogView | null): readonly number[] | null {
+  if (was === null || view === null || was.cells === undefined || view.cells === undefined) return null;
+  if (was.player !== view.player || was.mode !== view.mode || was.cellsWide !== view.cellsWide) return null;
+  if (was.cells.length !== view.cells.length) return null;
+  const opened: number[] = [];
+  const wide = view.cellsWide;
+  scanChangedBytes(was.cells, view.cells, (cell) => {
+    const cx = cell % wide;
+    if (view.stateAt(cx, (cell - cx) / wide) === FOG_STATE.VISIBLE) opened.push(cell);
+    return true;
+  });
+  return opened;
+}
+
+export class WorldFog implements Sight {
   private readonly wash = new FogLayer();
   private view: FogView | null = null;
   private readonly ghosts = new FogGhostStore();
@@ -25,6 +52,10 @@ export class WorldFog {
   private lastGeneration = -1;
   private lastPlayer: number | null = null;
   private lastMode: FogView['mode'] | null = null;
+  private sight = 0;
+  /** Whether a frame has said what the viewer sees: until then nothing reads as seen. */
+  private sightKnown = false;
+  private opened: readonly number[] | null = null;
   /** Bound once: the pool's cull predicate reads the live view, so a frame allocates no closure. */
   private readonly visibleAt = (tileX: number, tileY: number): boolean =>
     this.view === null || fogTileVisible(this.view, tileX, tileY);
@@ -52,11 +83,58 @@ export class WorldFog {
   }
 
   setView(view: FogView | null): void {
+    const was = this.view;
+    const changed =
+      view === null || was === null
+        ? view !== was
+        : view.generation !== was.generation || view.player !== was.player || view.mode !== was.mode;
+    if (changed || !this.sightKnown) {
+      this.sight++;
+      this.opened = this.sightKnown ? openedCells(was, view) : null;
+    }
+    this.sightKnown = true;
     this.view = view;
   }
 
-  adoptGhost(ref: number): void {
-    this.ghosts.adopt(ref);
+  /** Whether the viewer watches the cell of half-cell node (hx, hy); fog off watches everything, and
+   *  nothing is watched before the first view is set, so a change made then waits for it. */
+  seesNode(hx: number, hy: number): boolean {
+    if (!this.sightKnown) return false;
+    if (this.view === null) return true;
+    const { cx, cy } = systems.cellOfNode(hx, hy);
+    return this.view.stateAt(cx, cy) === FOG_STATE.VISIBLE;
+  }
+
+  cellOfNode(hx: number, hy: number): number {
+    if (this.view === null) return NO_CELL;
+    const { cx, cy } = systems.cellOfNode(hx, hy);
+    return cy * this.view.cellsWide + cx;
+  }
+
+  /** Bumps whenever {@link seesNode} may answer differently, the moment a view is set. */
+  get revision(): number {
+    return this.sight;
+  }
+
+  get newlyVisible(): readonly number[] | null {
+    return this.opened;
+  }
+
+  knowStartBuildings(): void {
+    this.ghosts.knowStartBuildings();
+  }
+
+  restoreMemory(memory: FogGhostMemory): void {
+    this.ghosts.restore(memory);
+  }
+
+  savedMemory(): FogGhostMemory | null {
+    return this.ghosts.memory();
+  }
+
+  /** The remembered statics the world draws on explored ground, as of the last {@link update}. */
+  get markers(): RememberedMarkers {
+    return this.ghosts;
   }
 
   /** Live view: the caller keeps shrinking this same set as nodes are first worked and never

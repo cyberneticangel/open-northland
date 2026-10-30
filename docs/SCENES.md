@@ -84,9 +84,14 @@ to the flag, especially the byzantine collector with a hat.
 civilization in rows: viking, frank, byzantine, saracen, egyptian. Watch them for a while: every idle
 fidget keeps the weapon in hand.
 
-`?scene=cart-drivers` crews a handcart with a trader and an ox cart with a carrier for each
-civilization, in rows: viking, frank, byzantine, saracen, egyptian, and drives them east. Every driver
-wears his own civilization's head, standing and driving.
+`?scene=trade-on-foot` runs two traders carrying wood between own warehouses, the upper one on foot
+with a unit in its hands a trip, the lower one pulling a handcart it stands by each warehouse door
+while it loads and unloads. The view checks the walker's carry gait and the cart set down and taken
+up again.
+
+`?scene=cart-drivers` hands a handcart to a trader to pull and crews an ox cart with a carrier for
+each civilization, in rows: viking, frank, byzantine, saracen, egyptian, and sends them east. Every
+driver wears his own civilization's head, standing and driving.
 
 `?scene=creatures` places weresnakes and werewolves opposite four swordsmen, with wolves, lions,
 lionesses, brown bears and polar bears nearby. Watch the monsters' repeated strikes, the predators'

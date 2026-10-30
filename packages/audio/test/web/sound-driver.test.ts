@@ -23,6 +23,7 @@ const VIKING_MAN: HumanVoices = {
   respondOk: ['Viking male ok 01'],
   respondNo: [],
 };
+const VIKING_TRIBE = 1;
 const index: SoundIndex = {
   groupsByName: new Map([
     ['hammer wood', ['static/hammer01.wav']],
@@ -42,6 +43,7 @@ const index: SoundIndex = {
   attackAlertsByTribe: new Map(),
   landscapeAmbienceByRecord: new Map(),
   murmurByTribe: new Map(),
+  musicCultureByTribe: new Map([[VIKING_TRIBE, 'norse']]),
   poolGains: new Map(),
   wavGains: new Map(),
 };
@@ -272,7 +274,7 @@ describe('SoundDriver', () => {
     expect(fetched).toEqual(['/sounds/generic/m 01.flac']);
   });
 
-  it('plays the map music, then hands over to its Danger variant once another player strikes us', async () => {
+  it('loops the map music, then cuts to its Danger variant once another player strikes us', async () => {
     const MISSION_ARABS1 = 17;
     const { driver, ctx, fetched } = makeDriver();
     await driver.resume();
@@ -300,14 +302,14 @@ describe('SoundDriver', () => {
     driver.update({ ...ours, events: [] });
     await flush();
     await flush();
-    // The short opening cue starts inside the prefetch lead, so the Danger stem decodes right behind it.
-    const music = ['/music/mission_arabs1_standard.ogg', '/music/mission_arabs1_danger.ogg'];
-    expect(fetched).toEqual(music);
+    // The map's stem loops on, so the Danger stem waits for its prefetch or a fight.
+    const calm = ['/music/mission_arabs1_standard.ogg'];
+    expect(fetched).toEqual(calm);
 
     // Re-asking for the same track every frame must not re-fetch it.
     driver.update({ ...ours, events: [] });
     await flush();
-    expect(fetched).toEqual(music);
+    expect(fetched).toEqual(calm);
 
     const ENEMY = 2;
     const struck: readonly SimEvent[] = Array.from({ length: TENSE_ENTER_THREAT }, () => ({
@@ -322,8 +324,75 @@ describe('SoundDriver', () => {
     const calmSources = ctx.sources.length;
     driver.update({ ...ours, events: struck });
     await flush();
-    // The cut-in opens on the decoded Danger stem without another fetch.
-    expect(fetched).toEqual(music);
+    await flush();
+    // The cut-in opens on the Danger stem, fetched once.
+    expect(fetched).toEqual([...calm, '/music/mission_arabs1_danger.ogg']);
     expect(ctx.sources).toHaveLength(calmSources + 1);
+  });
+
+  it('plays the nation’s music for the local tribe, falling back to it on a map without music', async () => {
+    const MISSION_ARABS1 = 17;
+    const { driver, fetched } = makeDriver();
+    await driver.resume();
+    const manifest = {
+      tracks: {
+        mission_arabs1_standard: musicTrack('mission_arabs1_standard'),
+        mission_midgard1_standard: musicTrack('mission_midgard1_standard'),
+      },
+    };
+    const viking = { ...baseInput, events: [], localPlayer: 0, localTribe: VIKING_TRIBE } as const;
+    driver.setMusicMap({ musicType: null, manifest });
+    driver.update(viking);
+    await flush();
+    expect(fetched).toEqual(['/music/mission_midgard1_standard.ogg']);
+
+    const switching = makeDriver();
+    await switching.driver.resume();
+    switching.driver.setMusicMap({ musicType: MISSION_ARABS1, manifest });
+    switching.driver.update(viking);
+    await flush();
+    expect(switching.fetched).toEqual(['/music/mission_arabs1_standard.ogg']);
+    switching.driver.setMusicSource('nation');
+    switching.driver.update(viking);
+    await flush();
+    expect(switching.fetched.at(-1)).toBe('/music/mission_midgard1_standard.ogg');
+  });
+
+  it('opens a source switched during a fight on its fight music', async () => {
+    const MISSION_ARABS1 = 17;
+    const ENEMY = 2;
+    const { driver, fetched } = makeDriver();
+    await driver.resume();
+    driver.setMusicMap({
+      musicType: MISSION_ARABS1,
+      manifest: {
+        tracks: {
+          mission_arabs1_standard: musicTrack('mission_arabs1_standard'),
+          mission_midgard1_standard: musicTrack('mission_midgard1_standard'),
+          attack_viking: musicTrack('attack_viking'),
+        },
+      },
+    });
+    const owned: WorldSnapshot = {
+      tick: 1,
+      entities: [{ id: 7, components: { Owner: { player: 1 }, Building: {} } }],
+      events: [],
+    };
+    const ours = { ...baseInput, snapshot: owned, localPlayer: 1, localTribe: VIKING_TRIBE } as const;
+    const struck: readonly SimEvent[] = Array.from({ length: TENSE_ENTER_THREAT }, () => ({
+      kind: 'combatHit',
+      damage: 250,
+      targetMaxHealth: 1000,
+      attacker: 9 as Entity,
+      attackerPlayer: ENEMY,
+      target: 7 as Entity,
+      at: { hx: 5, hy: 5 },
+    }));
+    driver.update({ ...ours, events: struck });
+    await flush();
+    driver.setMusicSource('nation');
+    await flush();
+    expect(fetched).not.toContain('/music/mission_midgard1_standard.ogg');
+    expect(fetched).toContain('/music/attack_viking.ogg');
   });
 });

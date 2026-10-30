@@ -16,14 +16,14 @@ export interface DesktopFault {
   readonly url: string | null;
 }
 
-/** How the shell's previous run ended without quitting: the system ended the session, a native
- *  crash left a dump, or neither (killed, or the power went). */
+/** How the shell's previous run ended without quitting: the system ended the session, it never woke
+ *  from sleep, a native crash left a dump, or none of these (killed, or the power went). */
 export interface PreviousShellRun {
   /** ISO times bounding the pages that run served. */
   readonly from: string;
   readonly until: string;
-  readonly end: 'shutdown' | 'crash' | 'unknown';
-  /** When the session ended or the dump was written; null for `unknown`. */
+  readonly end: 'shutdown' | 'asleep' | 'crash' | 'unknown';
+  /** When the session ended, the system went to sleep or the dump was written; null for `unknown`. */
   readonly endedAt: string | null;
 }
 

@@ -19,9 +19,9 @@ export function clearUpgradeGround(
 ): void {
   const terrain = ctx.terrain;
   const pos = world.tryGet(building, Position);
-  const tribe = world.tryGet(building, Building)?.tribe;
-  if (terrain === undefined || pos === undefined || tribe === undefined) return;
-  const footprint = buildingFootprintOf(ctx.content, targetType, tribe);
+  const house = world.tryGet(building, Building);
+  if (terrain === undefined || pos === undefined || house === undefined) return;
+  const footprint = buildingFootprintOf(ctx.content, targetType, house.tribe, house.record);
   if (footprint === undefined) return;
   const { hx, hy } = nodeOfPosition(pos.x, pos.y);
   const body = new Set(translatedCells(terrain, footprint.blocked, hx, hy));

@@ -61,8 +61,8 @@ function dockCandidates(
 }
 
 /**
- * Sail `vehicle`, its crew inside, to the first dock node around `point` it finds a route to, and
- * remember the point as the shore it moors at. False, with the `vehicleNoPath` note, when no ring
+ * Sail `vehicle`, its crew inside, to the first dock node around `point` it finds a route to, `dock`
+ * tried first when it is one, and remember the point as the shore it moors at. False, with the `vehicleNoPath` note, when no ring
  * node takes it. Approximation: the original leaves a ship already standing on a ring node as it is;
  * here it moors in place, which is what the order asked for.
  */
@@ -72,6 +72,7 @@ export function startDock(
   terrain: TerrainGraph,
   vehicle: Entity,
   point: HalfCellNode,
+  dock: HalfCellNode | null = null,
 ): boolean {
   const state = world.get(vehicle, Vehicle);
   const anchor = vehicleAnchor(world, vehicle);
@@ -82,7 +83,11 @@ export function startDock(
   // candidates in it are searched, instead of a sea-wide search per ring node out of reach. Other ships
   // are no wall, as a route passes through them where it cannot go around.
   let reached: Uint8Array | undefined;
-  for (const node of dockCandidates(world, ctx, terrain, vehicle, type, anchor, point)) {
+  const ring = dockCandidates(world, ctx, terrain, vehicle, type, anchor, point);
+  const named = dock !== null && terrain.inBounds(dock.hx, dock.hy) ? terrain.nodeAt(dock.hx, dock.hy) : null;
+  const candidates =
+    named !== null && ring.includes(named) ? [named, ...ring.filter((n) => n !== named)] : ring;
+  for (const node of candidates) {
     if (reached !== undefined && reached[node] !== REACHED) continue;
     if (node !== here && !startVehicleDrive(world, ctx, terrain, vehicle, node)) {
       reached ??= reachableWater(terrain, vehicleGroundBlocks(world, ctx, terrain, vehicle, type), here);
@@ -151,14 +156,16 @@ export function dockVehicle(
     return false;
   }
   const point = { hx: command.x, hy: command.y };
+  const dock = command.dock === undefined ? null : { hx: command.dock.x, hy: command.dock.y };
   if (!crewInside(state)) {
     const live = world.mut(e, Vehicle);
     live.heldGoal = point;
+    live.heldDock = dock;
     live.task = 'docks';
     recordAiOrder(world, e, origin);
     return true;
   }
-  const accepted = startDock(world, ctx, terrain, e, point);
+  const accepted = startDock(world, ctx, terrain, e, point, dock);
   if (accepted) recordAiOrder(world, e, origin);
   return accepted;
 }
@@ -171,6 +178,9 @@ export interface MooringProbe {
   /** Whether the dock order on half-cell node `(x, y)` would find a dock node: a shore node at exactly
    *  the door distance from a water node the ship can reach. */
   canMoor(x: number, y: number): boolean;
+  /** Whether `(x, y)` is a dock node: a water node the ship can reach and park on (its free-size class
+   *  holds its disc) with a mooring spot at the door distance, which a dock order may name. */
+  canDock(x: number, y: number): boolean;
   /** Changes whenever the answers may have; overlay frames memoize on it. */
   readonly key: string;
 }
@@ -179,6 +189,8 @@ export interface MooringProbe {
 export interface MooringSpots {
   readonly key: string;
   readonly spots: ReadonlySet<NodeId>;
+  /** The parkable dock nodes the spots are found from. */
+  readonly docks: ReadonlySet<NodeId>;
 }
 
 interface MooringMemo extends MooringSpots {
@@ -186,9 +198,12 @@ interface MooringMemo extends MooringSpots {
   readonly probe: MooringProbe;
 }
 
-/** One entry per world: the app probes for the one ship whose dock pick is armed. A read-path cache
- *  feeding the overlay and the click gate, never a sim decision, so it is not hashed. */
-const mooringMemo = new WeakMap<World, MooringMemo>();
+/** A few entries per world, by key, so a selected fleet spread over different waters does not evict
+ *  one ship's answer with another's. A read-path cache feeding the overlay, the berth preview and the
+ *  click gate, never a sim decision, so it is not hashed. */
+const mooringMemo = new WeakMap<World, Map<string, MooringMemo>>();
+/** The memo entries a world keeps, the least recently built dropped first. */
+const MOORING_MEMO_ENTRIES = 4;
 
 /**
  * The {@link MooringProbe} of `vehicle`, or null for a vehicle that takes no dock order: not a ship, or
@@ -234,22 +249,34 @@ function mooringMemoOf(
   const regions = seaRegions(world, ctx, terrain, type.logicSize);
   const reach = regions.regionsFrom(terrain.nodeAt(anchor.hx, anchor.hy));
   const key = `${regions.key}:${reach.join(',')}:${vector.distance}`;
-  const cached = mooringMemo.get(world);
-  if (cached !== undefined && cached.key === key && cached.terrain === terrain) return cached;
-  const spots = mooringSpots(world, ctx, terrain, regions, reach, vector.distance);
+  let held = mooringMemo.get(world);
+  if (held === undefined) {
+    held = new Map();
+    mooringMemo.set(world, held);
+  }
+  const cached = held.get(key);
+  if (cached !== undefined && cached.terrain === terrain) return cached;
+  const { spots, docks } = mooringSpots(world, ctx, terrain, regions, reach, vector.distance, type.logicSize);
   const probe: MooringProbe = {
     key,
     canMoor: (x, y) => terrain.inBounds(x, y) && spots.has(terrain.nodeAt(x, y)),
+    canDock: (x, y) => terrain.inBounds(x, y) && docks.has(terrain.nodeAt(x, y)),
   };
-  const memo: MooringMemo = { key, spots, terrain, probe };
-  mooringMemo.set(world, memo);
+  const memo: MooringMemo = { key, spots, docks, terrain, probe };
+  held.delete(key);
+  held.set(key, memo);
+  for (const stale of held.keys()) {
+    if (held.size <= MOORING_MEMO_ENTRIES) break;
+    held.delete(stale);
+  }
   return memo;
 }
 
 /**
- * The walkable land nodes at exactly `doorDistance` from a node of the `reach` regions. A node whose
- * free-size class is at least the door distance has no other continent within it (the class is the
- * radius of its own open component around it), so only the coastal band is scanned.
+ * The walkable land nodes at exactly `doorDistance` from a node of the `reach` regions, and those of
+ * the nodes with such land on their ring that a ship of `logicSize` may park on. A node whose free-size
+ * class is at least the door distance has no other continent within it (the class is the radius of its
+ * own open component around it), so only the coastal band is scanned.
  */
 function mooringSpots(
   world: World,
@@ -258,10 +285,12 @@ function mooringSpots(
   regions: SeaRegions,
   reach: readonly number[],
   doorDistance: number,
-): ReadonlySet<NodeId> {
+  logicSize: number,
+): Pick<MooringSpots, 'spots' | 'docks'> {
   const clearance = vehicleClearance(world, ctx, terrain);
   const inland = doorDistance <= MAX_CLEARANCE_CLASS ? doorDistance : Number.POSITIVE_INFINITY;
   const spots = new Set<NodeId>();
+  const docks = new Set<NodeId>();
   for (let n = 0; n < terrain.nodeCount; n++) {
     const node = n as NodeId;
     if (!reach.includes(regions.regionOf(node)) || clearance.classOf(node) >= inland) continue;
@@ -269,8 +298,10 @@ function mooringSpots(
     for (const { point } of hexagonRing({ hx: x, hy: y }, doorDistance)) {
       if (!terrain.inBounds(point.hx, point.hy)) continue;
       const shore = terrain.nodeAt(point.hx, point.hy);
-      if (terrain.isWalkable(shore)) spots.add(shore);
+      if (!terrain.isWalkable(shore)) continue;
+      spots.add(shore);
+      if (clearance.classOf(node) >= logicSize) docks.add(node);
     }
   }
-  return spots;
+  return { spots, docks };
 }

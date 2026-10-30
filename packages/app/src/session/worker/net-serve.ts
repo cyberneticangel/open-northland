@@ -8,7 +8,7 @@ import {
   type RelayLinkEvents,
   RelaySocket,
 } from '@open-northland/net-client';
-import type { ServerMessage } from '@open-northland/net-protocol';
+import { type ServerMessage, withFlag } from '@open-northland/net-protocol';
 import {
   type FromNetWorker,
   type RelayAnswer,
@@ -68,13 +68,14 @@ class RelayConnection<B, E> {
     private readonly post: Post<E>,
     build: RelayedWorldBuilder<B, E>,
     openLink: RelayLinkFactory,
-    { url, token, nick }: Connect,
+    { url, token, nick, flag }: Connect,
     private readonly close: () => void,
   ) {
     this.worlds = new RelayedWorldPort(post, build);
     const client = new RelayClient({
       token,
       nick,
+      ...withFlag(flag),
       world: this.worlds,
       connected: () => this.link.connected,
       onMessage: (message) => this.forward(message),

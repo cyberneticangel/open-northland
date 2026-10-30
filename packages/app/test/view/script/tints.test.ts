@@ -1,5 +1,5 @@
 import { VERTEX_PALETTE_ENTRIES } from '@open-northland/data';
-import type { LightGrade } from '@open-northland/render/data';
+import { type LightGrade, shownGrade } from '@open-northland/render/data';
 import type { LandscapeEditView } from '@open-northland/sim';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vertexPalette from '../../../src/content/vertex-palette.js';
@@ -10,10 +10,12 @@ const NEUTRAL = 0;
 const DARK = 5;
 const TORCH = 9;
 const WARM = 11;
+const DIM = 13;
 const palette: readonly number[] = Array.from({ length: VERTEX_PALETTE_ENTRIES }, (_, index) => {
   if (index === DARK) return 0x404040;
   if (index === TORCH) return 0xc08040;
   if (index === WARM) return 0xac9373;
+  if (index === DIM) return 0x606060;
   return 0x808080;
 });
 
@@ -30,11 +32,22 @@ const rgbAt = (colors: Float32Array, node: number): number[] =>
   Array.from(colors.slice(node * 3, node * 3 + 3));
 
 describe('splitScriptTints', () => {
-  it('grades the scene with the dominant tint as written and keeps the torches relative to it', () => {
+  it('grades the scene with the dominant tint as written and softens a torch glow under its darkness', () => {
     const { scene, colors } = splitScriptTints(tints, palette);
     expect(scene).toEqual([0.5, 0.5, 0.5]);
     for (const node of [0, 6, 7]) expect(rgbAt(colors, node)).toEqual([1, 1, 1]);
-    expect(rgbAt(colors, 8)).toEqual([3, 2, 1]); // (1.5, 1, 0.5) asked, over a 0.5 scene
+    // (1.5, 1, 0.5) asked: a fifth of its excess over 1, not divided by the scene.
+    expect(rgbAt(colors, 8).map((c) => Number(c.toFixed(3)))).toEqual([1.1, 1, 0.9]);
+  });
+
+  it('divides a dimming local tint by the scene as the scene light shows it', () => {
+    const dimmed = Uint8Array.from([DARK, DARK, DARK, DARK, DARK, DARK, DARK, NEUTRAL, DIM, DIM]);
+    const { colors } = splitScriptTints(dimmed, palette);
+    const shown = shownGrade([0.5, 0.5, 0.5], [1, 1, 1]);
+    // 0x606060 asked: its 0.75 over the shown night's multiply, so the product is what the script asked.
+    expect(rgbAt(colors, 8).map((c) => Number(c.toFixed(3)))).toEqual(
+      shown.map((c) => Number((0.75 / c).toFixed(3))),
+    );
   });
 
   it('treats a tint under the whole-map share, or a neutral one, as no scene tint', () => {

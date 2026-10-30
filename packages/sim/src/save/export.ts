@@ -13,7 +13,7 @@ import {
   type SaveGameSection,
 } from './format.js';
 import { parseSavedAt } from './header-fields.js';
-import { parseSaveGame } from './parse.js';
+import { parsedPresentation, parseSaveGame } from './parse.js';
 
 export interface ExportSaveOptions {
   readonly continuation?: readonly SavedCommand[];
@@ -21,6 +21,8 @@ export interface ExportSaveOptions {
   readonly session?: unknown;
   /** Opaque plain JSON copied into the header: the saving client's own view state. */
   readonly view?: unknown;
+  /** Opaque text kept beside the sections: the saving client's presentation memory. */
+  readonly presentation?: string | null;
   readonly savedAt?: number | null;
   /** The caller's world identity token (the app uses the decoded map id, or `scene:<id>`), recorded
    *  so a loader can match the save to the world it boots. Omit for a world with no identity. */
@@ -123,6 +125,7 @@ function captureSave(
       tick: sim.tick,
     },
     sections,
+    presentation: parsedPresentation(opts.presentation ?? null),
     ...(opts.parent !== undefined ? { parent: parseSaveGame(JSON.parse(JSON.stringify(opts.parent))) } : {}),
   };
 }

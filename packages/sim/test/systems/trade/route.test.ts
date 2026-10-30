@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   addPerson,
   Building,
+  CARRY_CAPACITY,
+  Carrying,
   CurrentAtomic,
   goodsTradedWith,
+  HaulingCart,
   MissionObjectId,
   Owner,
+  PathRequest,
   Position,
   Rider,
   Stockpile,
@@ -15,11 +19,11 @@ import {
   TRADE_LIMIT_NONE,
   TradeRoute,
   UnderConstruction,
-  Vehicle,
   VehicleStock,
 } from '../../../src/components/index.js';
 import type { Entity } from '../../../src/ecs/world.js';
 import {
+  adminCommand,
   exportSaveGame,
   fx,
   ONE,
@@ -29,14 +33,16 @@ import {
   Simulation,
   serializeSaveGame,
 } from '../../../src/index.js';
-import { hexDistance } from '../../../src/nav/halfcell.js';
+import { hexDistance, nodeOfPosition } from '../../../src/nav/halfcell.js';
 import { AI_HANDLER_ROUND_TICKS } from '../../../src/systems/ai-shared/cadence.js';
 import { interactionNode, vehicleAnchor } from '../../../src/systems/footprint/index.js';
+import { UNREACHABLE_GOAL_MEMO_TICKS } from '../../../src/systems/settlers/unreachable-goals.js';
 import {
   AI_STOCK_REFILL_LEVEL,
   AI_STOCK_REFILL_TURNS,
   TRADE_CART_HOUSE_DISTANCE,
 } from '../../../src/systems/trade/index.js';
+import { attachToVehicle, boardRider } from '../../../src/systems/vehicles/crew.js';
 import { createVehicle } from '../../../src/systems/vehicles/index.js';
 import { tradeVehicleStock } from '../../../src/systems/vehicles/stock.js';
 import { economyContent } from '../../fixtures/content/economy.js';
@@ -45,12 +51,11 @@ import { ctxOf } from '../../fixtures/context.js';
 import { grassCellMap as grassMap, waterColumnMap } from '../../fixtures/terrain.js';
 
 /**
- * The land trader plies a two-house route with the handcart it commands: it moves the cart to within
- * five steps of each house, between the player's own houses moves the surplus of one to the other in
- * the cart's hold, and at another player's house trades on the map's agreement, handing the give goods
- * over first and loading the take goods after, while the ledger counts what it brought back. A trader
- * without a cart stands idle, one whose cart cannot reach a stop lets go of it, and one the player sends
- * somewhere drives its cart there and resumes.
+ * The land trader plies a two-house route on foot, a unit in its hands a trip, or with the handcart it
+ * pulls as its tool, standing the cart within five steps of each house it works: between the player's
+ * own houses it moves the surplus of one to the other, and at another player's house it trades on the
+ * map's agreement, handing the give goods over first and loading the take goods after, while the ledger
+ * counts what it brought back. One the player sends somewhere walks there and resumes.
  */
 
 const VIKING = 1;
@@ -64,6 +69,11 @@ const PLANK = 2;
 /** The fixture's edible, and the dish that becomes it once carried (`bread` -> `food_simple`). */
 const FOOD = 3;
 const BREAD = 7;
+/** The fixture's bakery, the one house that keeps bread. */
+const KITCHEN = 21;
+const LOAVES = 5;
+/** Below the loaves, so the ceiling, not the stock, ends the run. */
+const FOOD_CEILING = 3;
 const HEADQUARTERS = 1;
 /** The headquarters' next level, in {@link upgradableHeadquartersContent}. */
 const HEADQUARTERS_L1 = 90;
@@ -83,7 +93,11 @@ const RUN_TICKS = 900;
 /** The wide-map drive with ten wood in a handcart of fifteen: a two-thirds load costs the cart a third
  *  of its speed (`drag.ts`), so the run takes half as long again as an empty one. */
 const LADEN_WIDE_RUN_TICKS = 5 * RUN_TICKS;
-/** Long enough for the trader to take command of its cart. */
+/** More wood than a handcart's hold of fifteen takes on one trip, as one exchange's give. */
+const CART_OVERSIZED_GIVE = 20;
+/** Long enough for a trader on foot to carry a few exchanges by hand. */
+const SHUTTLE_TICKS = 3 * RUN_TICKS;
+/** Long enough for the trader to take up its cart. */
 const TRADE_START_TICKS = 60;
 /** Planks put into the cart's hold by hand, which no house on the route marks. */
 const STRAY_PLANKS = 2;
@@ -146,7 +160,7 @@ function cartAt(sim: Simulation, x: number): Entity {
   return cart;
 }
 
-/** A trader at `x` that is ordered onto a handcart standing beside it, the commander seat being free. */
+/** A trader at `x` handed a handcart standing beside it, to pull as its tool. */
 function traderAt(sim: Simulation, x: number): Entity {
   const trader = traderOnFoot(sim, x);
   const cart = cartAt(sim, x);
@@ -158,16 +172,23 @@ function stockOf(sim: Simulation, house: Entity, good: number): number {
   return sim.world.get(house, Stockpile).amounts.get(good) ?? 0;
 }
 
-/** The units of `good` aboard the trader's cart, 0 without one. */
-function cartOf(sim: Simulation, trader: Entity, good: number): number {
-  const vehicle = sim.world.tryGet(trader, Rider)?.vehicle;
-  if (vehicle === undefined) return 0;
+/** The trader's hauling cart; throws for a trader on foot. */
+function cartOfTrader(sim: Simulation, trader: Entity): Entity {
+  return sim.world.get(trader, HaulingCart).vehicle;
+}
+
+/** The units of `good` in the trader's hold: its hauling cart's, else its hands. */
+function holdOf(sim: Simulation, trader: Entity, good: number): number {
+  const vehicle = sim.world.tryGet(trader, HaulingCart)?.vehicle;
+  if (vehicle === undefined) {
+    const held = sim.world.tryGet(trader, Carrying);
+    return held?.goodType === good ? held.amount : 0;
+  }
   return sim.world.get(vehicle, VehicleStock).lines.get(good)?.current ?? 0;
 }
 
 function cartDistanceTo(sim: Simulation, trader: Entity, house: Entity): number {
-  const vehicle = sim.world.get(trader, Rider).vehicle;
-  const anchor = vehicleAnchor(sim.world, vehicle);
+  const anchor = vehicleAnchor(sim.world, cartOfTrader(sim, trader));
   const door = interactionNode(sim.world, ctxOf(sim), house);
   if (anchor === null || door === null) throw new Error('cart or house off the map');
   return hexDistance(anchor, { hx: door.x, hy: door.y });
@@ -201,6 +222,12 @@ function upgradableHeadquartersContent(): ContentSet {
   });
 }
 
+/** Friendship both ways between the trader's player and `other`, which a foreign stop needs to join. */
+function befriend(sim: Simulation, other: number): void {
+  sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: other, state: 'friend' });
+  sim.enqueueSetup({ kind: 'setDiplomacy', from: other, to: HUMAN, state: 'friend' });
+}
+
 function attach(sim: Simulation, trader: Entity, house: Entity): void {
   sim.enqueue(playerCommand(HUMAN, { kind: 'attachTradeHouse', entity: trader, house }));
 }
@@ -231,15 +258,16 @@ function woodRoute(sim: Simulation, trader: Entity, near: Entity, far: Entity): 
   mark(sim, trader, far, WOOD);
 }
 
-/** The agreement the houses stamped {@link TRADING_POST_ID} offer: one wood for two planks. */
-function offerWoodForPlanks(sim: Simulation): void {
+/** The agreement the houses stamped {@link TRADING_POST_ID} offer: `wood` for `planks`, one for two
+ *  unless given. */
+function offerWoodForPlanks(sim: Simulation, wood = 1, planks = 2): void {
   sim.enqueueSetup({
     kind: 'addTradeAgreement',
     missionId: TRADING_POST_ID,
     giveGood: WOOD,
-    giveAmount: 1,
+    giveAmount: wood,
     takeGood: PLANK,
-    takeAmount: 2,
+    takeAmount: planks,
   });
 }
 
@@ -285,7 +313,7 @@ describe('a trader between its own houses', () => {
 
     expect(stockOf(sim, far, WOOD)).toBeGreaterThan(0);
     expect(stockOf(sim, near, WOOD)).toBeGreaterThanOrEqual(stockOf(sim, far, WOOD));
-    expect(stockOf(sim, near, WOOD) + stockOf(sim, far, WOOD) + cartOf(sim, trader, WOOD)).toBe(10);
+    expect(stockOf(sim, near, WOOD) + stockOf(sim, far, WOOD) + holdOf(sim, trader, WOOD)).toBe(10);
   });
 
   it('moves nothing and leaves the cart parked while no house carries a mark', () => {
@@ -296,7 +324,7 @@ describe('a trader between its own houses', () => {
     attach(sim, trader, near);
     attach(sim, trader, far);
     sim.run(TRADE_START_TICKS);
-    const cart = sim.world.get(trader, Rider).vehicle;
+    const cart = cartOfTrader(sim, trader);
     const parked = vehicleAnchor(sim.world, cart);
 
     sim.run(RUN_TICKS);
@@ -314,7 +342,7 @@ describe('a trader between its own houses', () => {
     woodRoute(sim, trader, near, far);
     sim.run(RUN_TICKS);
     expect(stockOf(sim, far, WOOD)).toBe(3);
-    const cart = sim.world.get(trader, Rider).vehicle;
+    const cart = cartOfTrader(sim, trader);
     const parked = vehicleAnchor(sim.world, cart);
 
     sim.run(RUN_TICKS);
@@ -335,7 +363,7 @@ describe('a trader between its own houses', () => {
     sim.run(RUN_TICKS);
 
     expect(sim.world.get(trader, TradeRoute).stops.map((stop) => stop.house)).toEqual([near, far]);
-    expect(stockOf(sim, near, WOOD) + cartOf(sim, trader, WOOD)).toBe(10);
+    expect(stockOf(sim, near, WOOD) + holdOf(sim, trader, WOOD)).toBe(10);
 
     sim.enqueue(playerCommand(HUMAN, { kind: 'cancelUpgrade', building: far }));
     sim.run(RUN_TICKS);
@@ -357,6 +385,25 @@ describe('a trader between its own houses', () => {
     expect(sim.world.get(trader, TradeRoute).stops.map((stop) => stop.house)).toEqual([near]);
   });
 
+  it('carts bread marked into a house that keeps only food, as food and up to the ceiling', () => {
+    const sim = newSim();
+    const kitchen = houseAt(sim, NEAR_X, HUMAN);
+    sim.world.mut(kitchen, Building).buildingType = KITCHEN;
+    setStockAmount(sim.world, kitchen, BREAD, LOAVES);
+    const far = houseAt(sim, FAR_X, HUMAN);
+    const trader = traderAt(sim, NEAR_X);
+    attach(sim, trader, kitchen);
+    attach(sim, trader, far);
+    mark(sim, trader, far, BREAD);
+    limit(sim, trader, far, BREAD, FOOD_CEILING, TRADE_LIMIT_NONE);
+
+    sim.run(RUN_TICKS);
+
+    expect(stockOf(sim, far, FOOD)).toBe(FOOD_CEILING);
+    expect(stockOf(sim, kitchen, BREAD)).toBe(LOAVES - FOOD_CEILING);
+    expect(holdOf(sim, trader, FOOD)).toBe(0);
+  });
+
   it('unloads cargo no house marks at the first house that stores it', () => {
     const sim = newSim();
     const near = houseAt(sim, NEAR_X, HUMAN, []);
@@ -364,13 +411,13 @@ describe('a trader between its own houses', () => {
     const trader = traderAt(sim, NEAR_X);
     woodRoute(sim, trader, near, far);
     sim.step();
-    const cart = sim.world.get(trader, Rider).vehicle;
+    const cart = cartOfTrader(sim, trader);
     tradeVehicleStock(sim.world, cart, sim.content, PLANK, STRAY_PLANKS);
 
     sim.run(RUN_TICKS);
 
     expect(stockOf(sim, near, PLANK)).toBe(STRAY_PLANKS);
-    expect(cartOf(sim, trader, PLANK)).toBe(0);
+    expect(holdOf(sim, trader, PLANK)).toBe(0);
   });
 
   it('moves only the goods marked for import once any mark is set', () => {
@@ -405,7 +452,7 @@ describe('a trader between its own houses', () => {
     sim.run(RUN_TICKS);
 
     expect(stockOf(sim, far, WOOD)).toBe(WOOD_CEILING);
-    expect(cartOf(sim, trader, WOOD)).toBe(0);
+    expect(holdOf(sim, trader, WOOD)).toBe(0);
     expect(stockOf(sim, near, WOOD)).toBe(PLENTY_OF_WOOD - WOOD_CEILING);
 
     setStockAmount(sim.world, far, WOOD, WOOD_DRAWN_DOWN);
@@ -441,7 +488,7 @@ describe('a trader between its own houses', () => {
     sim.run(RUN_TICKS);
 
     expect(stockOf(sim, far, WOOD)).toBe(WOOD_CEILING);
-    expect(stockOf(sim, near, WOOD) + cartOf(sim, trader, WOOD)).toBe(PLENTY_OF_WOOD - WOOD_CEILING);
+    expect(stockOf(sim, near, WOOD) + holdOf(sim, trader, WOOD)).toBe(PLENTY_OF_WOOD - WOOD_CEILING);
   });
 
   it('sets the limits of an existing mark only, and shows them on the trader view', () => {
@@ -503,6 +550,8 @@ describe('a trader between its own houses', () => {
     const other = houseAt(sim, MIDDLE_X, OUTSIDER, [], TRADING_POST_ID);
     const trader = traderOnFoot(sim, NEAR_X);
     offerWoodForPlanks(sim);
+    befriend(sim, NEIGHBOUR);
+    befriend(sim, OUTSIDER);
     attach(sim, trader, post);
     attach(sim, trader, own);
     sim.step();
@@ -522,6 +571,8 @@ describe('a trader between its own houses', () => {
     const other = houseAt(sim, MIDDLE_X, OUTSIDER, [], TRADING_POST_ID);
     const trader = traderOnFoot(sim, NEAR_X);
     offerWoodForPlanks(sim);
+    befriend(sim, NEIGHBOUR);
+    befriend(sim, OUTSIDER);
     attach(sim, trader, own);
     attach(sim, trader, post);
     sim.step();
@@ -548,6 +599,25 @@ describe('a trader between its own houses', () => {
 
     expect(sim.canAttachTradeHouse(trader, stranger)).toBe(false);
     expect(sim.world.get(trader, TradeRoute).stops.map((stop) => stop.house)).toEqual([own]);
+  });
+
+  it('takes a foreign house only while both players hold friend toward each other', () => {
+    const sim = newSim();
+    const own = houseAt(sim, NEAR_X, HUMAN);
+    const post = houseAt(sim, FAR_X, NEIGHBOUR, [], TRADING_POST_ID);
+    const trader = traderOnFoot(sim, NEAR_X);
+    offerWoodForPlanks(sim);
+    sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+    sim.enqueueSetup({ kind: 'setDiplomacy', from: NEIGHBOUR, to: HUMAN, state: 'enemy' });
+    attach(sim, trader, own);
+    attach(sim, trader, post);
+    sim.step();
+
+    expect(sim.canAttachTradeHouse(trader, post)).toBe(false);
+    expect(sim.world.get(trader, TradeRoute).stops.map((stop) => stop.house)).toEqual([own]);
+    sim.enqueue(adminCommand({ kind: 'setDiplomacy', from: NEIGHBOUR, to: HUMAN, state: 'friend' }));
+    sim.step();
+    expect(sim.canAttachTradeHouse(trader, post)).toBe(true);
   });
 
   it('takes no own house that keeps no stock or is not finished', () => {
@@ -578,6 +648,7 @@ describe('a trader between its own houses', () => {
     const post = houseAt(sim, FAR_X, NEIGHBOUR, [], TRADING_POST_ID);
     const trader = traderOnFoot(sim, NEAR_X);
     offerWoodForPlanks(sim);
+    befriend(sim, NEIGHBOUR);
     attach(sim, trader, own);
     attach(sim, trader, post);
     sim.step();
@@ -600,66 +671,73 @@ describe('a trader between its own houses', () => {
     expect(sim.world.get(trader, TradeRoute).stops).toHaveLength(1);
   });
 
-  it('stands idle on foot with a full route but no cart to command', () => {
+  it('carries the goods by hand without a cart, a unit a trip', () => {
     const sim = newSim();
     const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
     const far = houseAt(sim, FAR_X, HUMAN, []);
     const trader = traderOnFoot(sim, NEAR_X);
-    attach(sim, trader, near);
-    attach(sim, trader, far);
+    woodRoute(sim, trader, near, far);
 
-    sim.run(RUN_TICKS);
+    let most = 0;
+    for (let tick = 0; tick < RUN_TICKS; tick++) {
+      sim.step();
+      most = Math.max(most, holdOf(sim, trader, WOOD));
+    }
 
-    expect(stockOf(sim, near, WOOD)).toBe(10);
-    expect(stockOf(sim, far, WOOD)).toBe(0);
+    expect(most).toBe(CARRY_CAPACITY);
+    expect(stockOf(sim, far, WOOD)).toBeGreaterThan(1);
+    expect(stockOf(sim, near, WOOD) + stockOf(sim, far, WOOD) + holdOf(sim, trader, WOOD)).toBe(10);
     expect(sim.traderView(trader)?.cart).toBeNull();
-    expect(sim.world.has(trader, Position)).toBe(true);
   });
 
-  it('moves the cart to within five steps of each stop and rides inside between them', () => {
+  it('lifts a unit into its handcart faster than into its hands', () => {
+    const liftTicks = (place: (sim: Simulation, x: number) => Entity): Set<number> => {
+      const sim = newSim();
+      const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
+      const far = houseAt(sim, FAR_X, HUMAN, []);
+      const trader = place(sim, NEAR_X);
+      woodRoute(sim, trader, near, far);
+      const seen = new Set<number>();
+      for (let tick = 0; tick < RUN_TICKS; tick++) {
+        sim.step();
+        const atomic = sim.world.tryGet(trader, CurrentAtomic);
+        const kind = atomic?.effect.kind;
+        if (atomic !== undefined && (kind === 'tradeLoad' || kind === 'tradeUnload'))
+          seen.add(atomic.duration);
+      }
+      return seen;
+    };
+    const byHand = [...liftTicks(traderOnFoot)];
+    const byCart = [...liftTicks(traderAt)];
+    expect(byHand.length).toBeGreaterThan(0);
+    expect(byCart.length).toBeGreaterThan(0);
+    expect(Math.max(...byCart)).toBeLessThan(Math.min(...byHand));
+  });
+
+  it('pulls its cart between the stops and stands it within five steps of the house it works', () => {
     const sim = newSim();
     const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
     const far = houseAt(sim, FAR_X, HUMAN, [[WOOD, 0]]);
     const trader = traderAt(sim, NEAR_X);
     woodRoute(sim, trader, near, far);
 
-    let rodeInside = false;
-    let workedFar = false;
+    let pulled = false;
+    let workedAway = false;
     for (let tick = 0; tick < RUN_TICKS; tick++) {
       sim.step();
-      if (!sim.world.has(trader, Position)) rodeInside = true;
-      if (sim.world.has(trader, Position) && cartDistanceTo(sim, trader, far) <= TRADE_CART_HOUSE_DISTANCE) {
-        workedFar = true;
-      }
+      if (sim.world.tryGet(trader, HaulingCart)?.taken === true) pulled = true;
+      const work = sim.world.tryGet(trader, CurrentAtomic)?.effect;
+      const house = work?.kind === 'tradeLoad' ? work.from : work?.kind === 'tradeUnload' ? work.store : null;
+      if (house !== null && cartDistanceTo(sim, trader, house) > TRADE_CART_HOUSE_DISTANCE) workedAway = true;
     }
 
-    expect(rodeInside).toBe(true);
-    expect(workedFar).toBe(true);
-    expect(stockOf(sim, far, WOOD)).toBeGreaterThan(0);
-    const cart = sim.world.get(trader, Rider).vehicle;
-    expect(sim.world.get(cart, Vehicle).heldGoal).toBeNull();
+    expect(pulled).toBe(true);
+    expect(workedAway).toBe(false);
+    expect(stockOf(sim, far, WOOD)).toBe(10);
+    expect(sim.world.has(trader, Rider)).toBe(false);
   });
 
-  it('parks two carts working one route side by side without the no-path note', () => {
-    const sim = newSim();
-    const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, PLENTY_OF_WOOD]]);
-    const far = houseAt(sim, FAR_X, HUMAN, [[WOOD, 0]]);
-    const first = traderAt(sim, NEAR_X);
-    const second = traderAt(sim, NEAR_X + 1);
-    woodRoute(sim, first, near, far);
-    woodRoute(sim, second, near, far);
-
-    const refused: string[] = [];
-    for (let tick = 0; tick < RUN_TICKS; tick++) {
-      sim.step();
-      for (const ev of sim.events.current()) if (ev.kind === 'vehicleMoveRefused') refused.push(ev.reason);
-    }
-
-    expect(refused).toEqual([]);
-    expect(stockOf(sim, far, WOOD)).toBe(PLENTY_OF_WOOD);
-  });
-
-  it('drives the cart to a stop past the original vehicle walk range and works it', () => {
+  it('pulls the cart to a stop past the original vehicle walk range and works it', () => {
     const sim = new Simulation({ seed: 3, content: testContent(), map: grassMap(WIDE_MAP_CELLS, MAP_H) });
     sim.enqueueSetup({ kind: 'setNeedsEnabled', enabled: false });
     const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
@@ -669,12 +747,60 @@ describe('a trader between its own houses', () => {
 
     sim.run(LADEN_WIDE_RUN_TICKS);
 
-    expect(sim.world.has(trader, Rider)).toBe(true);
+    expect(sim.world.has(trader, HaulingCart)).toBe(true);
     expect(stockOf(sim, far, WOOD)).toBeGreaterThan(0);
   });
 
-  it('lets go of a cart that cannot be driven near the next stop', () => {
-    // A water column cuts the far house off from the cart's landmass: no move point near it exists.
+  it.each([
+    { name: 'before', seatFirst: true },
+    { name: 'after', seatFirst: false },
+  ])(
+    'steps out of the cart a script seated it in $name its route, and pulls that cart instead',
+    ({ seatFirst }) => {
+      const sim = newSim();
+      const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
+      const far = houseAt(sim, FAR_X, HUMAN, []);
+      const trader = traderOnFoot(sim, NEAR_X);
+      const cart = cartAt(sim, NEAR_X);
+      // As `SetVehicle` seats a cart's captain.
+      const seat = (): void => {
+        attachToVehicle(sim.world, ctxOf(sim), { kind: 'attachToVehicle', entity: trader, vehicle: cart });
+        boardRider(sim.world, trader, cart);
+      };
+      if (seatFirst) seat();
+      woodRoute(sim, trader, near, far);
+      sim.step();
+      if (!seatFirst) seat();
+
+      sim.run(RUN_TICKS);
+
+      expect(sim.world.has(trader, Rider)).toBe(false);
+      expect(sim.world.get(trader, HaulingCart).vehicle).toBe(cart);
+      expect(stockOf(sim, far, WOOD)).toBe(10);
+    },
+  );
+
+  it('puts a unit it carries by hand into a cart it is handed, as it takes the cart up', () => {
+    const sim = newSim();
+    const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
+    const far = houseAt(sim, FAR_X, HUMAN, []);
+    const trader = traderOnFoot(sim, NEAR_X);
+    woodRoute(sim, trader, near, far);
+    for (let tick = 0; tick < RUN_TICKS && !sim.world.has(trader, Carrying); tick++) sim.step();
+    expect(sim.world.get(trader, Carrying).goodType).toBe(WOOD);
+    const cart = cartAt(sim, NEAR_X);
+
+    sim.enqueue(playerCommand(HUMAN, { kind: 'attachToVehicle', entity: trader, vehicle: cart }));
+    for (let tick = 0; tick < RUN_TICKS && sim.world.tryGet(trader, HaulingCart)?.taken !== true; tick++) {
+      sim.step();
+    }
+
+    expect(sim.world.has(trader, Carrying)).toBe(false);
+    expect(holdOf(sim, trader, WOOD)).toBe(1);
+  });
+
+  it('waits out a stop it cannot reach instead of searching the way again on every retry', () => {
+    // A water column cuts the far house off from the near one.
     const sim = new Simulation({
       seed: 3,
       content: testContent(),
@@ -682,67 +808,73 @@ describe('a trader between its own houses', () => {
     });
     sim.enqueueSetup({ kind: 'setNeedsEnabled', enabled: false });
     const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
-    const far = houseAt(sim, FAR_X, HUMAN, [[WOOD, 0]]);
-    const trader = traderAt(sim, NEAR_X);
+    const far = houseAt(sim, FAR_X, HUMAN, []);
+    const trader = traderOnFoot(sim, NEAR_X);
     woodRoute(sim, trader, near, far);
 
-    sim.run(RUN_TICKS);
+    const ticks = 2 * RUN_TICKS;
+    let searches = 0;
+    let failed = false;
+    for (let tick = 0; tick < ticks; tick++) {
+      sim.step();
+      const now = sim.world.tryGet(trader, PathRequest)?.failed === true;
+      if (now && !failed) searches++;
+      failed = now;
+    }
 
-    expect(sim.world.has(trader, Rider)).toBe(false);
-    expect(sim.world.has(trader, Position)).toBe(true);
-    expect(sim.traderView(trader)?.cart).toBeNull();
+    expect(searches).toBeGreaterThan(0);
+    expect(searches).toBeLessThanOrEqual(Math.ceil(ticks / UNREACHABLE_GOAL_MEMO_TICKS));
     expect(stockOf(sim, far, WOOD)).toBe(0);
   });
 
-  it("finishes the unit it is loading, drives the cart to the player's point with the load, then trades on", () => {
+  it('walks where the player sends it mid-stop, then takes its cart up again and trades on', () => {
     const sim = newSim();
     const near = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 10]]);
     const far = houseAt(sim, FAR_X, HUMAN, [[WOOD, 0]]);
     const trader = traderAt(sim, NEAR_X);
     woodRoute(sim, trader, near, far);
-    const loading = (): boolean => sim.world.tryGet(trader, CurrentAtomic)?.effect?.kind === 'cartLoad';
+    const loading = (): boolean => sim.world.tryGet(trader, CurrentAtomic)?.effect?.kind === 'tradeLoad';
     for (let tick = 0; tick < RUN_TICKS && !loading(); tick++) sim.step();
     expect(loading()).toBe(true);
-    const cart = sim.world.get(trader, Rider).vehicle;
-    const aboardBefore = cartOf(sim, trader, WOOD);
 
     sim.enqueue(
       playerCommand(HUMAN, { kind: 'moveUnit', entity: trader, x: ORDER_NODE.hx, y: ORDER_NODE.hy }),
     );
-    sim.step();
-    expect(loading()).toBe(true); // the unit in hand is finished first
-    expect(sim.world.get(cart, Vehicle).heldGoal).toEqual(ORDER_NODE);
-    expect(sim.world.has(trader, Rider)).toBe(true);
-
     let arrived = false;
     for (let tick = 0; tick < RUN_TICKS && !arrived; tick++) {
       sim.step();
-      const anchor = vehicleAnchor(sim.world, cart);
-      arrived = anchor !== null && anchor.hx === ORDER_NODE.hx && anchor.hy === ORDER_NODE.hy;
+      const pos = sim.world.get(trader, Position);
+      const node = nodeOfPosition(pos.x, pos.y);
+      arrived = node.hx === ORDER_NODE.hx && node.hy === ORDER_NODE.hy;
     }
     expect(arrived).toBe(true);
-    expect(cartOf(sim, trader, WOOD)).toBe(aboardBefore + 1);
-    expect(sim.world.has(trader, Rider)).toBe(true);
 
-    sim.run(RUN_TICKS); // the route resumes from where the cart stands
-    expect(stockOf(sim, far, WOOD)).toBeGreaterThan(0);
-    expect(stockOf(sim, near, WOOD) + stockOf(sim, far, WOOD) + cartOf(sim, trader, WOOD)).toBe(10);
+    sim.run(RUN_TICKS); // the route resumes, the cart picked up where it was left
+    expect(stockOf(sim, far, WOOD)).toBe(10);
+    expect(sim.world.has(trader, HaulingCart)).toBe(true);
   });
 });
 
 describe('a trader at a foreign house', () => {
-  function tradingWorld(stance: 'friend' | 'neutral'): {
+  function tradingWorld(
+    onFoot = false,
+    rate: { readonly wood: number; readonly planks: number; readonly woodAtHome: number } = {
+      wood: 1,
+      planks: 2,
+      woodAtHome: 6,
+    },
+  ): {
     sim: Simulation;
     home: Entity;
     post: Entity;
     trader: Entity;
   } {
     const sim = newSim();
-    const home = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 6]]);
+    const home = houseAt(sim, NEAR_X, HUMAN, [[WOOD, rate.woodAtHome]]);
     const post = houseAt(sim, FAR_X, NEIGHBOUR, [[PLANK, 8]], TRADING_POST_ID);
-    const trader = traderAt(sim, NEAR_X);
-    sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: stance });
-    offerWoodForPlanks(sim);
+    const trader = onFoot ? traderOnFoot(sim, NEAR_X) : traderAt(sim, NEAR_X);
+    befriend(sim, NEIGHBOUR);
+    offerWoodForPlanks(sim, rate.wood, rate.planks);
     attach(sim, trader, home);
     attach(sim, trader, post);
     sim.enqueue(playerCommand(HUMAN, { kind: 'setTradeAgreement', entity: trader, agreement: 0 }));
@@ -750,7 +882,7 @@ describe('a trader at a foreign house', () => {
   }
 
   it('hands the give goods over, brings the take goods home and tallies them for the ledger', () => {
-    const { sim, home, post, trader } = tradingWorld('friend');
+    const { sim, home, post, trader } = tradingWorld();
 
     sim.run(RUN_TICKS);
 
@@ -760,13 +892,67 @@ describe('a trader at a foreign house', () => {
     expect(received).toBeGreaterThanOrEqual(2);
     // Two planks per wood, and the ledger counts every plank the cart took aboard.
     expect(received).toBe(8 - stockOf(sim, post, PLANK));
-    expect(stockOf(sim, home, PLANK) + cartOf(sim, trader, PLANK)).toBe(received);
+    expect(stockOf(sim, home, PLANK) + holdOf(sim, trader, PLANK)).toBe(received);
     expect(sim.traderView(trader)?.agreementHolds).toBe(true);
     expect(goodsTradedWith(sim.world, NEIGHBOUR, HUMAN)).toBe(0);
   });
 
+  it('shuttles an exchange larger than its hands on foot, a unit a trip each way', () => {
+    const { sim, home, post } = tradingWorld(true);
+
+    sim.run(SHUTTLE_TICKS);
+
+    // Four wood bought all eight planks, each carried home by hand.
+    expect(stockOf(sim, post, WOOD)).toBe(4);
+    expect(stockOf(sim, home, PLANK)).toBe(8);
+    expect(goodsTradedWith(sim.world, HUMAN, NEIGHBOUR)).toBe(8);
+  });
+
+  it('shuttles an exchange that gives more than it takes on foot, the give goods over two trips', () => {
+    const { sim, home, post } = tradingWorld(true, { wood: 2, planks: 1, woodAtHome: 6 });
+
+    sim.run(SHUTTLE_TICKS);
+
+    // Three batches of two wood, each paid with one plank.
+    expect(stockOf(sim, post, WOOD)).toBe(6);
+    expect(stockOf(sim, home, PLANK)).toBe(3);
+    expect(goodsTradedWith(sim.world, HUMAN, NEIGHBOUR)).toBe(3);
+  });
+
+  it('shuttles an exchange larger than its cart over two loads', () => {
+    const { sim, home, post } = tradingWorld(false, {
+      wood: CART_OVERSIZED_GIVE,
+      planks: 2,
+      woodAtHome: 2 * CART_OVERSIZED_GIVE,
+    });
+
+    sim.run(2 * SHUTTLE_TICKS);
+
+    expect(stockOf(sim, post, WOOD)).toBe(2 * CART_OVERSIZED_GIVE);
+    expect(stockOf(sim, home, PLANK)).toBe(4);
+    expect(goodsTradedWith(sim.world, HUMAN, NEIGHBOUR)).toBe(4);
+  });
+
+  it('brings a unit in its hands home once its agreement is dropped', () => {
+    const { sim, home, trader } = tradingWorld(true);
+    for (
+      let tick = 0;
+      tick < SHUTTLE_TICKS && sim.world.tryGet(trader, Carrying)?.goodType !== PLANK;
+      tick++
+    ) {
+      sim.step();
+    }
+    expect(sim.world.get(trader, Carrying).goodType).toBe(PLANK);
+
+    sim.enqueue(playerCommand(HUMAN, { kind: 'setTradeAgreement', entity: trader, agreement: -1 }));
+    sim.run(RUN_TICKS);
+
+    expect(sim.world.has(trader, Carrying)).toBe(false);
+    expect(stockOf(sim, home, PLANK)).toBe(goodsTradedWith(sim.world, HUMAN, NEIGHBOUR));
+  });
+
   it('keeps its agreement when a fallen own stop is replaced before the trader plans again', () => {
-    const { sim, home, post, trader } = tradingWorld('friend');
+    const { sim, home, post, trader } = tradingWorld();
     sim.run(TRADE_START_TICKS);
 
     sim.world.destroy(home);
@@ -786,7 +972,7 @@ describe('a trader at a foreign house', () => {
     const home = houseAt(sim, NEAR_X, HUMAN, [[FOOD, 4]]);
     const post = houseAt(sim, FAR_X, NEIGHBOUR, [[PLANK, 8]], TRADING_POST_ID);
     const trader = traderAt(sim, NEAR_X);
-    sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+    befriend(sim, NEIGHBOUR);
     sim.enqueueSetup({
       kind: 'addTradeAgreement',
       missionId: TRADING_POST_ID,
@@ -807,8 +993,10 @@ describe('a trader at a foreign house', () => {
     expect(goodsTradedWith(sim.world, HUMAN, NEIGHBOUR)).toBe(2 * stockOf(sim, post, FOOD));
   });
 
-  it('trades nothing while the partner is no friend', () => {
-    const { sim, home, post } = tradingWorld('neutral');
+  it("trades nothing once the trader's player is no friend of the partner", () => {
+    const { sim, home, post } = tradingWorld();
+    sim.step();
+    sim.enqueue(adminCommand({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'neutral' }));
 
     sim.run(RUN_TICKS);
 
@@ -818,7 +1006,7 @@ describe('a trader at a foreign house', () => {
   });
 
   it('carries its route, cart and tally through a save and back', () => {
-    const { sim } = tradingWorld('friend');
+    const { sim } = tradingWorld();
     sim.run(RUN_TICKS / 3);
 
     const saved = serializeSaveGame(exportSaveGame(sim));
@@ -842,7 +1030,7 @@ describe('a route whose owners a map script changes', () => {
 
     // As `ChangePlayerIdInArea` does to a trader and its cart standing in the area, not to the houses.
     stampOwner(sim.world, trader, NEIGHBOUR);
-    stampOwner(sim.world, sim.world.get(trader, Rider).vehicle, NEIGHBOUR);
+    stampOwner(sim.world, cartOfTrader(sim, trader), NEIGHBOUR);
     sim.run(RUN_TICKS);
 
     expect(stockOf(sim, near, WOOD)).toBe(10);
@@ -855,7 +1043,7 @@ describe('a route whose owners a map script changes', () => {
     const home = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 6]]);
     const post = houseAt(sim, FAR_X, NEIGHBOUR, [[PLANK, 8]], TRADING_POST_ID);
     const trader = traderAt(sim, NEAR_X);
-    sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+    befriend(sim, NEIGHBOUR);
     offerWoodForPlanks(sim);
     attach(sim, trader, home);
     attach(sim, trader, post);
@@ -867,7 +1055,7 @@ describe('a route whose owners a map script changes', () => {
     sim.run(RUN_TICKS);
 
     expect(stockOf(sim, post, WOOD)).toBe(0);
-    expect(stockOf(sim, home, PLANK) + cartOf(sim, trader, PLANK)).toBe(8);
+    expect(stockOf(sim, home, PLANK) + holdOf(sim, trader, PLANK)).toBe(8);
     expect(goodsTradedWith(sim.world, HUMAN, HUMAN)).toBe(0);
     expect(sim.traderView(trader)?.agreementHolds).toBe(false);
   });
@@ -1008,7 +1196,7 @@ describe("a computer seat's trade house", () => {
     const { sim, post } = partnerWorld({ mapAiEnabled: true });
     const home = houseAt(sim, NEAR_X, HUMAN, [[WOOD, PLENTY_OF_WOOD]]);
     const trader = traderAt(sim, NEAR_X);
-    sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+    befriend(sim, NEIGHBOUR);
     attach(sim, trader, home);
     attach(sim, trader, post);
     sim.enqueue(playerCommand(HUMAN, { kind: 'setTradeAgreement', entity: trader, agreement: 0 }));
@@ -1016,7 +1204,7 @@ describe("a computer seat's trade house", () => {
     let loaded = 0;
     while (stockOf(sim, home, PLANK) === 0 && sim.tick < SELL_OUT_TICKS) {
       sim.run(1);
-      loaded = Math.max(loaded, cartOf(sim, trader, WOOD));
+      loaded = Math.max(loaded, holdOf(sim, trader, WOOD));
     }
 
     // More wood than one refill pays for went out, and all of it was sold before the planks came home.
@@ -1030,7 +1218,7 @@ describe("a computer seat's trade house", () => {
       const { sim, post } = partnerWorld({ mapAiEnabled });
       const home = houseAt(sim, NEAR_X, HUMAN, [[WOOD, 6]]);
       const trader = traderAt(sim, NEAR_X);
-      sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN, to: NEIGHBOUR, state: 'friend' });
+      befriend(sim, NEIGHBOUR);
       attach(sim, trader, home);
       attach(sim, trader, post);
       sim.enqueue(playerCommand(HUMAN, { kind: 'setTradeAgreement', entity: trader, agreement: 0 }));
@@ -1038,7 +1226,7 @@ describe("a computer seat's trade house", () => {
       sim.run(RUN_TICKS);
 
       expect(goodsTradedWith(sim.world, HUMAN, NEIGHBOUR)).toBeGreaterThanOrEqual(2);
-      expect(stockOf(sim, home, PLANK) + cartOf(sim, trader, PLANK)).toBeGreaterThan(0);
+      expect(stockOf(sim, home, PLANK) + holdOf(sim, trader, PLANK)).toBeGreaterThan(0);
     }
   });
 });

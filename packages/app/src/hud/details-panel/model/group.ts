@@ -16,6 +16,7 @@ import {
   settlerJobType,
   settlerTribeOf,
   stanceModeOf,
+  vehicleSeatsOf,
 } from '../../../game/snapshot/index.js';
 import { soldierWeaponFamily } from '../../../game/unit-kind.js';
 import { pickableSeat } from '../../../game/viewer-seat.js';
@@ -96,6 +97,12 @@ export interface GroupSiegeModel {
   readonly stances: Readonly<Record<components.VehicleStance, number>>;
 }
 
+/** The scope's own ships: the ones a dock order moors, and those whose crew may step ashore now. */
+export interface GroupFleetModel {
+  readonly ids: readonly number[];
+  readonly landable: readonly number[];
+}
+
 /** What one tab shows and orders: the whole group, or the members of one kind. */
 export interface GroupScopeModel {
   readonly key: string;
@@ -105,6 +112,8 @@ export interface GroupScopeModel {
   readonly gear: readonly GroupGearRow[];
   readonly military: GroupMilitaryModel | null;
   readonly siege: GroupSiegeModel | null;
+  /** Null unless the group is the viewer's own ships and nothing else. */
+  readonly fleet: GroupFleetModel | null;
 }
 
 /** Several units selected at once: settlers, vehicles or both. */
@@ -183,7 +192,12 @@ interface MemberFacts {
   readonly misc: readonly { readonly goodType: number; readonly used: number | undefined }[];
   readonly stance: GroupStance | null;
   readonly regenerates: boolean;
-  readonly vehicle: { readonly siege: boolean; readonly stance: components.VehicleStance } | null;
+  readonly vehicle: {
+    readonly siege: boolean;
+    readonly stance: components.VehicleStance;
+    /** Null for a land vehicle; `landable` for a moored ship with someone aboard. */
+    readonly ship: { readonly landable: boolean } | null;
+  } | null;
 }
 
 const slotGood = (slot: RawSlot | null | undefined): number | null => {
@@ -344,7 +358,17 @@ function vehicleFacts(ctx: UnitPanelModelContext, ent: SnapshotEntity, owned: bo
     misc: [],
     stance: null,
     regenerates: false,
-    vehicle: { siege: vehicleClass === 'siege', stance },
+    vehicle: {
+      siege: vehicleClass === 'siege',
+      stance,
+      ship:
+        vehicleClass === 'ship'
+          ? {
+              landable:
+                v.moored === true && num(v.carrier) === undefined && vehicleSeatsOf(v.passengers).length > 0,
+            }
+          : null,
+    },
   };
 }
 
@@ -382,6 +406,7 @@ interface GroupShape {
   readonly workers: boolean;
   readonly settlers: boolean;
   readonly siege: boolean;
+  readonly ships: boolean;
 }
 
 function shapeOf(facts: readonly MemberFacts[]): GroupShape {
@@ -390,6 +415,7 @@ function shapeOf(facts: readonly MemberFacts[]): GroupShape {
     workers: facts.some((f) => f.worker),
     settlers: facts.some((f) => f.vehicle === null),
     siege: facts.some((f) => f.vehicle?.siege === true && f.owned),
+    ships: facts.length > 0 && facts.every((f) => f.vehicle?.ship != null && f.owned),
   };
 }
 
@@ -467,6 +493,14 @@ function siegeOf(facts: readonly MemberFacts[], shape: GroupShape): GroupSiegeMo
   };
 }
 
+function fleetOf(facts: readonly MemberFacts[], shape: GroupShape): GroupFleetModel | null {
+  if (!shape.ships) return null;
+  return {
+    ids: facts.map((f) => f.id),
+    landable: facts.filter((f) => f.vehicle?.ship?.landable === true).map((f) => f.id),
+  };
+}
+
 function scopeOf(
   ctx: UnitPanelModelContext,
   key: string,
@@ -482,6 +516,7 @@ function scopeOf(
     gear: gearRows(ctx, facts, shape),
     military: militaryOf(facts, shape),
     siege: siegeOf(facts, shape),
+    fleet: fleetOf(facts, shape),
   };
 }
 

@@ -43,6 +43,7 @@ export {
   readSettlerTribe,
   readSpriteState,
   readStoreExchangeRef,
+  readsCartLift,
 } from './unit-readers.js';
 export {
   readHaulingCartDriver,

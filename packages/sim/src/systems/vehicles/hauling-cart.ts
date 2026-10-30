@@ -22,17 +22,18 @@ import { type HalfCellNode, hexagonRing, nodeOfPosition } from '../../nav/halfce
 import type { MapContext, SystemContext } from '../context.js';
 import { dynamicBlockOverlay, vehicleDoorNode } from '../footprint/index.js';
 import { sendUnit } from '../orders/movement.js';
-import { isCarrierJobRow } from '../readviews/jobs.js';
+import { isCarrierJobRow, isTrader } from '../readviews/jobs.js';
 import { addCarry, shrinkCarry } from '../settlers/atomics/effects/goods/carry.js';
 import { pickupFromStore, pileupIntoStore } from '../settlers/atomics/effects/goods/transfer.js';
 import { attachToVehicle, doorReachable, passengerJobAllowed, placeOnNode } from './crew.js';
-import { cartSpeedLossPercent, isCartType } from './drag.js';
+import { cartLiftTicks, cartSpeedLossPercent, isCartType } from './drag.js';
 import { endDrive, isOpenLand } from './movement.js';
 import { tradeVehicleStock, vehicleLineCap } from './stock.js';
 
-// A posted carrier's hauling cart (`HaulingCart` in `components/vehicle.ts`): the take, the lifts beside
-// the standing cart, the park for a break, the room it lends and the set-down. The planner's
-// `planHaulingCart` rung walks the carrier to the cart and runs its lifts.
+// A hauling cart (`HaulingCart` in `components/vehicle.ts`), the work tool of a posted carrier or a
+// trader: the take, the lifts beside the standing cart, the park for a break, the room it lends and the
+// set-down. The planner's `planHaulingCart` rung walks the puller to the cart and runs a carrier's lifts;
+// a trader's route work stands and takes the cart up itself (`trade/drive.ts`).
 
 /** A carrier posted to a workplace: the trade and the post that a hauling cart serves. */
 export function isPostedCarrier(world: World, content: ContentSet, settler: Entity): boolean {
@@ -40,6 +41,11 @@ export function isPostedCarrier(world: World, content: ContentSet, settler: Enti
   if (jobType === undefined || jobType === null) return false;
   const job = contentIndex(content).jobs.get(jobType);
   return job !== undefined && isCarrierJobRow(job) && world.has(settler, JobAssignment);
+}
+
+/** Whether `settler` works with a hauling cart as its tool: a posted carrier or a trader. */
+export function worksWithHaulingCart(world: World, content: ContentSet, settler: Entity): boolean {
+  return isPostedCarrier(world, content, settler) || isTrader(world, content, settler);
 }
 
 /** Whether `settler` lifts with its hauling cart: the cart in hand, or standing beside it for a lift. A
@@ -56,12 +62,12 @@ export function pullsHaulingCart(world: World, settler: Entity): boolean {
 
 /**
  * Whether the attach order would hand `vehicle` to `settler` as its hauling cart rather than seat it as
- * crew: a posted carrier, and an own cart its trade may ride that nobody else pulls, commands, rides or
+ * crew: a posted carrier or a trader (owner's choice: the original's trader commands its cart), and an own cart its trade may ride that nobody else pulls, commands, rides or
  * carries, standing on the map with its door on the settler's continent. The ring's "Assign Vehicle" pick
  * lights carts by it beside the crew gate.
  */
 export function canTakeHaulingCart(world: World, ctx: MapContext, settler: Entity, vehicle: Entity): boolean {
-  if (!isPostedCarrier(world, ctx.content, settler) || world.has(settler, Rider)) return false;
+  if (!worksWithHaulingCart(world, ctx.content, settler) || world.has(settler, Rider)) return false;
   const state = world.tryGet(vehicle, Vehicle);
   if (state === undefined || ownerOf(world, vehicle) !== ownerOf(world, settler)) return false;
   if (world.tryGet(settler, HaulingCart)?.vehicle === vehicle) return true;
@@ -72,7 +78,8 @@ export function canTakeHaulingCart(world: World, ctx: MapContext, settler: Entit
   return world.has(vehicle, Position) && doorReachable(world, ctx, settler, vehicle);
 }
 
-/** The attach order: a posted carrier takes a free cart as its hauling cart, anyone else crews the vehicle.
+/** The attach order: a posted carrier or a trader takes a free cart as its hauling cart, anyone else crews
+ *  the vehicle.
  *  A seated crew member gives up its post, and its hauling cart with it (`releaseEmployment`). */
 export function orderAttachToVehicle(
   world: World,
@@ -88,21 +95,25 @@ export function orderAttachToVehicle(
 
 /**
  * The attach order's hauling-cart half: `settler` keeps its post and walks to the cart's door to take it
- * there; a cart it already pulls is set down first. The caller has passed {@link canTakeHaulingCart}.
+ * there; a cart it already pulls is set down first. A trader is left to the planner's hauling-cart rung
+ * for the walk, since the walk order would set down a route unit it carries. The caller has passed
+ * {@link canTakeHaulingCart}.
  */
 function orderHaulingCart(world: World, ctx: SystemContext, settler: Entity, vehicle: Entity): void {
   if (world.tryGet(settler, HaulingCart)?.vehicle === vehicle) return;
   releaseHaulingCart(world, ctx, settler);
   world.add(settler, HaulingCart, { vehicle, taken: false, parked: false, lift: null });
   world.mut(vehicle, Vehicle).hauler = settler;
+  if (isTrader(world, ctx.content, settler)) return;
   const door = vehicleDoorNode(world, ctx, vehicle);
   if (door !== null) sendUnit(world, ctx, settler, door.hx, door.hy);
 }
 
 /**
- * The carrier standing at the door takes the cart: it leaves the map and travels with the carrier, and
- * what its hold carried, the lift's or a parked load, goes into the carrier's hands to deliver. The
- * hands hold one good, so a second good aboard stays aboard and takes up that much room.
+ * The puller standing at the door takes the cart: it leaves the map and travels with the puller. A
+ * carrier's hold, the lift's or a parked load, goes into its hands to deliver; the hands hold one good,
+ * so a second good aboard stays aboard and takes up that much room. A trader's goods stay in the hold,
+ * and a route unit in its hands goes in beside them.
  */
 export function takeHaulingCart(world: World, content: ContentSet, settler: Entity): void {
   const held = world.tryGet(settler, HaulingCart);
@@ -115,7 +126,8 @@ export function takeHaulingCart(world: World, content: ContentSet, settler: Enti
   mine.taken = true;
   mine.parked = false;
   mine.lift = null;
-  liftOutOfHold(world, content, settler, held.vehicle, Number.POSITIVE_INFINITY);
+  if (isTrader(world, content, settler)) stowHands(world, content, settler, held.vehicle);
+  else liftOutOfHold(world, content, settler, held.vehicle, Number.POSITIVE_INFINITY);
 }
 
 /** Up to `units` of the hold's first good the hands can take, out of the hold into the hands. */
@@ -148,7 +160,7 @@ function stowHands(world: World, content: ContentSet, settler: Entity, vehicle: 
 
 /**
  * Whether `settler` may still pull the cart it holds: the cart stands, names it back, belongs to the same
- * player, and the settler is still a posted carrier riding nothing. A hold that fails is set down by
+ * player, and the settler is still a posted carrier or a trader riding nothing. A hold that fails is set down by
  * {@link releaseHaulingCart}.
  */
 export function haulingCartHolds(world: World, content: ContentSet, settler: Entity): boolean {
@@ -157,15 +169,15 @@ export function haulingCartHolds(world: World, content: ContentSet, settler: Ent
   const state = world.tryGet(held.vehicle, Vehicle);
   if (state === undefined || state.hauler !== settler || state.carrier !== null) return false;
   if (ownerOf(world, held.vehicle) !== ownerOf(world, settler)) return false;
-  return isPostedCarrier(world, content, settler) && !world.has(settler, Rider);
+  return worksWithHaulingCart(world, content, settler) && !world.has(settler, Rider);
 }
 
 /**
  * Stand the cart beside the carrier for a lift: the carrier at a heap, a shelf or a store's door sets the
  * cart down on the nearest open land, its load stowed in the hold, and works units between the two one
- * clip each (`haulLoad` / `haulUnload` atomics, the planner's hauling-cart rung) until the lift is done,
- * then takes the cart up again. Original behavior of the trader loading its cart, borrowed for the
- * carrier (named addition).
+ * lift each (`haulLoad` / `haulUnload` atomics timed by {@link haulingCartLiftTicks}, the planner's
+ * hauling-cart rung) until the lift is done, then takes the cart up again. Original behavior of the
+ * trader loading its cart, borrowed for the carrier (named addition).
  */
 export function beginCartLift(world: World, ctx: MapContext, settler: Entity, lift: HaulingLift): void {
   const held = world.tryGet(settler, HaulingCart);
@@ -253,11 +265,11 @@ export function unloadHaulingCart(world: World, ctx: SystemContext, settler: Ent
 }
 
 /**
- * Park the cart for a break: a carrier leaving its work for a meal, a bed, a chat or a player's errand
- * stands the cart on the nearest open land where it is, its load stowed in the hold, and keeps the cart
- * as its own, so it walks back and takes it up again once the break is over (the planner's hauling-cart
- * rung). A lift under way ends. Nothing happens with the cart already standing. Named addition: the cart
- * is a work tool, not a harness.
+ * Park the cart: a puller leaving its work for a meal, a bed, a chat or a player's errand, or a trader
+ * working a stop, stands the cart on the nearest open land where it is, its load stowed in the hold, and
+ * keeps the cart as its own, so it walks back and takes it up again once the break is over (the planner's
+ * hauling-cart rung) or the trader leaves the stop. A lift under way ends. Nothing happens with the cart
+ * already standing. Named addition: the cart is a work tool, not a harness.
  */
 export function parkHaulingCart(world: World, ctx: MapContext, settler: Entity): void {
   const held = world.tryGet(settler, HaulingCart);
@@ -389,6 +401,18 @@ export function haulingCartRoom(world: World, content: ContentSet, settler: Enti
  */
 export function carryCapacityOf(world: World, content: ContentSet, settler: Entity): number {
   return pullsHaulingCart(world, settler) ? haulingCartRoom(world, content, settler) : CARRY_CAPACITY;
+}
+
+/** The ticks `settler` takes to lift one unit into or out of its hauling cart ({@link cartLiftTicks}),
+ *  the lifting clip lasting `clipTicks`; the clip unchanged without a cart. */
+export function haulingCartLiftTicks(
+  world: World,
+  content: ContentSet,
+  settler: Entity,
+  clipTicks: number,
+): number {
+  const type = haulingCartType(world, content, settler);
+  return type === undefined || !isCartType(type) ? clipTicks : cartLiftTicks(content, type, clipTicks);
 }
 
 /**

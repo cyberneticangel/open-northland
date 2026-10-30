@@ -182,8 +182,7 @@ const OXCART_HEAD_SHIFTS: CartDriveHeadShifts = [
 
 /**
  * The builder's one hammer swing, played whole across each build or repair atomic whatever length the
- * simulation gives it (a one-strike road or wall site runs its clip at a slower pace), so every site shows
- * its blow land. Every hammer action lays the swing out with the build-house frame lists, the only ones
+ * simulation gives it, so every site shows its blow land. Every hammer action lays the swing out with the build-house frame lists, the only ones
  * every tribe authors for it.
  */
 const HAMMER_SWING = { seq: HAMMER_SEQ, spansAtomic: true, framesFrom: BUILD_HOUSE_ATOMIC } as const;

@@ -1,5 +1,5 @@
 import type { WorldSnapshot } from '@open-northland/sim';
-import type { TextureSource } from 'pixi.js';
+import type { Texture, TextureSource } from 'pixi.js';
 import type { Camera } from '../../data/projection/index.js';
 import type { AtlasFrame } from '../../data/sprites/index.js';
 import type {
@@ -17,13 +17,13 @@ import type { GpuSpan } from '../pixi-app/gpu-frame-timer.js';
 import type { PlanRoadTextures } from '../placement/plan-road.js';
 import type { PlanStakeTextures } from '../placement/plan-stake.js';
 import type { RangeRing } from '../selection/range-ring.js';
-import type { TargetFlash } from '../selection/style.js';
+import type { TargetFlash, TargetTone } from '../selection/style.js';
 import type { SpriteSheet } from '../textures/sprite-sheet.js';
 
-/** One candidate building's workplace-assignment verdict: `ok` = the selected settler can take a slot there. */
-export interface BuildingHighlightItem {
+/** An armed pick's verdict on one entity; the tone decides how it is drawn. */
+export interface TargetMark {
   readonly id: number;
-  readonly ok: boolean;
+  readonly tone: TargetTone;
 }
 
 /** The player's graphics enhancements. Every one off draws the baseline renderer, save for the two
@@ -43,6 +43,8 @@ export interface WorldEnhancements {
   readonly groundedBuildings: boolean;
   /** Structural scars, fire, embers and impact debris on damaged buildings. */
   readonly buildingDamage: boolean;
+  /** A map script's night lit by its fires, houses and settlers; off, the night is a flat grade. */
+  readonly nightLights: boolean;
 }
 
 /** The baseline renderer: every enhancement off. */
@@ -54,6 +56,7 @@ export const BASELINE_ENHANCEMENTS: WorldEnhancements = {
   environmentMotion: false,
   groundedBuildings: false,
   buildingDamage: false,
+  nightLights: false,
 };
 
 export interface WorldRendererOptions {
@@ -81,6 +84,8 @@ export interface WorldRendererOptions {
   readonly planStakes?: PlanStakeTextures | undefined;
   /** The road tool's plot art; absent draws a flat stand-in. */
   readonly planRoads?: PlanRoadTextures | undefined;
+  /** The dock cursor's mooring post art; absent draws a flat stand-in. */
+  readonly berthPost?: Texture | undefined;
 }
 
 /** `scale` defaults to the native landscape-object scale of 1. */
@@ -90,8 +95,7 @@ export interface CombatBonesGfx {
   readonly scale?: number | undefined;
 }
 
-/** Shared empty defaults, so a cleared list or highlight allocates nothing. */
-export const EMPTY_HIGHLIGHT: ReadonlyMap<number, boolean> = new Map();
+/** Shared empty defaults, so a cleared list or mark set allocates nothing. */
 export const NO_REFS: ReadonlySet<number> = new Set();
 export const NO_BADGES: readonly DoorBadge[] = [];
 export const NO_SIGNS: readonly ConstructionSign[] = [];

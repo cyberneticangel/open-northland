@@ -1,4 +1,5 @@
 import type { LayeredBobRef, WaveLoop } from '@open-northland/render';
+import { PLAYER_COLOR_COUNT, playerSignAtlasStem } from '../../catalog/roster.js';
 import { TREE_ATLAS } from '../building-gfx/index.js';
 import { GENERIC_GOOD_ICON, type GoodIconMap } from '../goods-gfx.js';
 import { drawsAsFlatDecor, loopsFrames, servedAtlasStem } from '../ir/joins.js';
@@ -242,6 +243,8 @@ export function resolveGatheringRefs(
           : flagsByPlayer;
     if (ref !== undefined) target[Number(match[1]) - 1] = ref;
   }
+  for (const byPlayer of [flagsByPlayer, roadMarkersByPlayer, wallMarkersByPlayer])
+    lendTemplateFrames(byPlayer);
   const flag = flagsByPlayer[0];
 
   return {
@@ -254,6 +257,16 @@ export function resolveGatheringRefs(
     wallMarkersByPlayer,
     ...(flag !== undefined ? { flag } : {}),
   };
+}
+
+/** The original ships `ls_temp` records for colours 0-9 only; a later colour draws colour 0's frames from
+ *  its own toned atlas. */
+function lendTemplateFrames(byPlayer: Record<number, GatheringLoopRef>): void {
+  const template = byPlayer[0];
+  if (template === undefined) return;
+  for (let color = 0; color < PLAYER_COLOR_COUNT; color++) {
+    byPlayer[color] ??= { ...template, stem: playerSignAtlasStem(color) };
+  }
 }
 
 /**

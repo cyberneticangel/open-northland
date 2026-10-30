@@ -1,0 +1,15 @@
+{
+  "reason": "Błazna nie ma w naszej grze. Dwaj błaźni gracza na starcie mapy stają się zwykłymi cywilami. Żaden skrypt mapy ich nie wskazuje (ID misji 0).",
+  "file": "maps/community/Kraina Starych Bohaterów/staticobjects.inc",
+  "sha256": "aa9f13cd0923c783cf74b2d2db3624d19bed60e2bca43754d062a1c52889bc2d",
+  "lines": [
+    {
+      "from": "sethuman 0 \"viking\" \"jester\" 264 272 0 0",
+      "to": "sethuman 0 \"viking\" \"civilist\" 264 272 0 0"
+    },
+    {
+      "from": "sethuman 0 \"viking\" \"jester\" 248 235 0 0",
+      "to": "sethuman 0 \"viking\" \"civilist\" 248 235 0 0"
+    }
+  ]
+}

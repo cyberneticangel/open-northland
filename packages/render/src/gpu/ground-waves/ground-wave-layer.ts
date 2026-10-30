@@ -36,7 +36,7 @@ const byPlacement = (a: WaveBlock, b: WaveBlock): number => a.order - b.order;
 
 /** What the last lift map was drawn from; the same inputs draw the same map. */
 interface LiftInputs {
-  tick: number;
+  step: number;
   offsetX: number;
   offsetY: number;
   zoom: number;
@@ -51,7 +51,7 @@ interface LiftInputs {
  * The shore waves. Original behavior: after the ground and the static landscape objects are drawn and
  * before creatures, each wave's current bob copies, for every written texel of value `v`, the pixel `v`
  * rows below it into its place, so the ground under the wave rises by 1 to 6 px while settlers stay put. Here the visible
- * waves render into a lift map over their screen rectangle, redrawn when the tick, the camera, the screen
+ * waves render into a lift map over their screen rectangle, redrawn when the wave step, the camera, the screen
  * or the waves change, and a pass drawn after the ground chunks applies it under the wave quads. Approximations:
  * overlapping waves take the last drawn value instead of chaining their copies,
  * and static landscape objects, which the original lifts with the ground, stay put.
@@ -120,7 +120,7 @@ export class GroundWaveLayer {
   /**
    * Render this frame's lift map and switch the lift on, or off when no wave is on screen or `enabled`
    * is false. With any wave on screen the frame copies the ground under the waves and draws their
-   * quads, plus a lift-map render whenever the tick, the camera, the screen or the waves changed.
+   * quads, plus a lift-map render whenever the wave step, the camera, the screen or the waves changed.
    * `resolution` is the texels per CSS pixel the world draws at, the renderer's unless it is upscaled.
    */
   update(
@@ -128,12 +128,12 @@ export class GroundWaveLayer {
     camera: Camera,
     screenW: number,
     screenH: number,
-    tick: number,
+    step: number,
     enabled: boolean,
     resolution: number = this.renderer.resolution,
   ): void {
     const zoom = camera.scale ?? 1;
-    if (enabled && this.unchanged(tick, camera, zoom, screenW, screenH, resolution)) return;
+    if (enabled && this.unchanged(step, camera, zoom, screenW, screenH, resolution)) return;
     let drawn = 0;
     // One target pixel round each quad covers whatever the lift map's own rasterisation of it touches.
     const pad = 1 / (zoom * resolution);
@@ -141,7 +141,7 @@ export class GroundWaveLayer {
       for (const block of this.blocksInView(vp)) {
         for (const wave of block.waves) {
           if (!isVisible(vp, wave.x, wave.y)) continue;
-          const frame = groundWaveFrameAt(wave, tick);
+          const frame = groundWaveFrameAt(wave, step);
           if (frame === undefined || frame.width <= 0 || frame.height <= 0) continue;
           const sprite = this.sprites[drawn] ?? this.mintSprite();
           const x = wave.x + frame.offsetX;
@@ -185,7 +185,7 @@ export class GroundWaveLayer {
     if (retired !== null && retired !== map) retired.destroy(true);
     this.setApplied(true);
     this.drawnFrom = {
-      tick,
+      step,
       offsetX: camera.offsetX,
       offsetY: camera.offsetY,
       zoom,
@@ -198,7 +198,7 @@ export class GroundWaveLayer {
 
   /** True when the lift map on the ground was drawn from these same inputs. */
   private unchanged(
-    tick: number,
+    step: number,
     camera: Camera,
     zoom: number,
     screenW: number,
@@ -208,7 +208,7 @@ export class GroundWaveLayer {
     const last = this.drawnFrom;
     return (
       last !== null &&
-      last.tick === tick &&
+      last.step === step &&
       last.offsetX === camera.offsetX &&
       last.offsetY === camera.offsetY &&
       last.zoom === zoom &&

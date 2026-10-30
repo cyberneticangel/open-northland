@@ -39,6 +39,7 @@ export const plNetworkRelay = {
     seatTaken: 'miejsce {seat} zajmuje {nick}',
     seatModeUnavailable: 'miejsca {seat} nie można ustawić na: {mode}',
     seatTribeUnavailable: 'miejsce {seat} nie ma plemienia do wyboru',
+    colorTaken: 'miejsce {wearer} ma już ten kolor',
     seatDifficultyUnavailable: 'miejsce {seat} nie ma poziomu komputera do wyboru',
     seatRequired: 'najpierw zajmij miejsce',
     notMember: '{nick} nie ma w pokoju',

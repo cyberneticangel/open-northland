@@ -11,7 +11,13 @@ export const Building = defineComponent<{
   tribe: number;
   built: Fixed; // 0..ONE construction progress
   level: number; // houses level up (home level 00..04 -> population capacity)
+  /** The `[GfxHouse]` record (`EditName`) a map placed this house as, kept only where that record stands
+   *  on a footprint of its own; read the footprint through `buildingFootprintFor`. */
+  record?: string | undefined;
 }>('Building', 'economy');
+
+/** The longest house record name a `placeBuilding` may carry. */
+export const HOUSE_RECORD_NAME_MAX_CHARS = 64;
 
 /**
  * A goods store attached to a building: goodType -> amount, with per-good capacity from the building type.

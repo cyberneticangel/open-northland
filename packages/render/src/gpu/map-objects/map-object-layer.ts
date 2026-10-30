@@ -1,4 +1,5 @@
 import { type BufferImageSource, Container, Mesh } from 'pixi.js';
+import type { LightSiteList } from '../../data/lighting/light-sites.js';
 import { aabbIntersects, TILE_HALF_W, type Viewport } from '../../data/projection/index.js';
 import type { WindSway } from '../../data/weather/climate.js';
 import { WEATHER_SECTOR_NODES } from '../../data/weather/field.js';
@@ -18,6 +19,7 @@ import {
 import { DecorClipTable, makeDecorClipUniforms, writeDecorClipUniforms } from './decor-clip.js';
 import { makeDecorShadowUniforms, writeDecorShadowStyle } from './decor-shadow-shader.js';
 import { type MapObjectSprite, type OneShotClip, oneShotEndTick } from './map-object-sprite.js';
+import { ObjectLightIndex } from './object-lights.js';
 import { TallObjectLayer } from './tall-blocks.js';
 
 /**
@@ -80,6 +82,7 @@ export class MapObjectLayer {
   /** A finished clip's object to the still that replaced it, so removing the object the caller holds
    *  (a handover, a cleared footprint) removes what stands in its place now. */
   private readonly restOf = new Map<MapObjectSprite, MapObjectSprite>();
+  private readonly lights = new ObjectLightIndex(DECOR_CHUNK_PX);
 
   constructor(
     spriteLayer: Container,
@@ -120,6 +123,16 @@ export class MapObjectLayer {
     group.update();
   }
 
+  /** Append the burning objects within reach of `vp` to `out`, those on explored ground when `explored`
+   *  gates it. */
+  collectLights(
+    vp: Viewport,
+    out: LightSiteList,
+    explored?: (tileX: number, tileY: number) => boolean,
+  ): void {
+    this.lights.collect(vp, out, explored);
+  }
+
   /** Call once per map. */
   set(objects: readonly MapObjectSprite[]): void {
     this.destroy();
@@ -133,6 +146,7 @@ export class MapObjectLayer {
     for (const obj of objects) {
       if (obj.frames.length === 0 || this.objects.has(obj)) continue;
       this.objects.add(obj);
+      this.lights.add(obj);
       if (obj.once !== undefined) {
         const end = oneShotEndTick(obj.once, obj.frames.length);
         this.playing.push({ obj, once: obj.once, end });
@@ -208,6 +222,7 @@ export class MapObjectLayer {
   /** {@link remove} without the one-shot bookkeeping. */
   private detach(obj: MapObjectSprite): void {
     if (!this.objects.delete(obj)) return;
+    this.lights.remove(obj);
     if (this.tall.remove(obj)) return;
     const key = this.decorByObject.get(obj);
     this.decorByObject.delete(obj);
@@ -312,6 +327,7 @@ export class MapObjectLayer {
     this.decorStyle.clips.table.clear();
     this.decorByObject.clear();
     this.objects.clear();
+    this.lights.clear();
     this.playing.length = 0;
     this.nextClipEnd = Number.POSITIVE_INFINITY;
     this.restOf.clear();

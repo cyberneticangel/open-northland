@@ -12,6 +12,7 @@ type GraphicsDefaults = Pick<
   | 'environmentMotion'
   | 'groundedBuildings'
   | 'buildingDamage'
+  | 'nightLights'
   | 'weather'
   | 'postFxEnabled'
 >;
@@ -38,6 +39,7 @@ export function recommendGraphics(result: TierResult): GraphicsRecommendation {
       environmentMotion: effects,
       groundedBuildings: effects,
       buildingDamage: effects,
+      nightLights: effects,
       weather: effects,
       postFxEnabled: effects,
     },

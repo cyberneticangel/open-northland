@@ -16,7 +16,7 @@ Two consumers already approximate what these state outright:
 - `mustHaveFinishedWorkHouseFlag` is cited in prose and hardcoded as a blanket in three seams:
   `settlers/targets/workplaces.ts` `boundWorkplaceTarget`, `settlers/drives/farming/drive.ts`, and
   `settlers/drives/economy/site-staff.ts` `planSiteStaff`. Verified against the owned copy, the flag is 0
-  for the hunter, the scout and the jester, and `ir.json` gives the headquarters and every warehouse tier
+  for the hunter and the scout, and `ir.json` gives the headquarters and every warehouse tier
   a hunter slot (`count 3`) that the app deliberately posts a gatherer into. So a hunter posted to a store
   stops hunting for the whole of that store's upgrade, where the data says he should carry on.
 

@@ -1,4 +1,4 @@
-import { isCivilizationTribe, MAP_PLAYER_COLOR_COUNT, type MapsIndexPlayerSlot } from '@open-northland/data';
+import { isCivilizationTribe, type MapsIndexPlayerSlot } from '@open-northland/data';
 import {
   type ComputerDifficulty,
   DEFAULT_LOCAL_PLAYER,
@@ -11,6 +11,7 @@ import {
   type SessionSeat,
 } from '@open-northland/lockstep';
 import { components } from '@open-northland/sim';
+import { PLAYER_COLOR_COUNT } from '../../catalog/roster.js';
 import { floatParam, formatSearch, HUMAN_TRIBE_PARAM, intParam, seatListParam } from '../../view/params.js';
 import { fogModeName } from '../fog.js';
 import { sessionRuleOverrides } from './session-rules.js';
@@ -249,10 +250,10 @@ function humanTribeParam(params: URLSearchParams): number | undefined {
   return isCivilizationTribe(tribe) ? tribe : undefined;
 }
 
-/** `?colors=<slot>:<colorId>,…`. Colours are bounded to the roster's id space, because an
- *  out-of-range id renders differently per consumer. */
+/** `?colors=<slot>:<colorId>,…`. Colours are bounded to the player colours the game draws, because
+ *  an out-of-range id renders differently per consumer. */
 function colorOverridesParam(params: URLSearchParams): ReadonlyMap<number, number> {
-  return seatPairsParam(params, 'colors', (color) => color >= 0 && color < MAP_PLAYER_COLOR_COUNT);
+  return seatPairsParam(params, 'colors', (color) => color >= 0 && color < PLAYER_COLOR_COUNT);
 }
 
 /** `?difficulty=slot:level,...`: how hard each named computer seat plays. */

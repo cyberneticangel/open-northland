@@ -48,12 +48,23 @@ export function agreementsAt(world: World, house: Entity): HouseAgreement[] {
   return offered;
 }
 
+/** Whether the trader's player and `house`'s owner each hold `friend` toward the other. */
+export function mutualFriends(world: World, trader: Entity, house: Entity): boolean {
+  const player = ownerOf(world, trader);
+  const partner = ownerOf(world, house);
+  if (player === undefined || partner === undefined) return false;
+  return (
+    diplomacyStance(world, player, partner) === 'friend' &&
+    diplomacyStance(world, partner, player) === 'friend'
+  );
+}
+
 /**
  * The agreement the trader's route trades on, or undefined when its choice does not hold: no foreign
  * stop, an index off the table, an agreement of another house, or a partner the trader's player is
- * not on friendly terms with (reading: the exchange needs the payer's stance toward the house owner to
- * be `friend`). A route whose stops a map script's owner change left both foreign has no house of the
- * trader's own to trade from, and holds none.
+ * not on friendly terms with (original behavior: each trip needs only the trader's player to hold
+ * `friend` toward the house owner). A route whose stops a map script's owner change left both foreign
+ * has no house of the trader's own to trade from, and holds none.
  */
 export function activeAgreement(
   world: World,

@@ -103,6 +103,7 @@ import { setUpdateContinuation } from '../../update/watcher.js';
 import type { AmbientWeather } from '../ambient-weather.js';
 import { seatBookingsOf } from '../assistant/bookings.js';
 import { assistantCountersSeam } from '../assistant/counters.js';
+import { assistantArmorSeam, assistantWeaponSeam } from '../assistant/gear-lines.js';
 import { assistantGrantsSeam } from '../assistant/grants.js';
 import { assistantShortagesOf } from '../assistant/shortages.js';
 import type { CameraController } from '../camera/index.js';
@@ -149,7 +150,7 @@ import { createTooltip } from '../tooltip.js';
 import { type ControlGroupMembers, isControlGroupMember } from '../unit-controls/control-groups.js';
 import { createUnitControls, type UnitControls } from '../unit-controls/index.js';
 import { createWeatherFeed } from '../weather-feed.js';
-import { chestTooltipLines, createWorldHover } from '../world-hover.js';
+import { createWorldHover } from '../world-hover.js';
 import { installDebugHandle } from './debug-handle.js';
 import { mountDebugOverlays } from './debug-mounts.js';
 import { createEntryExit } from './entry-exit.js';
@@ -218,6 +219,8 @@ export interface GameViewDeps {
   readonly parentSave?: SaveGame;
   /** The loaded save's `view` header, whose control groups return when the same seat loads it. */
   readonly restoredView?: unknown;
+  /** The presentation memory a save keeps (the viewer's fog memory); the entry restores it. */
+  readonly presentation?: () => string | null;
   readonly prepareSubMission?: PrepareSubMission;
   readonly validateSavedMap?: (save: SaveGame) => Promise<void>;
   readonly cameraCtl: CameraController;
@@ -267,6 +270,8 @@ export interface GameViewDeps {
   readonly mapText?: (stringId: number) => string | undefined;
   /** Extra per-frame hook after the standard updates. */
   readonly onFrame?: (snapshot: WorldSnapshot) => void;
+  /** Called each frame right after the renderer takes the viewer's fog, before anything draws. */
+  readonly onFogSight?: () => void;
   /** Once, when the frame after this view's first drawn one begins: the display shows the world. */
   readonly onFirstFrameShown?: () => void;
   /** Sim events from the frame's step(s), delivered before the renderer draws. Skipped on frames that did not step. */
@@ -286,7 +291,8 @@ export interface GameViewDeps {
   /** Open the mission book as the session starts, the original's mission briefing; the entry decides
    *  (a fresh world, and no `?intro=off`). */
   readonly introAtStart?: boolean;
-  /** The map's `[misc_music]` code; omitted or null, the world plays no music. */
+  /** The map's `[misc_music]` code, null for a map that names none (it plays the nation's music);
+   *  omitted, the world plays no music. */
   readonly musicType?: number | null;
 }
 
@@ -302,6 +308,8 @@ export interface GameViewHandle {
   soundStats(): SoundStatsView | null;
   /** The view a save would record (the control groups), for a rebuilt world of the same game to restore. */
   viewState(): SavedView | null;
+  /** The presentation memory a save would record, for the same. */
+  presentation(): string | null;
 }
 
 const PAUSE_HOLDER_MENU = 'menu';
@@ -361,9 +369,11 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
     const snapshot = host.snapshot();
     return savedView(seat, controlGroupMembers(), (id) => isControlGroupMember(snapshot, id, seat));
   };
+  const presentationMemory = (): string | null => deps.presentation?.() ?? null;
   const saveLoad = createSaveLoadSession({
     ...deps.networkSave,
     viewState,
+    presentation: presentationMemory,
     captureSave: (options) => driver.captureSave(options),
     ...(deps.captureSaveFile !== undefined ? { captureSaveFile: deps.captureSaveFile } : {}),
     host,
@@ -426,6 +436,9 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
           }
           leaveWorld(`?${search}`);
         };
+  // A sub-mission starts from its parent's save, which a fresh boot of its entry would leave behind.
+  const replay =
+    sharedClock || deps.parentSave !== undefined ? undefined : (): void => leaveWorld(replaySearch(params));
 
   try {
     const storedSettings = readStoredSettings();
@@ -461,7 +474,7 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       params,
       renderer,
       host.content.jobs,
-      deps.musicType ?? null,
+      deps.musicType,
       lifetime.signal,
     );
     cleanup.push(() => soundDriver?.close());
@@ -626,6 +639,8 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       assistant: {
         counters: assistantCountersSeam(host, viewer.seat, issueCommand, !readOnly()),
         switches: assistantGrantsSeam(host, host.content, viewer.seat, issueCommand, !readOnly()),
+        weapons: assistantWeaponSeam(host, viewer.seat, issueCommand, !readOnly()),
+        armor: assistantArmorSeam(host, viewer.seat, issueCommand, !readOnly()),
         bookings: () => assistantBookingsFor(host.snapshot()),
         shortages: () => assistantShortagesOf(host.snapshot(), host.content, viewer.seat()),
         access: () => (viewer.seat() === null ? 'noSeat' : readOnly() ? 'watching' : 'control'),
@@ -736,7 +751,14 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       ...(deps.missionPictureUrl === undefined ? {} : { missionPictureUrl: deps.missionPictureUrl }),
       ...(soundDriver === null || deps.missionVoices === undefined
         ? {}
-        : { missionVoice: briefingVoicePlayer(deps.missionVoices, soundDriver) }),
+        : {
+            missionVoice: briefingVoicePlayer(
+              deps.missionVoices,
+              soundDriver,
+              storedSettings.narrationRate,
+              (narrationRate) => patchStoredSettings({ narrationRate }),
+            ),
+          }),
       missionBriefingHistory: answers.missionBriefingHistory,
       askMissionBriefing: answers.askMissionBriefing,
       missionHuman: answers.missionHuman,
@@ -833,10 +855,7 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
         resume: () => pauseHolds.release(PAUSE_HOLDER_VERDICT),
         onQuit: quitToMenu,
         ...(sharedClock ? {} : { onLoad: (back) => systemMenu?.openPage('load', back) }),
-        // A sub-mission starts from its parent's save, which a fresh boot of its entry would leave behind.
-        ...(sharedClock || deps.parentSave !== undefined
-          ? {}
-          : { onPlayAgain: () => leaveWorld(replaySearch(params)) }),
+        ...(replay !== undefined ? { onPlayAgain: replay } : {}),
         onContinue: () => {
           if (sharedClock) {
             watching = true;
@@ -855,6 +874,7 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       hudScale: hudDom.currentScale,
       captureSave: (options) => driver.captureSave(options),
       viewState,
+      presentation: presentationMemory,
       params,
       worldToken: deps.worldToken ?? null,
       ...(deps.parentSave !== undefined ? { parent: deps.parentSave } : {}),
@@ -961,6 +981,8 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       onFiltersChange: (minimapFilters) => patchStoredSettings({ minimapFilters }),
       isFighterJob: (jobType) => systems.isFighterJob(host.content, jobType),
       isHeroJob: (jobType) => systems.isHeroJob(host.content, jobType),
+      fogMemory: deps.renderer.fogMemory,
+      roads: deps.renderer.seenRoadNetwork,
       viewer: () => viewer.seat(),
       stanceToward: (owner) => host.diplomacyStance(viewerPlayer(), owner),
       uiscale,
@@ -971,7 +993,8 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       toScreenPx: clientToScreen,
     });
 
-    // The minimap and the DOM regions, open windows among them, keep the wheel from zooming under them.
+    // The minimap and the DOM regions, open windows among them, keep the wheel from zooming under them
+    // and narrow the edge-scroll band over them.
     const mountedMinimap = minimap;
     cleanup.push(() => mountedMinimap.dispose());
     const hudClaims = (clientX: number, clientY: number): boolean =>
@@ -991,6 +1014,7 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       panelAnswersVersion: answers.versions.unitPanel,
       attachPicksVersion: answers.versions.attachPicks,
       canChooseJob: answers.canChooseJob,
+      jobChoiceAnswer: answers.jobChoiceAnswer,
       askCanChooseJob: answers.askCanChooseJob,
       jobChoicesVersion: answers.versions.jobChoices,
       app,
@@ -1025,11 +1049,27 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       tradeOffersAt: answers.tradeOffersAt,
       canAttachTradeHouse: answers.canAttachTradeHouse,
       askAttachTradeHouse: answers.askAttachTradeHouse,
+      tradeStances: (owner) => ({
+        yours: host.diplomacyStance(viewerPlayer(), owner),
+        theirs: host.diplomacyStance(owner, viewerPlayer()),
+      }),
+      offersTrade: (house) => host.tradeOffersAt(house as Entity).then((offers) => offers.length > 0),
+      noteTradeRefused: (owner, at) => toolPanel.controller.noteTradeRefused(owner, at),
       canAttachToVehicle: answers.canAttachToVehicle,
+      tradeHouseAttachAnswer: answers.tradeHouseAttachAnswer,
+      vehicleAttachAnswer: answers.vehicleAttachAnswer,
+      hintSuppressed: () =>
+        hudHidden ||
+        toolPanel.controller.placementBuilding() !== null ||
+        toolPanel.controller.palisadeGfxIndex() !== null ||
+        toolPanel.controller.roadActive(),
+      cursorHints: storedSettings.cursorHints,
       askAttachToVehicle: answers.askAttachToVehicle,
-      // The fog gate matches the overlay's, so a dimmed shore in the fog takes no dock click either.
-      askMoorAt: placementGates.askMoorAt,
+      askMooring: placementGates.askMooring,
+      mooring: placementGates.mooring,
       askPlaceSignpostAt: placementGates.askPlaceSignpostAt,
+      signpostAnswerAt: placementGates.signpostAnswerAt,
+      placementAnswersVersion: placementGates.answersVersion,
       boundsOf: (ref) => {
         const sprite = deps.staticHarvestableSprite?.(ref);
         return sprite === undefined ? renderer.entityBounds(ref) : mapObjectBounds(sprite, host.tick);
@@ -1207,13 +1247,10 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
     });
     cleanup.push(() => hoverCard.dispose());
 
-    // Owns its own tooltip element, distinct from the details panel's stock-row tooltip above.
     const worldHover = createWorldHover({
       renderer,
       camera: () => cameraCtl.camera(),
       clientToScreen,
-      goodLabel,
-      ...chestTooltipLines(host.content, toolPanel.controller.uiString, viewerPlayer, controls.selectedIds),
       card: hoverCard,
       buildingModel: (snapshot, entityId) => buildingHoverModel(snapshot, entityId, hoverContext),
       settlerModel: (snapshot, entityId) => settlerHoverModel(snapshot, entityId, settlerHoverContext),
@@ -1291,6 +1328,7 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
 
     systemMenu = createSystemMenu({
       onQuit: quitToMenu,
+      ...(replay !== undefined ? { onRestart: replay } : {}),
       saveLoad: {
         ...saveLoad,
         forcePause: () => pauseHolds.hold(PAUSE_HOLDER_MENU),
@@ -1398,7 +1436,8 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       lifeHeartsFor,
       experienceStarsFor,
       canPlaceAt,
-      defenceRangeAt: (typeId, tribe, col, row) => defenceRadiusAt(host.content, typeId, tribe, col, row),
+      defenceRangeAt: (typeId, tribe, col, row) =>
+        defenceRadiusAt(host.content, { buildingType: typeId, tribe }, col, row),
       blessingRangeFor: (typeId) => templeAuraRadius(host.content, typeId),
       canPlaceSignpostAt,
       soundDriver,
@@ -1428,6 +1467,7 @@ export async function startGameView(deps: GameViewDeps): Promise<GameViewHandle>
       issue: issueCommand,
       soundStats: () => soundDriver?.stats ?? null,
       viewState,
+      presentation: presentationMemory,
     };
   } catch (error) {
     try {

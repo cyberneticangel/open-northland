@@ -54,6 +54,7 @@ export const KEYBINDING_ACTIONS = [
   'assignWorkplace',
   'assignHome',
   'attackMove',
+  'dockShips',
   'workFlagOrder',
   'roadTool',
   'palisadeTool',
@@ -62,6 +63,7 @@ export const KEYBINDING_ACTIONS = [
   'upgradeBuilding',
   'defenceOn',
   'defenceOff',
+  'buildingAlarm',
   'nextCivilian',
   'nextScout',
   'nextSingleWoman',
@@ -99,7 +101,8 @@ export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   // original's help), F2 the subjects (the original's F7), F7 the knowledge (the original's technology
   // tree on F8), F8 the HUD, N the network panel of a relayed game (a letter: Mac keyboards give F9 to
   // media keys), Q for the original's A (Assign Work Place), so A stays attack-move, R the shown
-  // building's Upgrade, I the selection's equipment window (the common inventory key).
+  // building's Upgrade, Alt+V the shown building's alarm beside the original's V, I the selection's
+  // equipment window (the common inventory key), Z the selected ships' dock order.
   pauseToggle: 'KeyP',
   speedCycle: 'KeyL',
   gameMenu: 'Escape',
@@ -121,6 +124,7 @@ export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   assignWorkplace: 'KeyQ',
   assignHome: 'KeyW',
   attackMove: 'KeyA',
+  dockShips: 'KeyZ',
   workFlagOrder: 'Primary+Mouse2',
   roadTool: 'KeyS',
   palisadeTool: 'KeyD',
@@ -131,6 +135,7 @@ export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   upgradeBuilding: 'KeyR',
   defenceOn: 'KeyV',
   defenceOff: 'Shift+KeyV',
+  buildingAlarm: 'Alt+KeyV',
   nextCivilian: 'Period',
   nextScout: 'Comma',
   nextSingleWoman: 'Slash',
@@ -191,7 +196,9 @@ export function isBindableBinding(binding: string): boolean {
   return normalized.every((modifier, index) => parts[index] === modifier);
 }
 
-type ModifierState = Pick<KeyboardEvent | MouseEvent, 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>;
+export type ModifierState = Pick<KeyboardEvent | MouseEvent, 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>;
+/** A mouse press as a binding reads it: its button and the modifiers held. */
+export type MousePress = ModifierState & Pick<MouseEvent, 'button'>;
 
 /** The fields a key binding reads off a press. */
 export type KeyPress = ModifierState & Pick<KeyboardEvent, 'code'>;
@@ -210,7 +217,7 @@ export function bindingFromKeyboardEvent(event: KeyPress): string | null {
   return isBindableCode(event.code) ? eventBinding(event.code, event) : null;
 }
 
-export function bindingFromMouseEvent(event: MouseEvent): string | null {
+export function bindingFromMouseEvent(event: MousePress): string | null {
   const code = `Mouse${event.button}`;
   return BINDABLE_POINTER_CODE.test(code) ? eventBinding(code, event) : null;
 }
@@ -231,7 +238,7 @@ export function matchesKeyboardBindingUnderShift(event: KeyPress, binding: strin
   return matchesKeyboardBinding({ code, ctrlKey, shiftKey: false, altKey, metaKey }, binding);
 }
 
-export function matchesMouseBinding(event: MouseEvent, binding: string | null): boolean {
+export function matchesMouseBinding(event: MousePress, binding: string | null): boolean {
   const actual = bindingFromMouseEvent(event);
   return binding !== null && actual !== null && matchesEventBinding(actual, binding);
 }

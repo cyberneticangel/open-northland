@@ -1,7 +1,7 @@
 import type { BuildingFootprint } from '@open-northland/data';
 import type { GeometryDebugItem } from '@open-northland/render';
 import { entitiesWith, nodeOfPosition, type WorldSnapshot } from '@open-northland/sim';
-import { buildingTribeOf, buildingTypeOf, positionOf } from '../../game/snapshot/index.js';
+import { buildingRecordOf, buildingTribeOf, buildingTypeOf, positionOf } from '../../game/snapshot/index.js';
 import { workerIconNode } from './building-points.js';
 
 /** The per-building footprint diagram behind the `?debug=geometry` flag. */
@@ -11,10 +11,11 @@ export interface GeometryBuildingInfo {
   readonly footprint?: BuildingFootprint | undefined;
 }
 
-/** A building's geometry by type and the tribe that built it. */
+/** A building's geometry by type, the tribe that built it and its map-placed house record. */
 export type GeometryBuildingInfoOf = (
   typeId: number | undefined,
   tribe: number | undefined,
+  record?: string,
 ) => GeometryBuildingInfo | undefined;
 
 export function computeGeometryDebugItems(
@@ -27,7 +28,7 @@ export function computeGeometryDebugItems(
     if (pos === undefined) continue;
     const anchor = nodeOfPosition(pos.x, pos.y);
     const typeId = buildingTypeOf(e);
-    const info = geometryOf(typeId, buildingTribeOf(e));
+    const info = geometryOf(typeId, buildingTribeOf(e), buildingRecordOf(e));
     const fp = info?.footprint;
     items.push({
       anchor,

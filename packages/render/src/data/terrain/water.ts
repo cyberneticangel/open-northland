@@ -21,20 +21,31 @@ export type WaterCellFn = (col: number, row: number) => number;
 /**
  * The per-node water inputs of a map's ground mesh: `wave` is the swell amplitude factor (0 = still
  * ground), `surface` the node cell's water fraction (the shading mask), `deep` its fraction drawn with
- * a deep-water pattern (0 on shallows and land).
+ * a deep-water pattern (0 on shallows and land), `shore` the mean water fraction over the node's 3×3
+ * cells (0 inland, 1 on open water, about 0.5 at the painted shoreline).
  */
 export interface WaterField {
   readonly wave: WaterNodeFn;
   readonly surface: WaterNodeFn;
   readonly deep: WaterNodeFn;
+  readonly shore: WaterNodeFn;
   /** {@link surface} by cell, for a per-frame reader that must not allocate a node's cell. */
   readonly surfaceCell: WaterCellFn;
 }
 
 const STILL: WaterNodeFn = () => 0;
 
+/** Cells in a node's 3×3 neighbourhood. */
+const NEIGHBOURHOOD_CELLS = 9;
+
 /** Shared so land maps allocate nothing. */
-export const NO_WATER: WaterField = { wave: STILL, surface: STILL, deep: STILL, surfaceCell: STILL };
+export const NO_WATER: WaterField = {
+  wave: STILL,
+  surface: STILL,
+  deep: STILL,
+  shore: STILL,
+  surfaceCell: STILL,
+};
 
 /** A ground pattern drawing water surface, by `EditName` ('water 01', 'block water …',
  *  'block water shallow …' across the owned corpus). */
@@ -92,18 +103,23 @@ export function makeWaterField(ground: SceneGround | undefined, width: number, h
   const at = clampedCellAt(water, width, height);
   // Node amplitude = the minimum water fraction over the node's 3×3 cell neighbourhood, so any node a
   // land triangle can reach stays exactly still and the coastline never warps. The shader's varying
-  // interpolation ramps the band between them across one triangle.
+  // interpolation ramps the band between them across one triangle. The shore is the same
+  // neighbourhood's mean, which ramps across the coast on both sides of the painted line.
   const amp = new Float32Array(cells);
+  const shore = new Float32Array(cells);
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       let min = 1;
+      let sum = 0;
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const v = at(col + dc, row + dr);
           if (v < min) min = v;
+          sum += v;
         }
       }
       amp[row * width + col] = min;
+      shore[row * width + col] = sum / NEIGHBOURHOOD_CELLS;
     }
   }
   // Surface and depth take the node's own cell, like the brightness lane: the varying then fades each
@@ -126,6 +142,7 @@ export function makeWaterField(ground: SceneGround | undefined, width: number, h
     wave: nodeValue(cellValue(amp)),
     surface: nodeValue(surfaceCell),
     deep: nodeValue(cellValue(deep)),
+    shore: nodeValue(cellValue(shore)),
     surfaceCell,
   };
 }

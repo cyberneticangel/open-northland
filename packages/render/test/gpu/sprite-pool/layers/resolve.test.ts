@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { FOOT_OVERLAY_STRIPS } from '../../../../src/gpu/ground-foot/index.js';
 import { resolvesWithoutClock } from '../../../../src/gpu/sprite-pool/layers/resolve.js';
 import {
+  type BuildTimeSheet,
   type DrawItem,
   type ResolvedLayer,
   resolveLayers,
@@ -249,7 +250,8 @@ describe('resolveLayers - connected palisades', () => {
 
 describe('resolveLayers - construction reveal: per-pixel with time data, crop fallback without', () => {
   const atlas: SpriteAtlas = { width: 100, height: 10, frames: new Map([frame(70), frame(85)]) };
-  const times = { width: 100, height: 10, values: new Uint8Array(100 * 10) };
+  const times = { width: 100, height: 10, values: new Uint8Array(100 * 10).fill(1) };
+  const zeroTimes = { width: 100, height: 10, values: new Uint8Array(100 * 10) };
   // The stack reuses the finished body bob (70) as its top stage, as the house family does.
   const building = {
     byType: { 13: { layer: 'houses', bob: 70 } },
@@ -262,23 +264,26 @@ describe('resolveLayers - construction reveal: per-pixel with time data, crop fa
     },
   };
   const site: DrawItem = { kind: 'building', ref: 1, x: 0, y: 0, depth: 0, typeId: 13, builtPct: 30 };
-  const sheetWith = (withTimes: boolean): SpriteSheet => ({
+  const sheetWith = (sheetTimes: BuildTimeSheet | undefined): SpriteSheet => ({
     source,
     atlas: { width: 0, height: 0, frames: new Map() },
     bindings: { settler: 1, resource: 1, building },
-    families: { houses: withTimes ? { source, atlas, times } : { source, atlas } },
+    families: { houses: sheetTimes !== undefined ? { source, atlas, times: sheetTimes } : { source, atlas } },
   });
 
   it('with a time sheet, every active stage reveals per-pixel in its own window - the finished bob too', () => {
-    const layers = resolveLayers(sheetWith(true), site, 0) ?? [];
+    const layers = resolveLayers(sheetWith(times), site, 0) ?? [];
     expect(layers.map((l) => [l.frame.x, l.reveal, l.revealWindow, l.times === times])).toEqual([
       [85, 0.3, [0, 60], true],
       [70, 0.3, [20, 100], true],
     ]);
   });
 
-  it('without one, scaffold stages crop-reveal and the finished bob waits for completion (legacy)', () => {
-    const layers = resolveLayers(sheetWith(false), site, 0) ?? [];
+  it.each([
+    ['without one', undefined],
+    ['with one that is zero under every frame', zeroTimes],
+  ])('%s, scaffold stages crop-reveal and the finished bob waits for completion', (_, sheetTimes) => {
+    const layers = resolveLayers(sheetWith(sheetTimes), site, 0) ?? [];
     expect(layers.map((l) => [l.frame.x, l.reveal, l.revealWindow ?? null, l.times ?? null])).toEqual([
       [85, 0.3, null, null],
     ]);

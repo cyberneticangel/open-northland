@@ -25,8 +25,6 @@ import {
   FIGHT_EXPERIENCE_MAX,
   FIGHT_EXPERIENCE_TYPE,
   jobExperiencePercent,
-  SCOUT_VISION_BONUS_MAX_NODES,
-  scoutVisionBonusNodes,
   stampResourceFootprintData,
   strokesPerUnit,
   WEAPON_MAIN_TYPE,
@@ -83,15 +81,6 @@ describe('experiencePoints - raw XP in hundredths, whatever the track', () => {
     expect(experiencePoints(100)).toBe(1);
     expect(experiencePoints(250)).toBe(2);
     expect(experiencePoints(-5)).toBe(0);
-  });
-});
-
-describe('scoutVisionBonusNodes - signpost craft widens the scout eye a little', () => {
-  it('scales the curve to whole extra nodes, capped well below a 2x eye', () => {
-    expect(scoutVisionBonusNodes(0)).toBe(0);
-    expect(scoutVisionBonusNodes(10)).toBe(4); // 68% of the 6-node cap, truncated
-    expect(scoutVisionBonusNodes(100)).toBe(5); // 97%: still a node short
-    expect(scoutVisionBonusNodes(EXPERIENCE_MASTERY_POINTS)).toBe(SCOUT_VISION_BONUS_MAX_NODES);
   });
 });
 

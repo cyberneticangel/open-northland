@@ -65,7 +65,7 @@ Keep the map and camera fixed for comparisons. Include zoom 2 and a zoomed-out p
 | --- | --- |
 | Original art filter (`enhancedSampling`, `pixelArtScaler`) | `xbr` smooths pixel-art edges at any zoom. `xbrz`, `superxbr` and `mmpx` redraw each plain atlas page a view draws at twice its size on the GPU, within a memory budget (`renderer.prescaleStats()` reports the twins, their memory and the pages over budget), and sample it sharp; paletted characters keep `xbr`, construction sites and damage overlays draw through the sharp path. Also filters original terrain and finished buildings. HUD icons keep their own sampling. |
 | Enhanced shadows (`softShadows`) | Softens silhouettes and adds projected character/animal shadows. Cache failures keep hard shadows. Flat decor retains its authored shadow under either setting. |
-| Enhanced water (`enhancedWater`) | Crossing swells, stronger colors and a moving glint on deep water |
+| Enhanced water (`enhancedWater`) | Crossing swells under drifting calm and rough patches, a noise shimmer, surf washing up and off the beach, and stronger colors. Off keeps one swell and one shimmer. Both run on the water clock, one pace at every game speed. |
 | Environment motion (`environmentMotion`) | Interpolates fish and adds tree motion. Static-layer vegetation moves; harvested/restored objects in the sprite pool do not. |
 | Grounded buildings (`groundedBuildings`) | Adds shaded feet and terrain cover to finished buildings, palisades and built walls. This is an invented look. Construction, placement and collapse keep the plain body. |
 

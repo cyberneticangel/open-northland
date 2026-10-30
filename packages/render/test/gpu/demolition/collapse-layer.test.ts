@@ -68,7 +68,11 @@ const sheet: SpriteSheet = {
   },
   families: {
     houses: { source, atlas },
-    timed: { source, atlas, times: { width: 100, height: BODY_H, values: new Uint8Array(100 * BODY_H) } },
+    timed: {
+      source,
+      atlas,
+      times: { width: 100, height: BODY_H, values: new Uint8Array(100 * BODY_H).fill(1) },
+    },
   },
 };
 

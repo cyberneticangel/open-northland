@@ -31,6 +31,7 @@ const SAMPLES: { readonly [C in RelayReasonCode]: Extract<RelayReason, { code: C
   seatTaken: { code: 'seatTaken', player: 2, nick: 'Bartek' },
   seatModeUnavailable: { code: 'seatModeUnavailable', player: 1, mode: 'computer' },
   seatTribeUnavailable: { code: 'seatTribeUnavailable', player: 2 },
+  colorTaken: { code: 'colorTaken', player: 1, wearer: 2 },
   seatDifficultyUnavailable: { code: 'seatDifficultyUnavailable', player: 2 },
   seatRequired: { code: 'seatRequired' },
   notMember: { code: 'notMember', nick: 'Zenon' },

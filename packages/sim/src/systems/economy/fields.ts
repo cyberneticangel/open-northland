@@ -87,8 +87,7 @@ export function sowNodeOccupied(world: World, hx: number, hy: number): boolean {
 /** Walkable ground under a building's art is still unavailable for crops. */
 function insideBuildingFieldZone(world: World, content: ContentSet, hx: number, hy: number): boolean {
   for (const entity of world.query(Building, Position)) {
-    const { buildingType, tribe } = world.get(entity, Building);
-    const zone = buildingFieldZone(content, buildingType, tribe);
+    const zone = buildingFieldZone(content, world.get(entity, Building));
     const position = world.get(entity, Position);
     const anchorHx = nodeHxOfPosition(position.x, position.y);
     const anchorHy = nodeHyOfPosition(position.x, position.y);
@@ -249,7 +248,7 @@ export function destroyFieldsUnderBuilding(world: World, ctx: SystemContext, bui
   const b = world.tryGet(building, Building);
   const p = world.tryGet(building, Position);
   if (b === undefined || p === undefined) return;
-  const zone = buildingFieldZone(ctx.content, b.buildingType, b.tribe);
+  const zone = buildingFieldZone(ctx.content, b);
   const { hx, hy } = nodeOfPosition(p.x, p.y);
   for (const cell of translatedCells(terrain, zone, hx, hy)) {
     const at = terrain.coordsOf(cell);

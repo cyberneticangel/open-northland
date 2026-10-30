@@ -86,10 +86,13 @@ function retribe(
   if (
     type === undefined ||
     !seat.drawnBuildings.includes(building.buildingType) ||
-    !sameBuildingFootprintCells(type, seat.authored, seat.chosen)
+    !sameBuildingFootprintCells(type, seat.authored, seat.chosen, building.record)
   )
     return false;
-  world.mut(e, Building).tribe = seat.chosen;
+  const converted = world.mut(e, Building);
+  converted.tribe = seat.chosen;
+  converted.record = undefined; // the record is the authored people's
+
   const previous = buildingHitpointsFor(type, seat.authored);
   const next = buildingHitpointsFor(type, seat.chosen);
   if (previous !== undefined && next !== undefined) resizeUnitHealth(world, e, previous, next);

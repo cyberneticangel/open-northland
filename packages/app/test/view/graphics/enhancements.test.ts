@@ -15,6 +15,7 @@ describe('graphics enhancement choices', () => {
       environmentMotion: true,
       groundedBuildings: false,
       buildingDamage: true,
+      nightLights: true,
     });
   });
 

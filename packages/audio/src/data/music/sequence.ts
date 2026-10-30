@@ -26,6 +26,8 @@ export interface MusicSequence {
   drop(file: string): void;
   /** A track the sequence may cut over to at short notice, which the player keeps decoded ahead. */
   standby?(): MusicTrack | null;
+  /** The track the next cue plays if nothing changes, which the player decodes before this cue ends. */
+  upcoming?(): MusicTrack | null;
 }
 
 /** How a fixed rotation's tracks hand over. */

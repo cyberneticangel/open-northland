@@ -29,6 +29,18 @@ export interface CharacterPalette {
   readonly armor?: ArmorLayout;
   /** Where this body draws its weapon, which the weapon's material colours. */
   readonly weapon?: WeaponLayout;
+  /** Where this body draws a carried load apart from the band it shares with the clothes. */
+  readonly load?: LoadLayout;
+}
+
+/**
+ * A body whose carry walks draw the load in a band of its own, moved there out of `from`, a band the
+ * clothes keep drawing in. The load band starts as `from`'s base colours and takes what the good recipe
+ * paints `from`, so a recipe skipping a team-coloured `from` still colours the load.
+ */
+export interface LoadLayout {
+  readonly band: number;
+  readonly from: number;
 }
 
 /**
@@ -186,6 +198,8 @@ export class HumanPaletteBook {
   private readonly rng = new PaletteRng();
   /** The team ramp as the player recipe left it, before a later recipe can repaint its band. */
   private readonly team = new Uint8Array(BAND_BYTES);
+  /** A load layout's `from` band before the good recipe, kept for clothes in the team colour. */
+  private readonly clothes = new Uint8Array(BAND_BYTES);
   private readonly armorRamps = new WeakMap<ArmorRamp, Uint8Array | null>();
 
   constructor(
@@ -245,12 +259,13 @@ export class HumanPaletteBook {
    *
    * The good recipe is a project choice, not the original's behavior (the original draws a carried good
    * through the human palette unchanged). It skips every band the player recipe wrote, so a woman's
-   * team-coloured dress stays while the band her load shares with it takes the good's colours.
+   * team-coloured dress stays, and paints the load band of a body with a {@link LoadLayout}.
    */
   compose(identity: HumanPaletteIdentity, out: HumanPaletteColours): void {
     const { look, seed } = identity;
     out.body.set(this.base(look.body));
     out.head.set(this.base(look.head));
+    if (look.load !== undefined) copyBand(out, look.load.from, look.load.band);
     const player = this.players.get(identity.player);
     const teamBands =
       player === undefined
@@ -284,7 +299,19 @@ export class HumanPaletteBook {
     }
     if (identity.cart !== undefined) this.apply(this.cartRecipes[identity.cart], seed, STAGE_CART, out);
     const good = identity.carried === undefined ? undefined : this.goodRecipes.get(identity.carried);
-    if (good !== undefined) this.apply(good, seed, STAGE_GOOD, out, teamBands);
+    if (good === undefined) return;
+    const load = look.load;
+    if (load === undefined) {
+      this.apply(good, seed, STAGE_GOOD, out, teamBands);
+      return;
+    }
+    const fromAt = bandStart(load.from);
+    const fromPalette = bandPalette(out, load.from);
+    this.clothes.set(fromPalette.subarray(fromAt, fromAt + BAND_BYTES));
+    const written = this.apply(good, seed, STAGE_GOOD, out, teamBands & ~(1 << load.from));
+    if ((written & (1 << load.from)) === 0) return;
+    copyBand(out, load.from, load.band);
+    if ((teamBands & (1 << load.from)) !== 0) fromPalette.set(this.clothes, fromAt);
   }
 
   /**
@@ -354,16 +381,8 @@ export class HumanPaletteBook {
       const bit = 1 << roll.band;
       if (chosen === undefined || (keep & bit) !== 0) continue;
       written |= bit;
-      const target = bandPalette(out, roll.band);
-      const at = bandStart(roll.band);
-      if ('copyBand' in chosen) {
-        const from = bandPalette(out, chosen.copyBand);
-        const fromAt = bandStart(chosen.copyBand);
-        if (from === target) target.copyWithin(at, fromAt, fromAt + BAND_BYTES);
-        else target.set(from.subarray(fromAt, fromAt + BAND_BYTES), at);
-      } else if (chosen.ramp !== undefined) {
-        target.set(chosen.ramp, at);
-      }
+      if ('copyBand' in chosen) copyBand(out, chosen.copyBand, roll.band);
+      else if (chosen.ramp !== undefined) bandPalette(out, roll.band).set(chosen.ramp, bandStart(roll.band));
     }
     return written;
   }
@@ -403,6 +422,15 @@ function reorderedRamp(
     out.set(ramp.subarray(from, from + RGB), i * RGB);
   }
   return out;
+}
+
+/** Copy band `from`'s colours over band `to`. */
+function copyBand(out: HumanPaletteColours, from: number, to: number): void {
+  const source = bandPalette(out, from);
+  const fromAt = bandStart(from);
+  const target = bandPalette(out, to);
+  if (source === target) target.copyWithin(bandStart(to), fromAt, fromAt + BAND_BYTES);
+  else target.set(source.subarray(fromAt, fromAt + BAND_BYTES), bandStart(to));
 }
 
 /** A band id's first byte in the palette it addresses. */

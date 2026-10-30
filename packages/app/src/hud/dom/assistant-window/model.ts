@@ -183,12 +183,12 @@ export function trainingNotes(counter: CounterState, facts: TrainingFacts): read
 }
 
 /**
- * Whether a recruit of a class can still find a weapon: its own in stock, or the weaker one while its
- * switch allows it. Approximation: the seat's stock counts goods carried and heaps in reach, where the
+ * Whether a recruit of a class can still find a weapon: one of its weapon line's goods that is not off
+ * lies in stock. Approximation: the seat's stock counts goods carried and heaps in reach, where the
  * arming pass needs a store it can reach, so a weapon cut off on another island still reads as stocked.
  */
-export function weaponStocked(weapon: number, weaker: number, weakerAllowed: boolean): boolean {
-  return weapon > 0 || (weakerAllowed && weaker > 0);
+export function weaponStocked(line: GearLine, stockOf: (goodType: number) => number): boolean {
+  return line.order.some((good) => !line.off.includes(good) && stockOf(good) > 0);
 }
 
 /** How long a pressed value stands over the live one while its command travels: past a multiplayer
@@ -222,4 +222,28 @@ export class PressHold<K, T> {
     }
     return held.value;
   }
+}
+
+/** A gear line's state: a class's weapon or armor goods in the order its recruits shop them, and those
+ *  it never takes. */
+export type GearLine = components.AssistantArmorOrder;
+
+export const sameGear = (a: GearLine, b: GearLine): boolean =>
+  a.order.length === b.order.length &&
+  a.order.every((good, i) => good === b.order[i]) &&
+  a.off.length === b.off.length &&
+  a.off.every((good) => b.off.includes(good));
+
+/** The choice with `good` moved to `index` of the order, clamped to its ends; off goods stay off. */
+export function gearMoved(choice: GearLine, good: number, index: number): GearLine {
+  const rest = choice.order.filter((g) => g !== good);
+  if (rest.length === choice.order.length) return choice;
+  const at = Math.max(0, Math.min(rest.length, index));
+  return { order: [...rest.slice(0, at), good, ...rest.slice(at)], off: choice.off };
+}
+
+/** The choice with `good` switched off, or back on. */
+export function gearToggled(choice: GearLine, good: number): GearLine {
+  const off = choice.off.includes(good) ? choice.off.filter((g) => g !== good) : [...choice.off, good];
+  return { order: choice.order, off };
 }

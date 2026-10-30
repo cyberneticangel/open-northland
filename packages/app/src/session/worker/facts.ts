@@ -32,6 +32,16 @@ export function readWorldFacts(sim: Simulation): WorldFacts {
         weaponVetoes: sim.assistantWeaponVetoes(player),
         soldierOnlyGrants: sim.assistantSoldierOnlyGrants(player),
         civilianOnlyGrants: sim.assistantCivilianOnlyGrants(player),
+        weaponOrders: {
+          trainSword: sim.assistantWeaponOrder(player, 'trainSword'),
+          trainSpear: sim.assistantWeaponOrder(player, 'trainSpear'),
+          trainBow: sim.assistantWeaponOrder(player, 'trainBow'),
+        },
+        armorOrders: {
+          trainSword: sim.assistantArmorOrder(player, 'trainSword'),
+          trainSpear: sim.assistantArmorOrder(player, 'trainSpear'),
+          trainBow: sim.assistantArmorOrder(player, 'trainBow'),
+        },
         postsGraduates: sim.assistantPostsGraduates(player),
         movesFlags: sim.assistantMovesFlags(player),
       }),

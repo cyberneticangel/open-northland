@@ -23,12 +23,11 @@ import { nodeOfPosition } from '../../../src/nav/halfcell.js';
 import { learn } from '../../../src/systems/orders/education.js';
 import { TRAINING_EXPERIENCE_TYPE } from '../../../src/systems/progression/index.js';
 import { planTraining } from '../../../src/systems/settlers/drives/training.js';
-import { IdleStands } from '../../../src/systems/settlers/planner/idle-replan.js';
-import { PlannerSpacing } from '../../../src/systems/settlers/planner/spacing.js';
 import { interactionCell } from '../../../src/systems/settlers/targets/index.js';
 import { hexNodeDistance } from '../../../src/systems/spatial/metric.js';
 import { testContent } from '../../fixtures/content.js';
 import { ctxOf } from '../../fixtures/context.js';
+import { plannerContextAt } from '../../fixtures/planner.js';
 import { settlerAt } from '../../fixtures/settler.js';
 import { grassCellMap, waterColumnMap } from '../../fixtures/terrain.js';
 
@@ -122,17 +121,8 @@ function graduate(
   if (terrain === undefined) throw new Error('missing terrain');
   const p = sim.world.get(pupil, Position);
   const node = nodeOfPosition(p.x, p.y);
-  planTraining(
-    sim.world,
-    ctxOf(sim),
-    terrain,
-    pupil,
-    sim.world.get(pupil, Settler),
-    terrain.nodeAtClamped(node.hx, node.hy),
-    null,
-    PlannerSpacing.forTick(sim.world, ctxOf(sim), terrain),
-    new IdleStands(),
-  );
+  const { pass, plan } = plannerContextAt(sim, pupil, terrain.nodeAtClamped(node.hx, node.hy));
+  planTraining(plan, sim.world.get(pupil, Settler), pass.spacing, pass.idle, undefined);
 }
 
 function postGraduates(sim: Simulation, enabled: boolean): void {

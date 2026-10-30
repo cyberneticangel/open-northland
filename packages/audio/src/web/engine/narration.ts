@@ -2,6 +2,7 @@ import { decodeWav, inspectWav } from '@open-northland/formats/audio/wav';
 import { VOICE_MUSIC_DUCK_DB } from '../../data/mixer.js';
 import type { BusDuck, DuckHold } from './bus-duck.js';
 import { CLICK_FREE_RAMP_S, rampParam } from './ramps.js';
+import { stretchChannels } from './time-stretch.js';
 
 interface Speaking {
   readonly source: AudioBufferSourceNode;
@@ -9,7 +10,16 @@ interface Speaking {
   readonly duck: DuckHold | null;
   /** Context time the source started, at the line's `offsetS`. */
   readonly startedAt: number;
+  /** Clip seconds the source covers per context second. */
+  readonly rate: number;
 }
+
+/** The narration tempos the briefing player offers, 1 the clip as recorded. */
+export const NARRATION_RATES = [1, 1.25, 1.5, 2] as const;
+export type NarrationRate = (typeof NARRATION_RATES)[number];
+
+export const isNarrationRate = (value: unknown): value is NarrationRate =>
+  NARRATION_RATES.some((rate) => rate === value);
 
 /** Where the narration line stands: `waiting` is a line asked to play before audio started. */
 export type NarrationStatus = 'idle' | 'waiting' | 'playing' | 'paused' | 'ended';
@@ -29,7 +39,7 @@ export interface NarrationCue {
   readonly paused?: boolean;
 }
 
-/** The clip being narrated: playing while it has a source, else held at `offsetS`. */
+/** The clip being narrated: playing while it has a source, else held at `offsetS`, in clip seconds. */
 interface Line {
   readonly buffer: AudioBuffer;
   offsetS: number;
@@ -41,8 +51,8 @@ interface Line {
  * The one narration line at a time: a briefing page's spoken text, with a transport the page's player
  * drives. A new line cuts the one still speaking, a stop or a pause fades it out click-free, and the
  * music dips under it by the voice duck while it speaks. Pause, resume and seek restart a buffer
- * source at the held offset. Unrationed by the arbiter: the player's page turn starts and stops it,
- * never the world. The wav decodes here rather than in the browser, which does not read every codec a
+ * source at the held offset; a faster tempo plays the clip time-stretched at its pitch. Unrationed by
+ * the arbiter: the player's page turn starts and stops it, never the world. The wav decodes here rather than in the browser, which does not read every codec a
  * map ships (IMA ADPCM); one that does not decode, or that the context cannot hold, stays silent.
  */
 export class Narration {
@@ -50,6 +60,9 @@ export class Narration {
   /** Each clip decodes once: a replay or a page's return reuses its buffer, a refused clip its refusal.
    *  Keyed by the bytes, which the briefing loader keeps once per clip and world. */
   private readonly buffers = new WeakMap<Uint8Array, AudioBuffer | null>();
+  /** Each clip stretches once per tempo, on the first line spoken at it. */
+  private readonly stretched = new WeakMap<AudioBuffer, Map<NarrationRate, AudioBuffer>>();
+  private rate: NarrationRate = 1;
 
   constructor(
     private readonly ctx: BaseAudioContext,
@@ -95,6 +108,19 @@ export class Narration {
     if (speaking) this.speak(line);
   }
 
+  /** Speak at `rate` from now on, the line still speaking going on from where it stands. */
+  setRate(rate: NarrationRate): void {
+    if (rate === this.rate) return;
+    const line = this.line;
+    const speaking = line !== null && line.speaking !== null;
+    if (line !== null && speaking) {
+      line.offsetS = this.positionOf(line);
+      this.halt(line);
+    }
+    this.rate = rate;
+    if (line !== null && speaking) this.speak(line);
+  }
+
   stop(): void {
     const line = this.line;
     this.line = null;
@@ -118,20 +144,23 @@ export class Narration {
 
   private positionOf(line: Line): number {
     const at =
-      line.speaking === null ? line.offsetS : line.offsetS + this.ctx.currentTime - line.speaking.startedAt;
+      line.speaking === null
+        ? line.offsetS
+        : line.offsetS + (this.ctx.currentTime - line.speaking.startedAt) * line.speaking.rate;
     return clampTo(at, line.buffer.duration);
   }
 
   private speak(line: Line): void {
     const ctx = this.ctx;
+    const rate = this.rate;
     const source = ctx.createBufferSource();
-    source.buffer = line.buffer;
+    source.buffer = this.atRate(line.buffer, rate);
     const gain = ctx.createGain();
     gain.gain.value = 1;
     source.connect(gain).connect(this.out);
-    const rest = line.buffer.duration - line.offsetS;
+    const rest = (line.buffer.duration - line.offsetS) / rate;
     const duck = this.musicDuck?.hold(ctx, VOICE_MUSIC_DUCK_DB, rest) ?? null;
-    const speaking = { source, gain, duck, startedAt: ctx.currentTime };
+    const speaking = { source, gain, duck, startedAt: ctx.currentTime, rate };
     line.speaking = speaking;
     source.onended = () => {
       if (line.speaking !== speaking) return;
@@ -139,7 +168,26 @@ export class Narration {
       line.offsetS = line.buffer.duration;
       line.ended = true;
     };
-    source.start(ctx.currentTime, line.offsetS);
+    source.start(ctx.currentTime, line.offsetS / rate);
+  }
+
+  private atRate(buffer: AudioBuffer, rate: NarrationRate): AudioBuffer {
+    if (rate === 1) return buffer;
+    let byRate = this.stretched.get(buffer);
+    if (byRate === undefined) {
+      byRate = new Map();
+      this.stretched.set(buffer, byRate);
+    }
+    const known = byRate.get(rate);
+    if (known !== undefined) return known;
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+    const out = stretchChannels(channels, buffer.sampleRate, rate);
+    const stretched = this.ctx.createBuffer(out.length, out[0]?.length ?? 0, buffer.sampleRate);
+    out.forEach((samples, channel) => {
+      stretched.getChannelData(channel).set(samples);
+    });
+    byRate.set(rate, stretched);
+    return stretched;
   }
 
   /** Silence the line's source; the line itself stays where it was put. */

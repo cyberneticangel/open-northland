@@ -239,11 +239,25 @@ export function actorsOf(snapshot: WorldSnapshot): readonly SnapshotEntity[] {
   return entitiesOfIds(snapshot.entities, actorIdsOf(snapshot));
 }
 
-const TRAINING_OCCUPANCY = countedBy(trainingHouseOf, 'training occupancy', { values: ['TrainingOrder'] });
+const TRAINING_OCCUPANCY = countedBy(
+  (e) => (trainingSeated(e) ? trainingHouseOf(e) : undefined),
+  'training occupancy',
+  { values: ['TrainingOrder'] },
+);
+const TRAINING_QUEUE = countedBy(
+  (e) => (trainingSeated(e) ? undefined : trainingHouseOf(e)),
+  'training queue',
+  { values: ['TrainingOrder'] },
+);
 
-/** Includes reserved places for learners still walking to their school or barracks. */
+/** The seats taken at a school or barracks, learners still walking to it included. */
 export function trainingOccupancyOf(snapshot: WorldSnapshot, house: number): number {
   return indexesOf(snapshot).get(TRAINING_OCCUPANCY).get(house) ?? 0;
+}
+
+/** The learners sent to a school or barracks that wait for a free seat. */
+export function trainingQueueOf(snapshot: WorldSnapshot, house: number): number {
+  return indexesOf(snapshot).get(TRAINING_QUEUE).get(house) ?? 0;
 }
 
 const NO_ENTITIES: readonly SnapshotEntity[] = [];
@@ -356,6 +370,12 @@ export function buildingTypeOf(e: SnapshotEntity): number | undefined {
 export function buildingTribeOf(e: SnapshotEntity): number | undefined {
   const b = e.components.Building as { tribe?: unknown } | undefined;
   return num(b?.tribe);
+}
+
+/** The map-placed house record a building stands on the footprint of, when it has one of its own. */
+export function buildingRecordOf(e: SnapshotEntity): string | undefined {
+  const record = (e.components.Building as { record?: unknown } | undefined)?.record;
+  return typeof record === 'string' ? record : undefined;
 }
 
 /** Fixed-point construction progress, where `ONE` is finished. */
@@ -493,6 +513,11 @@ export function isJobLocked(e: SnapshotEntity): boolean {
 export function trainingHouseOf(e: SnapshotEntity): number | undefined {
   const order = e.components.TrainingOrder as { house?: unknown } | undefined;
   return num(order?.house);
+}
+
+/** Whether a settler sent to train holds a seat there; false while it waits in the house's queue. */
+export function trainingSeated(e: SnapshotEntity): boolean {
+  return (e.components.TrainingOrder as { seated?: unknown } | undefined)?.seated === true;
 }
 
 /** The barracks the assistant booked a recruit's drill at; undefined for a settler it did not send. */

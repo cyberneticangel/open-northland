@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { LandscapeGfx } from '@open-northland/data';
+import type { BobSequenceSet, LandscapeGfx } from '@open-northland/data';
 import {
   type BobAtlas,
   type PackBobAtlasOptions,
@@ -23,6 +23,7 @@ import {
 import { isCharacterBmd } from '../player-colors.js';
 import type { SourceAssetIndex } from '../source-files.js';
 import { bindingKey, type GraphicsBindingSet } from './bindings.js';
+import { carriedLoadBandEdit } from './load-band.js';
 
 /** One emitted bob atlas: the binding it came from, its served stem and its sheet's path. */
 export interface BmdConversion {
@@ -70,12 +71,16 @@ interface ResolvedBinding {
  * on the `.bmd` path alone, not `(bmd, palette)`, because the build-time bytes live in the bob geometry
  * the recolours share; only the bobs a landscape record draws (`coverageBobs`) keep their coverage.
  * Required with no default, since an accidentally-empty set silently ghosts every building.
+ *
+ * `sequenceSets` (the IR's `bobSequences`) pair a woman's carry walks with her plain walk for
+ * {@link carriedLoadBandEdit}.
  */
 export async function convertBmdTree(
   graphics: GraphicsBindingSet,
   atlases: BobAtlasCatalog,
   tree: SourceAssetIndex,
   domPictures: ReadonlySet<string>,
+  sequenceSets: readonly BobSequenceSet[],
 ): Promise<BmdConversion[]> {
   const { bindings, palettes, buildTimeBmds, coverageBobs } = graphics;
   assertDistinctBobBasenames(bindings.map((b) => b.bmd).filter((ref) => tree.has(ref)));
@@ -124,10 +129,6 @@ export async function convertBmdTree(
     const bmdSource = tree.get(bmd);
     if (bmdSource === undefined) continue;
     const coverage = coverageBobs.get(bmd);
-    const options: PackBobAtlasOptions = {
-      alpha: buildTimeBmds.has(bmd) ? 'build-time' : 'per-pixel',
-      ...(coverage === undefined ? {} : { coverageBobs: coverage }),
-    };
     const stems = group.map((binding) => {
       const slug = paletteSlug(binding.paletteName);
       return { ...binding, slug, inColour: domPictures.has(bobAtlasStem(bmdSource.rel, slug)) };
@@ -135,9 +136,21 @@ export async function convertBmdTree(
     const sharing = stems.filter((stem) => !stem.inColour).length;
     const shared = sharing > 1 || (sharing === 1 && isCharacterBmd(bmd));
     let decoded: Bmd;
-    let indexed: BobAtlas | undefined;
     try {
       decoded = decodeBmd(await readFile(bmdSource.path));
+    } catch (err) {
+      console.warn(`[pipeline] skipped ${bmd}: ${errorMessage(err)}`);
+      continue;
+    }
+    // Outside the per-binding guard: a sheet that no longer pairs its carry walks fails the run.
+    const editFrame = carriedLoadBandEdit(bmd, decoded, sequenceSets);
+    const options: PackBobAtlasOptions = {
+      alpha: buildTimeBmds.has(bmd) ? 'build-time' : 'per-pixel',
+      ...(coverage === undefined ? {} : { coverageBobs: coverage }),
+      ...(editFrame === undefined ? {} : { editFrame }),
+    };
+    let indexed: BobAtlas | undefined;
+    try {
       if (shared) indexed = packIndexedBobAtlas(decoded, options);
     } catch (err) {
       console.warn(`[pipeline] skipped ${bmd}: ${errorMessage(err)}`);

@@ -21,7 +21,7 @@ export {
   type SeatEnvelope,
   setupCommand,
 } from './envelope.js';
-export type { PlaceBuildingCommand } from './placement.js';
+export type { PalisadeGroundWaiver, PlaceBuildingCommand } from './placement.js';
 export type { CreateVehicleCommand, SettlerEquipment, SettlerEquipmentSlot } from './spawn.js';
 export {
   type GroupActions,

@@ -1,6 +1,8 @@
 import type { ContentSet, JobType } from '@open-northland/data';
+import { Settler } from '../../components/index.js';
 import { isCarrierJobId, isFighterRole, isTraderJobId, jobRoleOfId } from '../../core/content-index/jobs.js';
 import { contentIndex } from '../../core/content-index.js';
+import type { Entity, World } from '../../ecs/world.js';
 import { atomicSpendsReligion } from './religion.js';
 
 /**
@@ -105,6 +107,11 @@ export function isCarrierJobRow(job: Pick<JobType, 'id'>): boolean {
 export function isTraderJob(content: ContentSet, jobType: number | null): boolean {
   const job = jobType === null ? undefined : contentIndex(content).jobs.get(jobType);
   return job !== undefined && isTraderJobId(job.id);
+}
+
+/** A settler of the land trader's trade. */
+export function isTrader(world: World, content: ContentSet, settler: Entity): boolean {
+  return isTraderJob(content, world.tryGet(settler, Settler)?.jobType ?? null);
 }
 
 /** The non-combat explorer that erects signposts. */

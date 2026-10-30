@@ -96,12 +96,12 @@ describe('wall demolish brush', () => {
     expect(cues).toEqual(['fail']);
   });
 
-  it('tints the wall under the pointer red until it is ordered down, and nothing once dropped', () => {
+  it('marks the wall under the pointer doomed until it is ordered down, and nothing once dropped', () => {
     const { brush, shown } = mount();
     expect(brush.highlight({ x: 110, y: 0 })).toBeNull();
     brush.enter();
     const first = brush.highlight({ x: 110, y: 0 });
-    expect(first).toEqual([{ id: 1, ok: false }]);
+    expect(first).toEqual([{ id: 1, tone: 'doomed' }]);
     expect(brush.highlight({ x: 115, y: 0 })).toBe(first);
     expect(brush.highlight({ x: 10, y: 0 })).toEqual([]);
     brush.handleClick(110, 0);

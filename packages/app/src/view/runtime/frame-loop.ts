@@ -347,6 +347,7 @@ export function startFrameLoop(loop: FrameLoopDeps): RafLoop {
     const fogView = loop.fogView();
     fogGates.setFrame(fogView); // before anything below consults the predicates
     renderer.updateFog(fogView);
+    deps.onFogSight?.();
     // Presentation only: a fight in the fog must neither splatter blood nor ring audible clangs. Event
     // `at` coords are half-cell nodes. The entry's `onEvents` above keeps the unfiltered list, since a
     // fogged tree felled by an enemy must still hand over its static sprite.
@@ -372,6 +373,13 @@ export function startFrameLoop(loop: FrameLoopDeps): RafLoop {
       roadActive: toolPanel.controller.roadActive(),
       signpostActive: controls.signpostPlacementActive(),
       dockVehicle: controls.dockPickVehicle(),
+      // A pointer over the HUD aims no dock click.
+      berthsAt: (tile) =>
+        pointer !== null && controls.claimsPointer(pointer.clientX, pointer.clientY)
+          ? []
+          : controls
+              .berthPreview(tile)
+              .map((berth) => ({ col: berth.col, row: berth.row, hull: berth.dock })),
       flagActive: controls.workFlagPlacementActive(),
       buildingOverlay,
       signpostOverlay,
@@ -415,10 +423,12 @@ export function startFrameLoop(loop: FrameLoopDeps): RafLoop {
     renderer.setPortraitInsets(controls.portraits());
     renderer.updateConstructionPlots(visiblePlots(fogView));
     geometryDebug.update(snap);
-    // The gate tool tints the walls it can cut into, the wall brush the wall it would tear down; otherwise
-    // an assignment tints its candidates.
-    renderer.setBuildingHighlight(
-      toolPanel.controller.gateSites()?.highlight ?? wallDemolish ?? controls.assignHighlight(),
+    // The gate tool marks the walls it can cut into, the wall brush the wall it would tear down; otherwise
+    // an armed pick marks its targets, and the one it aims at stands for the hovered target.
+    const pickMarks = controls.targetMarks();
+    renderer.setTargetMarks(toolPanel.controller.gateSites()?.highlight ?? wallDemolish ?? pickMarks);
+    const aimed = controls.aimTarget(
+      pointer !== null && !controls.claimsPointer(pointer.clientX, pointer.clientY) ? pointer : null,
     );
     stage = 'render';
     const constructionSigns = constructionSignsFor(snap);
@@ -457,9 +467,10 @@ export function startFrameLoop(loop: FrameLoopDeps): RafLoop {
         camera: drawnCamera,
         tick: snap.tick,
         selection: controls.selectedIds(),
-        // The pick the worldHover.update below made against the freshly drawn list: the hovered-target
-        // outline trails the cursor's read by one frame, like the card does its rest.
-        hovered: worldHover.hovered() ?? undefined,
+        // An armed pick's aim at this frame's pointer, else the pick the worldHover.update below made
+        // against the freshly drawn list: that hovered-target outline trails the cursor's read by one
+        // frame, like the card does its rest.
+        hovered: (pickMarks !== null ? aimed : worldHover.hovered()) ?? undefined,
         selectionTime: nowMs / 1000,
         alpha: renderAlpha,
         doorBadges,

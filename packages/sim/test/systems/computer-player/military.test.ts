@@ -307,6 +307,8 @@ describe('military module - the muster', () => {
     sim.world.add(drilling, TrainingOrder, {
       house: buildingOfType(sim, BARRACKS_TYPE, SEAT),
       drillTicksLeft: 100,
+      enrolled: 0,
+      seated: true,
     });
 
     expect(run(sim)).toEqual([]);
@@ -626,7 +628,7 @@ describe('military module - the campaign', () => {
 
     // A drill sits him out for a decision: four at the door, five in the army. Retiring the plan here would
     // hand the next decision a fresh draw, and an eager one marches the band at the minimum.
-    sim.world.add(errand, TrainingOrder, { house: barracks, drillTicksLeft: 100 });
+    sim.world.add(errand, TrainingOrder, { house: barracks, drillTicksLeft: 100, enrolled: 0, seated: true });
     expect(run(sim, EAGER_SEED)).toEqual([]);
     expect(sim.world.has(barracks, MusterPlan)).toBe(true);
     sim.world.remove(errand, TrainingOrder);
@@ -669,6 +671,8 @@ describe('military module - the campaign', () => {
     sim.world.add(drilling, TrainingOrder, {
       house: buildingOfType(sim, BARRACKS_TYPE, SEAT),
       drillTicksLeft: 100,
+      enrolled: 0,
+      seated: true,
     });
 
     const commands = run(sim);

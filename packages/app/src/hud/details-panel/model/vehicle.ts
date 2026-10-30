@@ -129,7 +129,7 @@ export interface VehicleHoldModel {
   readonly rows: readonly VehicleCargoRow[];
   /** Everything the type may carry, in its list order. */
   readonly goods: readonly VehicleCargoGood[];
-  /** A trader rides it: the route writes the wanted amounts, so the hold is read-only. */
+  /** A trader rides or pulls it: the route writes the wanted amounts, so the hold is read-only. */
   readonly routed: boolean;
   /** Someone works the hold: the commander, a carrier in any seat (`hasCargoHand`), or the carrier
    *  pulling it. */
@@ -138,18 +138,19 @@ export interface VehicleHoldModel {
   readonly hauled: boolean;
 }
 
-/** Where a hauling cart is with its carrier: in its hands off the map, set down for a lift or a break
- *  and taken up again after, or still standing where the order found it while the carrier walks over. */
+/** Where a hauling cart is with its puller: in its hands off the map, set down for a lift, a stop or a
+ *  break and taken up again after, or still standing where the order found it while the puller walks
+ *  over. */
 export type HaulingCartHold = 'pulled' | 'parked' | 'fetched';
 
-/** The posted carrier whose hauling cart this is (`Vehicle.hauler`, `HaulingCart` on the carrier). */
+/** The carrier or trader whose hauling cart this is (`Vehicle.hauler`, `HaulingCart` on the puller). */
 export interface VehicleHaulerModel {
   readonly entity: number;
   readonly name: string;
   readonly hold: HaulingCartHold;
 }
 
-/** The status words naming the carrier, with `{porter}` where its name goes. */
+/** The status words naming the puller, with `{porter}` where its name goes. */
 export function haulerStatusWords(hold: HaulingCartHold): string {
   const copy = messages().hud.vehiclePanel.status;
   switch (hold) {
@@ -262,7 +263,7 @@ interface StatusInputs {
   readonly vehicleClass: VehicleClass;
   readonly task: VehicleTask;
   readonly carrier: { readonly id: number; readonly label: string } | null;
-  /** The carrier whose cart this is and where the cart is with it. */
+  /** The carrier or trader whose cart this is and where the cart is with it. */
   readonly hauler: { readonly name: string; readonly hold: HaulingCartHold } | null;
   readonly commanded: boolean;
   readonly foreign: boolean;
@@ -314,7 +315,7 @@ interface OrderInputs {
 /**
  * The order buttons and why each would be refused: nobody drives an uncommanded vehicle, a carried one
  * only leaves its ship and only while the ship is moored, a cart waiting for its draught animal does not
- * move, and a hauling cart goes where its carrier takes it. A ship moors where a land vehicle boards a
+ * move, and a hauling cart goes where its puller takes it. A ship moors where a land vehicle boards a
  * ship; a siege engine adds the attacks.
  */
 export function vehicleOrders(inputs: OrderInputs): {
@@ -386,7 +387,7 @@ interface CrewInputs {
   readonly vehicleClass: VehicleClass;
   readonly foreign: boolean;
   readonly carried: boolean;
-  /** The carrier whose cart this is, which refuses crew meanwhile; null for any other vehicle. */
+  /** The carrier or trader whose cart this is, which refuses crew meanwhile; null for any other vehicle. */
   readonly hauler: VehicleHaulerModel | null;
   /** A ship lying at sea: nobody steps in or out. */
   readonly atSea: boolean;
@@ -404,7 +405,7 @@ function crewModel(
   const passengers = vehicleSeatsOf(v.passengers);
   const lead = passengers.find((seat) => seat.entity === commanderId);
   const hauled = inputs.hauler !== null;
-  // The carrier who holds an own cart stands in the commander's seat without taking a passenger slot;
+  // The puller who holds an own cart stands in the commander's seat without taking a passenger slot;
   // he never sits in it, so he counts as at his post rather than walking to the door.
   const commander =
     lead !== undefined
@@ -501,20 +502,24 @@ function holdModel(
 /**
  * Original behavior: every vehicle but a ship shows the Trade tab of the first passenger, aboard or
  * walking to the door, that holds the trader job, so the route can be edited with only the cart selected.
- * The trader read seam is the job check: it answers for traders alone.
+ * Here the trader pulling the cart as its hauling cart answers too, after the passengers. The trader
+ * read seam is the job check: it answers for traders alone.
  */
 function vehicleTrade(
   ctx: UnitPanelModelContext,
   snapshot: WorldSnapshot,
   vehicleClass: VehicleClass,
   passengers: readonly VehicleSeatSnapshot[],
+  hauler: number | undefined,
 ): VehicleTradeModel | null {
   if (vehicleClass === 'ship') return null;
-  for (const seat of passengers) {
-    const trade = tradePanelModel(ctx, snapshot, seat.entity);
-    const trader = entityById(snapshot, seat.entity);
+  const candidates = passengers.map((seat) => seat.entity);
+  if (hauler !== undefined) candidates.push(hauler);
+  for (const id of candidates) {
+    const trade = tradePanelModel(ctx, snapshot, id);
+    const trader = entityById(snapshot, id);
     if (trade !== null && trader !== undefined) {
-      return { entityId: seat.entity, name: settlerName(ctx, trader), trade };
+      return { entityId: id, name: settlerName(ctx, trader), trade };
     }
   }
   return null;
@@ -589,7 +594,7 @@ export function vehiclePanelModel(
   const hauled = hauler !== null;
   const ownLines = readStockLines(ent.components.VehicleStock);
   const lines = hauling?.model.hold === 'pulled' ? withCarriedLoad(ownLines, hauling.carrier) : ownLines;
-  const trade = foreign ? null : vehicleTrade(ctx, snapshot, vehicleClass, passengers);
+  const trade = foreign ? null : vehicleTrade(ctx, snapshot, vehicleClass, passengers, hauling?.carrier.id);
   const hold =
     foreign || type === undefined || type.stockSlots === 0
       ? null

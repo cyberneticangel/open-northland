@@ -16,6 +16,8 @@ export const deNetwork = {
   source: 'Spielgrundlage',
   server: 'Serveradresse',
   nick: 'Spitzname',
+  flag: 'Flagge',
+  noFlag: 'Keine Flagge',
   connect: 'Verbinden',
   disconnect: 'Verbindung trennen',
   connecting: 'Verbindung wird hergestellt…',

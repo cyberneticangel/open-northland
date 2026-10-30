@@ -134,8 +134,8 @@ of the hold, a tired one sleeps, a lonely one chats with a fellow passenger, eac
 it would play on land pays in, rest at the open-air half, at most once per clip length. Piety waits for
 land (owner's choice; whether the original serves a rider aboard is unconfirmed). `attachToVehicle` walks the rider to the door through the
 unconfined walk order and ends any chat it was in; the rider rung of the drive ladder
-(`systems/vehicles/boarding.ts`) steps a passenger in as soon as it reaches the door, while a carrier
-or trader, the crew that works its vehicle from outside, waits by the door until the vehicle asks
+(`systems/vehicles/boarding.ts`) steps a passenger in as soon as it reaches the door, while a carrier,
+the crew that works its vehicle from outside, waits by the door until the vehicle asks
 (deviation, owner's choice: the original keeps every rider outside until asked). A rider on a neighbour of a
 door another settler holds boards from there (approximation: the original's humans stand through each
 other, a collider here cannot). The boarding drive judges a rider's continent only while its position
@@ -163,11 +163,10 @@ commander mid-drive stops after the leg under way, its march and target lapsing 
 its own drive into a ship, which the load order runs without a crew; a ship sails on, since nobody could
 board one at sea. Deviation (owner's choice): a walk or attack-position order given to a
 vehicle's commander, aboard or standing beside it, is handed to the vehicle as its goto
-(`systems/vehicles/commander.ts`), so a trader ordered somewhere takes the cart and its cargo along;
+(`systems/vehicles/commander.ts`), so a commander ordered somewhere takes the vehicle and its cargo along;
 the vehicle's refusals apply and a refused point leaves the commander seated. The original detaches
 the commander and walks him off alone, leaving the cart standing. A commander outside drops its own
-walk to board at once, while one held by an atomic finishes it first (a trader completes the unit it
-is loading). A moored ship is the exception: a selected crew member aboard, including its commander,
+walk to board at once, while one held by an atomic finishes it first. A moored ship is the exception: a selected crew member aboard, including its commander,
 walks ashore to the ordered destination. A selected carried vehicle likewise leaves a moored ship
 and drives to the destination with its own crew aboard; at sea it stays inside. Detach and unload
 people also leave a vehicle behind.
@@ -218,37 +217,39 @@ and `addGoodsToVehicle` the script result. The seat orders are `setVehicleWanted
 is not mirrored, *open*). The cargo rung (`systems/settlers/drives/economy/vehicle-cargo.ts`) runs
 above the rider rung for a cargo hand and its booking rides on the hand as `CargoRun`, given back when
 it detaches or dies. Owner's choice: a cargo hand is a seated carrier or the vehicle's commander of any
-trade, so a trader's cart and a ship's commander serve the wanted amounts without a carrier; the
+trade, so a cart's and a ship's commander serve the wanted amounts without a carrier; the
 wanted-follows-actual rule and message 0x3a read the same widened test (`isCargoHand`). A hand riding
 inside a cart that stands still or a moored ship steps out onto the door while the hold has a trip for
 it (`cargoHandDisembarkSystem`). A commander of another trade than the carrier's, with no carrier
 seated, lowers a request no source can fill to what is booked instead of waiting by the door. No hand
-takes food out of a home, the trader's rule (owner's choice). The alias goes through the shared
+takes food out of a home, the trader's rule that every fetch keeps (owner's choice). The alias goes through the shared
 dish-to-edible seam, which also maps meat and sausage (approximation: the original's table lists
 neither). Further approximations: the nearest source wins where the original draws at random, ties by
-good id, every source on the door's continent as the original's flood implies; the guide network is
+hold line, every source on the door's continent as the original's flood implies; the guide network is
 the carrier's signpost confinement; a lifted-out unit goes into the nearest own warehouse or
 headquarters with room within radius 40 of the door, never onto a workplace's shelf, and onto the
-ground where the hand stands otherwise (owner's choice); a house source must hold the hold's canonical good, never a dish it
-would alias to it; a cargo hand whose walk to a source or store fails takes the planner's stranded
-recovery and keeps its seat, where only a failed walk to the door drops it. The trader's own write is
+ground where the hand stands otherwise (owner's choice); a source of an edible line may hold a dish
+that becomes it, so a bakery's bread fills `food_simple` (owner's choice); a cargo hand whose walk to
+a source or store fails takes the planner's stranded recovery and keeps its seat, where only a failed
+walk to the door drops it. The trader's own write is
 `tradeVehicleStock`: booked and stowed in one step, and the wanted amount set to the actual one
 whatever crew is seated (approximation: the original's rule holds only without a carrier; here the
-trader is its cart's own cargo hand, and it finds nothing of its trade cargo to fetch or flush).
+trader is its cart's own hand, so no cargo hand fetches or flushes its trade cargo).
 
 ### Hauling cart (Open Northland addition)
 
 Owner's choice, nothing in the original: a carrier posted at a store or workshop (`JobAssignment`
-with the carrier trade) that the attach order gives a free handcart or harnessed ox cart keeps its
-post and takes the cart as its *hauling cart* instead of crewing it (`HaulingCart` in
+with the carrier trade), or a trader, that the attach order gives a free handcart or harnessed ox cart
+keeps its post or route and takes the cart as its *hauling cart* instead of crewing it (`HaulingCart` in
 `components/vehicle.ts`, `systems/vehicles/hauling-cart.ts`, the planner's `planHaulingCart` and
 `planCartTopUp` rungs). The gate is the attach gate's: own cart, trade in `logicpassenger`, nobody
-pulling, commanding, riding or carrying it, door on the carrier's continent; the "Assign Vehicle"
-pick lights such carts and the cart's `hauler` field refuses crew meanwhile. The carrier walks to the
-door and takes the cart there: it leaves the map (no `Position`) and the carrier draws as the cart's
+pulling, commanding, riding or carrying it, door on the puller's continent; the "Assign Vehicle"
+pick lights such carts and the cart's `hauler` field refuses crew meanwhile. The puller walks to the
+door and takes the cart there: it leaves the map (no `Position`) and the puller draws as the cart's
 driving figure, the figure a commander-driven cart shows (`render/.../cart-drive.ts`); the cart's
-panel then shows that figure, the load, the carrier in the commander's seat and a link to it, and
-centres on the carrier.
+panel then shows that figure, the load, the puller in the commander's seat and a link to it, and
+centres on the puller. A trader with a full route seated in a cart it commands steps out and takes it
+up the same way (`systems/trade/take-up.ts`).
 
 The cart is a work tool, not a harness:
 
@@ -258,12 +259,14 @@ The cart is a work tool, not a harness:
   slot's whole shortfall up to that and no more (`HaulingLift.units`). In hand, the load rides as the
   carrier's `Carrying`, one good at a time.
 - **Lifts as the trader's.** At a heap, a shelf or a store's door the carrier stands the cart down on
-  the nearest open land beside it (`beginCartLift`, `HaulingCart.lift`) and moves the units one clip
-  each, the pick-up or pile-up clip of its trade (`haulLoad` and `haulUnload` atomics, through the
+  the nearest open land beside it (`beginCartLift`, `HaulingCart.lift`) and moves the units one lift
+  each, the pick-up or pile-up clip of its trade stretched by cart kind (`cartLiftTicks`: 60% of the
+  clip for a handcart, 130% for an ox cart, a named addition so the handcart wins the short haul and
+  the ox cart the long one; `haulLoad` and `haulUnload` atomics, through the
   same pick-up and pile-up rules as on foot: claims, the dish alias, storage minimums, the crockery
   bonus), then walks back to the cart's door and takes it up, the hold's load into its hands. The cart
-  draws as itself meanwhile and the carrier as a man lifting; thirty units take thirty clips, the
-  trader's pace. A break during a lift ends it (the cart is parked where it stands). At a well or a
+  draws as itself meanwhile and the carrier as a man lifting; thirty units take thirty lifts, the
+  trader's pace, whose cart lifts the same way. A break during a lift ends it (the cart is parked where it stands). At a well or a
   hive, whose shelf holds a unit or two and refills one a game second, a load waits out each refill
   beside the cart until its units are lifted (`startRefillWait`; named addition).
 - **Drag.** Each step of a carrier pulling a laden cart takes the cart's speed loss longer (the
@@ -273,15 +276,17 @@ The cart is a work tool, not a harness:
   or the cart's set-down parts the carrier from it.
 - **One yard a trip.** A store's porter whose cart has room after a lift fills it from the nearest
   heap or finished output of the same good within `CART_TOP_UP_REACH` (12 nodes) of where it stands,
-  and only then goes home; nothing that close, or no store left that takes the good, means it delivers
-  what it has rather than crossing the village for a second heap (approximation: reach from the
-  porter, so a yard clears heap by heap).
+  and only then goes home; nothing that close, or its own store no longer taking the good, means it
+  delivers what it has rather than crossing the village for a second heap (approximation: reach from
+  the porter, so a yard clears heap by heap). Like any porter it lifts only goods its own store takes,
+  never a load for another store.
 - **Breaks park it.** Whatever takes the carrier off its trade (a meal, a bed, a prayer, a chat, the
   alarm, a flight from a threat, a marriage, an equipment errand) parks the cart on the nearest open
   land where the carrier stands, the load stowed in the hold (`parkHaulingCart`, `tradeVehicleStock`,
   so a dish in hand is booked under its edible alias like any cart cargo), and the carrier keeps the
   cart as its own: back on its trade it walks to the cart, takes it up and lifts the parked load back
-  into its hands (`takeHaulingCart`). A parked cart refuses crew and other carriers the same as a
+  into its hands (`takeHaulingCart`). A trader's load stays in the hold, and the trader stands the cart
+  by each stop's door while it works the stop, taking it up again when it moves on. A parked cart refuses crew and other carriers the same as a
   taken one.
 - **Set down for good** on the detach order, when the post ends (`unassignWorker`, crewing a vehicle,
   a hand-over to another player, the workplace razed) or the trade changes, on the orders that take
@@ -306,10 +311,10 @@ way signposts extend a settler's. Humans inside the footprint are shoved away on
 Per node the move period is `max(3, (g*2 + 4) << catapult)` ticks with `g` the 4-bit ground speed
 class stored beside the size class in the node record, which is the map's `lmpr` roughness, re-read at
 every node reached, plus a laden cart's drag (Open Northland addition, owner's feature, `drag.ts`):
-a handcart loses up to half its speed and a cart an animal draws (the harnessed form of a type
-with `draggingAnimalTribe`) up to a quarter, in proportion to how full the hold is (whole percent,
-the period lengthened by `loss / (100 - loss)` and rounded to whole ticks), whoever moves it, a
-trader, a commander or the carrier pulling it; an empty cart, a ship and the catapult lose nothing; each tick adds `(period + 9999) / period`
+a handcart loses up to 60% of its speed and a cart an animal draws (the harnessed form of a type
+with `draggingAnimalTribe`) up to 15%, in proportion to how full the hold is (whole percent,
+the period lengthened by `loss / (100 - loss)` and rounded to whole ticks), whoever moves it,
+a commander or the carrier or trader pulling it; an empty cart, a ship and the catapult lose nothing; each tick adds `(period + 9999) / period`
 to a per-node counter that completes at 10000, and the map position moves at 5000. The catapult is
 the only vehicle with the doubling; a turn costs 2 ticks per hexagon direction. Stop (task 5
 "interrupted") and returns to the current node.
@@ -397,7 +402,10 @@ distance, not the door ring alone (approximation). `dockVehicle` (`systems/vehic
 point under the `docks` task while the crew boards, the twin of the goto's `waitsForHuman` hold; a
 ring node is open when the ship's walk-block admits it, which adds other vehicles' cells to the size
 class test, and lies in a part of the sea the ship can sail into, however far (the deviation of
-"Movement"); a ship already on a ring node moors in place and drops any drive under way (approximation: the original ends the order with nothing set); no ring node raises `vehicleNoPath` whether or not the commander is inside; the
+"Movement"); an order may name one ring node (`dock`), tried before the ring order, which the
+interface does for every ship of a fleet docked in one click so the hulls lie apart, and a docking
+ship whose route is cut while a vehicle under way crosses its dock node waits for it instead of
+giving up (deviations for fleets; the original docks one ship per order); a ship already on a ring node moors in place and drops any drive under way (approximation: the original ends the order with nothing set); no ring node raises `vehicleNoPath` whether or not the commander is inside; the
 ship moors on the arrival tick with a `vehicleDocked` event (approximation: the tribe binds atomic 84
 to a 12-tick dock clip, which is not played); a goto clears the pending mooring point; any drive that
 was no dock and ends with the commander not inside moors the ship on the first open land node of its
@@ -405,7 +413,11 @@ door ring, with the same event (`moorByShore`, `movement.ts`), and with the comm
 at sea. Unload people uses the ordinary boarding landing (`landingOf`, `crew.ts`). Deviation
 (owner's choice): a ship must be moored before its crew can unload, even beside land, so they can
 board it again. The crew panel disables unloading while unmoored; rejected unload orders preserve
-an ongoing dock drive. A dock
+an ongoing dock drive. An unload may queue behind the current order like a drive, so a dock followed by
+a queued unload lands the crew once the ship moors; the dock pick's Ctrl/Cmd click and a Ctrl/Cmd right-click of selected ships send that pair
+(addition: the original lands a crew only by its own order). Such an unload names the dock's shore point
+(`mooring`) and lands nobody from a ship moored anywhere else, so a dock refused or replaced on the way
+leaves the crew aboard. A dock
 walk that loses its route drops the mooring point behind the `vehicleNoPath` note. A sunk ship's
 crew aboard is reaped like any death, so the owner's casualty tallies count it. Deviation (owner's
 choice): a rider still walking to a ship lost at sea, and a cart still driving to it, stand on land
@@ -561,11 +573,11 @@ only, since the sim drops an unarmed one's attack order silently; a ship's right
 the mooring probe accepts docks there, elsewhere it is a goto the sim refuses, the mooring order
 being explicit; a group's right-click (an addition) sends its armed vehicles at the enemy under the
 cursor and drives the rest to spaced slots there, never boarding or docking; the ring's "Assign
-Vehicle" is offered to every grown settler, its pick lights the settler's own vehicles green where
-`canAttachToVehicle` (job list, free seat, a door on the settler's continent) takes it and red
-otherwise, and a red vehicle drops the click; the selected settlers' right-click on an own vehicle
-attaches each one that rule admits (approximation, owner's choice: the original assigns through the
-pick only); a commander selected while aboard (through its well) stands for its vehicle, so a
+Vehicle" is offered to every grown settler, its pick outlines the settler's own vehicles
+`canAttachToVehicle` (job list, free seat, a door on the settler's continent) takes, leaves the
+others plain with a refusing pointer over them, and a refused vehicle drops the click; the selected
+settlers' right-click on an own vehicle attaches each one that rule admits (approximation, owner's
+choice: the original assigns through the pick only); a commander selected while aboard (through its well) stands for its vehicle, so a
 right-click on the ground drives the vehicle whether the commander is aboard or beside it, and the
 ring's "Remove Vehicle" (`misclogic` 32) is the detach order for any rider. Message id 0x35 is the
 goto refusal above.
@@ -597,8 +609,8 @@ Open Northland (`packages/app/src/game/world/authored-placements.ts`, `systems/s
 a `setvehicle` row becomes a `createVehicle` before any human, its cargo through `stockVehicleGoods`
 (booked, stowed and wanted, as above); the name join takes the lowest type id sharing the name. A
 crewman's `boardVehicleAt` rides on its `spawnSettler` as `vehicle` and goes through `attachToVehicle`
-at the spawn, which also walks him to the door, where a passenger steps in and a carrier or trader
-waits for the vehicle's ask as under "Crew"; `inside` boards him at once through `boardRider`.
+at the spawn, which also walks him to the door, where a passenger steps in and a carrier waits for
+the vehicle's ask as under "Crew"; `inside` boards him at once through `boardRider`.
 
 Results: `SetVehicle` adds a vehicle for the player, tribe, type and id; with the captain flag set it
 also adds a human of the type's `logiccommander` job (`vehicletypes.ini`: 25 trader for the carts, 24

@@ -75,6 +75,32 @@ describe('startShellRun', () => {
     expect(startShellRun(runFile, dumpsRoot, clockAt(SECOND_START)).previous?.end).toBe('crash');
   });
 
+  it('tells a run that went to sleep and never woke from one that woke and then ended', () => {
+    const sleptAt = new Date(FIRST_START.getTime() + MINUTE_MS);
+    let clock = FIRST_START;
+    const slept = startShellRun(runFile, dumpsRoot, () => clock);
+    clock = sleptAt;
+    slept.suspended();
+    expect(startShellRun(runFile, dumpsRoot, clockAt(SECOND_START)).previous).toMatchObject({
+      end: 'asleep',
+      endedAt: sleptAt.toISOString(),
+    });
+
+    const woke = startShellRun(runFile, dumpsRoot, () => clock);
+    woke.suspended();
+    woke.resumed();
+    expect(startShellRun(runFile, dumpsRoot, clockAt(SECOND_START)).previous?.end).toBe('unknown');
+  });
+
+  it('takes a dump after a sleep notice for a crash', async () => {
+    let clock = FIRST_START;
+    const run = startShellRun(runFile, dumpsRoot, () => clock);
+    clock = new Date(FIRST_START.getTime() + MINUTE_MS);
+    run.suspended();
+    await dumpAt(clock.getTime() + MINUTE_MS);
+    expect(startShellRun(runFile, dumpsRoot, clockAt(SECOND_START)).previous?.end).toBe('crash');
+  });
+
   it("does not take a child process's dump for the shell's own crash", async () => {
     let clock = FIRST_START;
     const run = startShellRun(runFile, dumpsRoot, () => clock);

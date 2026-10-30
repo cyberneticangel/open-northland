@@ -1,10 +1,4 @@
-import {
-  ONE,
-  components as simComponents,
-  systems,
-  type WorkStatus,
-  type WorldSnapshot,
-} from '@open-northland/sim';
+import { ONE, systems, type WorkStatus, type WorldSnapshot } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
 import { JOB_CARRIER, JOB_CIVILIST, JOB_SOLDIER, JOB_WOMAN } from '../../../../src/catalog/jobs.js';
 import {
@@ -330,16 +324,6 @@ describe('note retirement', () => {
     // A note no pass looks at any more is forgotten, so its id starts over.
     retirement.endPass();
     expect(pass(true)).toBe(false);
-  });
-
-  it('ends a no-cart note once the trader rides or its route falls short', () => {
-    const fullRoute = Array.from({ length: simComponents.TRADE_ROUTE_HOUSES }, (_, i) => ({ house: i + 1 }));
-    const trader = (extra: Record<string, unknown>): WorldSnapshot =>
-      subjectWorld({ TradeRoute: { stops: fullRoute }, ...IDLE_STAND, ...extra });
-    const noCart = note(USER_MESSAGE_TYPE.noVehicleForWork);
-    expect(isNoteOver(noCart, trader({}))).toBe(false);
-    expect(isNoteOver(noCart, trader({ Rider: { vehicle: SETTLER + 1 } }))).toBe(true);
-    expect(isNoteOver(noCart, subjectWorld({ TradeRoute: { stops: [] }, ...IDLE_STAND }))).toBe(true);
   });
 
   it('keeps a vehicle site note while the workshop holds its refused search, and ends it after', () => {

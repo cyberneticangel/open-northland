@@ -42,6 +42,8 @@ export interface SaveLoadDeps {
   readonly sessionMetadata?: () => unknown;
   /** The client's view state for the header; absent or null, the save records none. */
   readonly viewState?: () => SavedView | null;
+  /** The client's presentation memory kept beside the sections; absent or null, the save records none. */
+  readonly presentation?: () => string | null;
   /** The running world's seed, which names its playthrough; null when the entry does not know it. */
   readonly worldSeed?: number | null;
   /** A small picture of the world for the save list; absent or null, the save lists without one. */
@@ -93,6 +95,7 @@ export function saveLoadSession(deps: SaveLoadDeps): SaveLoadSession {
       savedAt: Date.now(),
       ...(deps.sessionMetadata === undefined ? {} : { session: deps.sessionMetadata() }),
       ...(deps.viewState === undefined ? {} : { view: deps.viewState() }),
+      ...(deps.presentation === undefined ? {} : { presentation: deps.presentation() }),
       ...(deps.parent !== undefined ? { parent: deps.parent } : {}),
       ...(worldToken !== null ? { mapId: worldToken } : {}),
       ...(deps.entrySearch !== null ? { entry: deps.entrySearch } : {}),

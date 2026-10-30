@@ -513,3 +513,9 @@
 .network-room__observer > .network-room__move {
   margin-left: 0;
 }
+.network-room__seat-flag:empty {
+  display: none;
+}
+.network-room__seat-flag > .network-flag {
+  margin-inline-end: 0;
+}

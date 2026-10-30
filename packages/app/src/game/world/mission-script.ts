@@ -136,7 +136,9 @@ function resolveNames<T extends object>(op: T, joins: ContentJoins, dropped: Dro
 function resolveHouseName(name: string, op: object, joins: ContentJoins, dropped: DropName): MissionHouseRef {
   const level = 'level' in op && typeof op.level === 'number' ? op.level : 0;
   const hit = joins.buildingBob(name, level);
-  if (hit !== undefined) return { typeId: hit.typeId, tribe: hit.tribeId };
+  const record = hit?.graphics?.[0]?.editName;
+  if (hit !== undefined)
+    return { typeId: hit.typeId, tribe: hit.tribeId, ...(record !== undefined ? { record } : {}) };
   dropped(name);
   return UNRESOLVED_HOUSE;
 }

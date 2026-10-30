@@ -17,15 +17,8 @@ const OPEN_FLOOD_NODES = 60;
  * `docs/tickets/sim/map-placed-doors-sealed.md`; the list keeps any new one out.
  */
 const KNOWN_SEALED_DOORS = [
-  'mroczny_swiat home_level_02 tribe 3 door 472,95',
-  'mroczny_swiat work_pottery_02 tribe 1 door 487,73',
   'niezwykla_wyprawa work_brewery tribe 1 door 39,24',
   'wielka_inwazja work_well_00 tribe 4 door 325,189',
-  'wonder-campaign_03_02 work_bakery_00 tribe 4 door 329,183',
-  'wonder-campaign_03_03 home_level_00 tribe 4 door 243,143',
-  'wonder-campaign_03_03 work_bakery_00 tribe 4 door 243,143',
-  'wonder-campaign_03_03 work_bakery_00 tribe 4 door 346,105',
-  'wonder-campaign_03_04 work_bakery_00 tribe 4 door 69,323',
 ];
 
 /** Every placed building whose door floods fewer than {@link OPEN_FLOOD_NODES} nodes under the walk
@@ -38,7 +31,8 @@ function sealedDoors(sim: Simulation, mapId: string): string[] {
   for (const e of sim.world.query(Building, Position)) {
     const building = sim.world.get(e, Building);
     const type = sim.content.buildings.find((row) => row.typeId === building.buildingType);
-    const footprint = type === undefined ? undefined : buildingFootprintFor(type, building.tribe);
+    const footprint =
+      type === undefined ? undefined : buildingFootprintFor(type, building.tribe, building.record);
     if (type === undefined || footprint?.door === undefined || footprint.blocked.length === 0) continue;
     const p = sim.world.get(e, Position);
     const anchor = nodeOfPosition(p.x, p.y);

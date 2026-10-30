@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PLAYER_COLOR_COUNT, playerSignAtlasStem } from '../../../src/catalog/roster.js';
 import { servedAtlasStem, servedShadowStem } from '../../../src/content/ir/joins.js';
 import type { ContentIr, LandscapeGfxRow } from '../../../src/content/ir/rows.js';
 import {
@@ -193,6 +194,9 @@ describe('resolveGatheringRefs - the goods-manifest pile/trunk binding (every go
   });
 });
 
+/** Every colour's flag atlas: colour 0's records lend their frames to the colours without records. */
+const SIGN_STEMS = Array.from({ length: PLAYER_COLOR_COUNT }, (_, color) => playerSignAtlasStem(color));
+
 describe('gatheringAtlasStems - the families to load', () => {
   it('lists every non-default node stem, pile stem, and the flag stem (default excluded)', () => {
     const stems = gatheringAtlasStems(resolveGatheringRefs(GOODS, IR));
@@ -203,7 +207,7 @@ describe('gatheringAtlasStems - the families to load', () => {
         'ls_goods.goods_trunk',
         'ls_goods.goods_wood',
         'ls_goods.goods_stone',
-        'ls_temp.human_player01',
+        ...SIGN_STEMS,
       ]),
     );
   });
@@ -271,11 +275,16 @@ describe('buildStockpileBinding - per-good heap frames + the flag, drop-unloaded
       paletteName: 'human_player02',
     };
     const refs = resolveGatheringRefs([], { landscapeGfx: [FLAG, second] });
-    expect([...gatheringAtlasStems(refs)]).toEqual(['ls_temp.human_player01', 'ls_temp.human_player02']);
-    const binding = buildStockpileBinding(refs, new Set(['ls_temp.human_player02']));
+    expect([...gatheringAtlasStems(refs)]).toEqual(SIGN_STEMS);
+    const last = playerSignAtlasStem(PLAYER_COLOR_COUNT - 1);
+    const binding = buildStockpileBinding(refs, new Set(['ls_temp.human_player02', last]));
     expect(binding.flagsByPlayer?.[0]).toBeUndefined();
     expect(binding.flagsByPlayer?.[1]).toEqual(
       [33, 34, 35].map((bob) => ({ layer: 'ls_temp.human_player02', bob })),
+    );
+    // A colour without records draws colour 0's frames from its own toned atlas.
+    expect(binding.flagsByPlayer?.[PLAYER_COLOR_COUNT - 1]).toEqual(
+      [33, 34, 35].map((bob) => ({ layer: last, bob })),
     );
   });
 

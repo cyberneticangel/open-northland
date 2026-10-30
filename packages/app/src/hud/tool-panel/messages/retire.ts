@@ -25,7 +25,6 @@ import {
   idleNoteHeldByStall,
   idlesBetweenLoads,
   isStillDying,
-  lacksTradeCart,
   occupationOf,
   worksAtOwnFlag,
 } from './from-snapshot.js';
@@ -86,10 +85,7 @@ function isIdleNoteOver(
     const reason = idleReasons?.(e.id);
     return reason !== undefined && idleNoteType(reason) !== m.type;
   }
-  if (m.type === USER_MESSAGE_TYPE.workplaceNotFound) {
-    return workplaceOf(e) !== undefined || workFlagOf(e) !== undefined;
-  }
-  return !lacksTradeCart(e);
+  return workplaceOf(e) !== undefined || workFlagOf(e) !== undefined;
 }
 
 /** Someone aboard to work a vehicle's wanted amounts: its commander, whatever the trade, or a carrier in
@@ -192,7 +188,6 @@ export class NoteRetirement {
       case USER_MESSAGE_TYPE.nothingToDo:
       case USER_MESSAGE_TYPE.cannotFindGood:
       case USER_MESSAGE_TYPE.workplaceNotFound:
-      case USER_MESSAGE_TYPE.noVehicleForWork:
         return isIdleNoteOver(m, snapshot, e, this.stalls, this.idleReasons);
       case USER_MESSAGE_TYPE.productionStalled:
         return isStallOver(m, e, this.stalls);

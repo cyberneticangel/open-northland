@@ -4,7 +4,7 @@ import { type Fixed, fx, ONE } from '../../core/fixed.js';
 import type { Entity, World } from '../../ecs/world.js';
 import type { SystemContext } from '../context.js';
 import { isCarrierJob } from '../stores/index.js';
-import { fightExperienceTypeFor, generalTrackFor, SCOUT_EXPERIENCE_TYPE, trackFor } from './experience.js';
+import { fightExperienceTypeFor, generalTrackFor, trackFor } from './experience.js';
 
 /**
  * The original's experience curve. A track accrues its `experienceFactor` per completed work and the curve
@@ -131,15 +131,4 @@ export function withFightExperience(base: number, hits: number): number {
   return Math.trunc(
     (base * FIGHT_EXPERIENCE_DAMAGE_NUMERATOR) / (FIGHT_EXPERIENCE_DAMAGE_NUMERATOR - capped),
   );
-}
-
-/** Extra vision nodes a mastered scout sees, deliberately small next to the other trades' gains. Authored:
- *  a seasoned scout sees a bit farther, never twice as far. */
-export const SCOUT_VISION_BONUS_MAX_NODES = 6;
-
-/** The extra vision nodes `posts` erected signposts grant (the {@link SCOUT_EXPERIENCE_TYPE} bucket's raw
- *  XP, read as curve points): the curve scaled to {@link SCOUT_VISION_BONUS_MAX_NODES}, truncated to
- *  whole nodes. */
-export function scoutVisionBonusNodes(posts: number): number {
-  return fx.toInt(fx.mul(experienceBonus(posts), fx.fromInt(SCOUT_VISION_BONUS_MAX_NODES)));
 }

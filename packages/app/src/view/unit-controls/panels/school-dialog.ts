@@ -17,8 +17,8 @@ import {
   settlerJobType,
   settlerLearnedOf,
   settlerTribeOf,
-  trainingHouseOf,
   trainingOccupancyOf,
+  trainingQueueOf,
 } from '../../../game/snapshot/index.js';
 import { technologyLabel } from '../../../game/technology.js';
 import { createChoiceWindow } from '../../../hud/dom/choice-window.js';
@@ -262,6 +262,7 @@ export function openSchoolDialog(opts: SchoolDialogOptions): SchoolDialog | unde
     const type = content.buildings.find((row) => row.typeId === buildingTypeOf(building));
     const capacity = type?.schoolSize;
     const occupied = trainingOccupancyOf(state, house);
+    const queued = trainingQueueOf(state, house);
     choices = schoolChoices(
       groups.filter(
         (group) => status === undefined || status('job', group.jobType, tribeId, player)?.allowed === true,
@@ -272,19 +273,9 @@ export function openSchoolDialog(opts: SchoolDialogOptions): SchoolDialog | unde
     reasons = new Map();
     for (const group of choices)
       for (const course of group.courses) {
-        const remaining = learners.filter(
-          (learner) => learner !== undefined && !knowsCourse(learner, course),
-        );
-        const entering = remaining.filter(
-          (learner) => learner !== undefined && trainingHouseOf(learner) !== house,
-        ).length;
-        const reason = invalid
-          ? copy.schoolUnavailable
-          : remaining.length === 0
-            ? copy.schoolLearned
-            : capacity !== undefined && occupied + entering > capacity
-              ? copy.schoolFull
-              : undefined;
+        // A full school takes the rest into its queue, so seats never close a course.
+        const learning = learners.some((learner) => learner !== undefined && !knowsCourse(learner, course));
+        const reason = invalid ? copy.schoolUnavailable : learning ? undefined : copy.schoolLearned;
         reasons.set(courseKey(course), reason);
       }
     const selected = choices.find((group) => group.jobType === selectedJob);
@@ -325,9 +316,10 @@ export function openSchoolDialog(opts: SchoolDialogOptions): SchoolDialog | unde
       ],
       capacity === undefined
         ? ''
-        : formatMessage(copy.schoolPlaces, {
+        : formatMessage(queued > 0 ? copy.schoolPlacesQueued : copy.schoolPlaces, {
             occupied,
             capacity,
+            queued,
           }),
     );
   };

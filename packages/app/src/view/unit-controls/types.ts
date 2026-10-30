@@ -1,7 +1,6 @@
 import type { UiCue, VoiceCall } from '@open-northland/audio';
 import type { ContentSet, EquipCategory } from '@open-northland/data';
 import type {
-  BuildingHighlightItem,
   Camera,
   DoorBadge,
   DrawItem,
@@ -12,6 +11,7 @@ import type {
   RangeRing,
   SpriteSheet,
   TargetFlash,
+  TargetMark,
 } from '@open-northland/render';
 import type {
   Entity,
@@ -39,8 +39,11 @@ import type { FigureFrames } from '../../hud/figures/figure-frames.js';
 import type { KeyBindings } from '../../hud/keybindings.js';
 import type { ResidentRow } from '../../hud/tool-panel/residents/rows.js';
 import type { PresentationPack } from '../../presentation/pack.js';
+import type { Tile } from '../picking.js';
 import type { ControlGroupMembers } from './control-groups.js';
+import type { Berth, MooringRule } from './orders/berths.js';
 import type { OverviewPress } from './orders/overview.js';
+import type { TradeStances } from './orders/trade-refusal.js';
 
 /** The sim's technology read (`SessionHost.unlockStatus`) as its last answer; undefined until one
  *  landed. */
@@ -73,6 +76,15 @@ export interface UnitControlsOptions {
   readonly askCanChooseJob: (entity: number, jobType: number) => Promise<boolean>;
   /** Bumped when a `canChooseJob` answer changes, which redraws an open profession list. */
   readonly jobChoicesVersion: () => number;
+  /** The job-choice and attach rules' last answers, undefined while unanswered; the label beside the
+   *  cursor reads them, and names the action optimistically without them. */
+  readonly jobChoiceAnswer?: (entity: number, jobType: number) => boolean | undefined;
+  readonly tradeHouseAttachAnswer?: (trader: number, house: number) => boolean | undefined;
+  readonly vehicleAttachAnswer?: (settler: number, vehicle: number) => boolean | undefined;
+  /** Whether the label beside the cursor yields to a placement mode or a hidden HUD. */
+  readonly hintSuppressed?: () => boolean;
+  /** The player's cursor-hints setting the label starts with; absent, it shows. */
+  readonly cursorHints?: boolean;
   readonly app: Application;
   readonly canvas: HTMLCanvasElement;
   readonly uiscale?: number;
@@ -127,14 +139,27 @@ export interface UnitControlsOptions {
   /** The same rule asked as a click lands, which gates the pick's click and a trader's right-click on a
    *  house; absent, neither puts a house on a route. */
   readonly askAttachTradeHouse?: (trader: number, house: number) => Promise<boolean>;
+  /** The viewer's stance toward `owner` and `owner`'s back, which explain a refused foreign trade stop;
+   *  absent, the refusal is silent. */
+  readonly tradeStances?: (owner: number) => TradeStances;
+  /** Whether `house` stands and offers agreements, asked as a refusal lands; absent, it is silent. */
+  readonly offersTrade?: (house: number) => Promise<boolean>;
+  /** Raises the note that a route refused a house of `owner` over the stances; absent, it is silent. */
+  readonly noteTradeRefused?: (owner: number, at: HalfCellNode | null) => void;
   /** Fresh signpost placement verdict for a click; absent refuses the placement. */
   readonly askPlaceSignpostAt?: (col: number, row: number) => Promise<boolean>;
+  /** The signpost rule's last answer, undefined while unanswered, which the signpost pick's label reads. */
+  readonly signpostAnswerAt?: (col: number, row: number) => boolean | undefined;
+  /** Bumped when a signpost or mooring answer lands or changes, which re-reads the label. */
+  readonly placementAnswersVersion?: () => number;
   /** The sim's vehicle attach rule (`SessionHost.vehiclesAttachableBy`) as its last answer, which lights
    *  the "Assign Vehicle" pick's targets; absent, the pick lights nothing. */
   readonly canAttachToVehicle?: (settler: number, vehicle: number) => boolean;
   /** The attach and mooring rules asked as a click lands; absent, the sim alone refuses. */
   readonly askAttachToVehicle?: (settler: number, vehicle: number) => Promise<boolean>;
-  readonly askMoorAt?: (vehicle: number, x: number, y: number) => Promise<boolean>;
+  readonly askMooring?: (vehicle: number) => Promise<MooringRule | null>;
+  /** The mooring rule's last answer, which the berth preview under the cursor reads. */
+  readonly mooring?: (vehicle: number) => MooringRule | null | undefined;
   readonly boundsOf?: (ref: number) => EntityBounds | undefined;
   readonly pixelHitOf?: (ref: number, wx: number, wy: number) => boolean | undefined;
   /** Whether the point is on a claimed wall or road site's work flag; absent, that flag is the site's. */
@@ -201,9 +226,13 @@ export interface UnitControls {
   readonly targetFlashes: () => ReadonlyMap<number, TargetFlash>;
   /** The refused goals of the selected lost settlers; the same list while they stand still. */
   readonly lostGoals: () => readonly LostGoalMarker[];
-  /** The green/red assignment wash for the render building-highlight layer, or null when no assign mode
-   *  is armed. */
-  readonly assignHighlight: () => readonly BuildingHighlightItem[] | null;
+  /** The armed pick's verdicts on its targets, or null when no pick that judges targets is armed. */
+  readonly targetMarks: () => readonly TargetMark[] | null;
+  /** Aims the armed pick at the client point (null off the world view): the candidate a press there
+   *  would order, or null. The pointer refuses over a refused target. */
+  readonly aimTarget: (
+    pointer: { readonly clientX: number; readonly clientY: number } | null,
+  ) => number | null;
   /** The viewer's own wall or gate drawn on top under each client point, or null there. */
   readonly ownWallsAt: (points: readonly { readonly x: number; readonly y: number }[]) => (number | null)[];
   readonly signpostPlacementActive: () => boolean;
@@ -213,6 +242,9 @@ export interface UnitControls {
   readonly claimsEscape: () => boolean;
   /** The ship whose dock pick is armed, whose mooring spots the frame loop washes onto the map. */
   readonly dockPickVehicle: () => number | null;
+  /** Where a dock click at `tile` would moor the ships it orders: the armed dock pick's ship, or the
+   *  selected ships a right-click docks. Empty where it docks nothing. */
+  readonly berthPreview: (tile: Tile) => readonly Berth[];
   readonly tick: (snapshot: WorldSnapshot) => void;
   /** Once a frame, after `tick`: the details panel's wells show their people live; `alpha` is the
    *  frame's inter-tick fraction. */
@@ -223,6 +255,8 @@ export interface UnitControls {
   /** Hide the details panel with the rest of the HUD and close the ring; a ring opened while hidden
    *  shows. The selection itself stays. */
   readonly setHudHidden: (hidden: boolean) => void;
+  /** Shows or hides the label beside the cursor; it starts as `cursorHints` says. */
+  readonly setCursorHints: (shown: boolean) => void;
   readonly setUiScale: (uiscale: number) => Promise<void>;
   readonly dispose: () => void;
 }

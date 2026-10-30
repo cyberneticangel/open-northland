@@ -1,8 +1,11 @@
 import type { ContentSet, WeaponType } from '@open-northland/data';
 import {
   Age,
+  type AssistantArmingIntent,
   AssistantRecruit,
   AssistantWeaponVetoes,
+  assistantArmorOrder,
+  assistantWeaponOrder,
   Building,
   Carrying,
   Equipment,
@@ -26,11 +29,11 @@ import type { SystemContext } from '../../context.js';
 import { buildingBlockedCells } from '../../footprint/index.js';
 import { isTravelling } from '../../movement/nav-state.js';
 import {
-  ARMOR_MAIN_TYPE,
-  armorByClass,
+  armorGoodsByProtection,
   isBarracksOrFoundation,
   isSoldierJob,
   weaponDamageVsMaterial,
+  weaponGoodsByStrength,
 } from '../../readviews/index.js';
 import type { NavigationLimit } from '../../signposts/index.js';
 import { goodsSearchLimitAt } from '../../signposts/reach.js';
@@ -104,7 +107,9 @@ export function dispatchRecruitArming(pass: PlannerPass): void {
       world.remove(e, AssistantRecruit);
       continue;
     }
-    if (!dispatchArmorFetch(pass, e, booking.barracks, owner)) world.remove(e, AssistantRecruit);
+    if (!dispatchArmorFetch(pass, e, booking.intent, booking.barracks, owner)) {
+      world.remove(e, AssistantRecruit);
+    }
   }
 }
 
@@ -215,7 +220,17 @@ function approachNode(world: World, ctx: SystemContext, terrain: TerrainGraph, s
     : entityNode(world, terrain, store);
 }
 
-/** Send the recruit for the strongest reachable weapon of its intent's class it qualifies for. */
+/** `preference` in the seat's `order`, a good the order lacks after the rest. */
+function inSeatOrder(preference: readonly number[], order: readonly number[]): readonly number[] {
+  const rank = (good: number): number => {
+    const at = order.indexOf(good);
+    return at < 0 ? order.length : at;
+  };
+  return [...preference].sort((a, b) => rank(a) - rank(b));
+}
+
+/** Send the recruit for the first reachable weapon of its intent's class in the seat's order, the
+ *  strongest first by default. */
 function dispatchWeaponFetch(
   pass: PlannerPass,
   e: Entity,
@@ -229,7 +244,12 @@ function dispatchWeaponFetch(
   // The route's signpost network met with the goods-search limit at its node, read once for every row.
   let gate: SpatialGate | undefined;
   const vetoed = playerGoodList(world, AssistantWeaponVetoes, owner);
-  for (const goodType of armingGoodPreference(ctx.content, settler.tribe, intent, vetoed)) {
+  const preference = armingGoodPreference(ctx.content, settler.tribe, intent, vetoed);
+  // Without a seat order, the content-wide default the assistant window shows.
+  const order =
+    assistantWeaponOrder(world, owner, intent) ??
+    weaponGoodsByStrength(ctx.content, INTENT_WEAPON_CLASS[intent]);
+  for (const goodType of inSeatOrder(preference, order)) {
     // No store of the side lends this row: the route is not worth resolving.
     if (!storeHoldingMayLieIn(targets.bands, world, goodType, owner, pass.supply, undefined)) continue;
     if (route === undefined) {
@@ -264,9 +284,15 @@ function dispatchWeaponFetch(
 
 /**
  * Send the armed recruit for one {@link pickReachableArmor} good. True when an errand was
- * dispatched, false when no tier has a reachable unit (the caller releases the recruit unarmored).
+ * dispatched, false when no armor it may take is reachable (the caller releases the recruit unarmored).
  */
-function dispatchArmorFetch(pass: PlannerPass, e: Entity, barracks: Entity, owner: number): boolean {
+function dispatchArmorFetch(
+  pass: PlannerPass,
+  e: Entity,
+  intent: AssistantArmingIntent,
+  barracks: Entity,
+  owner: number,
+): boolean {
   const { world, ctx, targets } = pass;
   const route = fetchRouteFor(pass, e, owner);
   const pick = pickReachableArmor(
@@ -276,6 +302,7 @@ function dispatchArmorFetch(pass: PlannerPass, e: Entity, barracks: Entity, owne
     pass.supply,
     route.here,
     owner,
+    intent,
     route.limit,
     route.veto,
   );
@@ -297,7 +324,7 @@ function dispatchArmorFetch(pass: PlannerPass, e: Entity, barracks: Entity, owne
 /**
  * The equip drive's chain hook: the moment an assistant weapon errand lands, ask for the armor want
  * from the store the recruit stands at. Returns the armor goodType to retarget the live order at, or
- * null to end the errand there, settling the booking for a dressed recruit or one with no tier reachable.
+ * null to end the errand there, settling the booking for a dressed recruit or one with no armor reachable.
  * The search runs over the network around the store the recruit stands at, not the drive's own gate.
  */
 export function chainRecruitArmor(
@@ -311,7 +338,7 @@ export function chainRecruitArmor(
   veto: ((cell: NodeId) => boolean) | undefined,
 ): number | null {
   const booking = world.tryGet(e, AssistantRecruit);
-  if (booking === undefined || !booking.armed) return null;
+  if (booking === undefined || !booking.armed || booking.intent === 'trainSoldiers') return null;
   const owner = ownerOf(world, e);
   if (owner === undefined) return null;
   if ((world.tryGet(e, Equipment)?.armor ?? null) !== null) {
@@ -319,9 +346,9 @@ export function chainRecruitArmor(
     return null;
   }
   const limit = goodsSearchLimitAt(world, ctx.content, terrain, owner, terrain.xOf(here), terrain.yOf(here));
-  const pick = pickReachableArmor(world, ctx, targets, supply, here, owner, limit, veto);
+  const pick = pickReachableArmor(world, ctx, targets, supply, here, owner, booking.intent, limit, veto);
   if (pick === null) {
-    world.remove(e, AssistantRecruit); // no tier reachable: released unarmored
+    world.remove(e, AssistantRecruit); // no armor it may take is reachable: released unarmored
     return null;
   }
   return pick.goodType;
@@ -332,9 +359,9 @@ interface ArmorSource {
   readonly source: Entity;
 }
 
-/** The armor policy: a seeded-random reachable good from the heavy tier, the light tier as the
- *  fallback, with its nearest source; null when no tier has a reachable unit, so a recruit may
- *  complete unarmored. */
+/** The armor policy: the first good of the seat's order for the recruit's class (strongest protection
+ *  first by default) that is not off and that a reachable store holds, with its nearest source; null
+ *  when none is, so a recruit may complete unarmored. */
 function pickReachableArmor(
   world: World,
   ctx: SystemContext,
@@ -342,35 +369,27 @@ function pickReachableArmor(
   supply: SupplyTally,
   here: NodeId,
   owner: number,
+  intent: AssistantArmingIntent,
   limit: NavigationLimit | null,
   veto: ((cell: NodeId) => boolean) | undefined,
 ): ArmorSource | null {
-  const byClass = armorByClass(ctx.content);
-  for (const tier of ARMOR_TIERS) {
-    const sources: ArmorSource[] = [];
-    for (const armor of byClass.get(tier) ?? []) {
-      if (armor.goodType === undefined) continue;
-      const source = nearestStoreHolding(
-        targets.bands,
-        world,
-        here,
-        armor.goodType,
-        owner,
-        supply,
-        limit ?? undefined,
-        veto,
-      );
-      if (source !== null) sources.push({ goodType: armor.goodType, source });
-    }
-    if (sources.length === 0) continue;
-    const pick = sources[ctx.rng.int(sources.length)];
-    if (pick !== undefined) return pick;
+  const choice = assistantArmorOrder(world, owner, intent);
+  for (const goodType of choice?.order ?? armorGoodsByProtection(ctx.content)) {
+    if (choice?.off.includes(goodType)) continue;
+    const source = nearestStoreHolding(
+      targets.bands,
+      world,
+      here,
+      goodType,
+      owner,
+      supply,
+      limit ?? undefined,
+      veto,
+    );
+    if (source !== null) return { goodType, source };
   }
   return null;
 }
-
-/** The armor tiers a recruit shops, the heavy before the light fallback. */
-const ARMOR_TIERS = [ARMOR_MAIN_TYPE.HEAVY, ARMOR_MAIN_TYPE.LIGHT] as const;
 
 /** The unarmored damage column (`damagevalue 0`), the strength axis the weapon preference sorts on. */
 const BARE_TARGET = 0;

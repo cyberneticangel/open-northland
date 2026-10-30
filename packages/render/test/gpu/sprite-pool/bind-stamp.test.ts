@@ -41,7 +41,6 @@ const sheet: SpriteSheet = {
   characters: { byJob: {}, default: { body: { source, atlas }, binding: { idle: BODY_BOB } } },
 };
 const SETTLER = 1;
-const HIGHLIGHT_NO_TINT = 0xff8888;
 const ERASED: ErasedRegion = [{ minX: 0, minY: 0, maxX: 1, maxY: 1 }];
 
 function frameOf(snapshot: WorldSnapshot, fields: Partial<PoolFrame> = {}): PoolFrame {
@@ -135,14 +134,11 @@ describe('SpritePool - an entity whose inputs held still keeps its bind', () => 
     expect(bind).toHaveBeenCalledTimes(1);
   });
 
-  it('binds again when a highlight map changes in place', () => {
-    const { layer, pool, bind, snapshot } = setup();
-    const highlight = new Map<number, boolean>();
-    pool.reconcile(frameOf(snapshot, { highlight }));
-    highlight.set(SETTLER, false);
-    pool.reconcile(frameOf(snapshot, { highlight }));
-    expect(bind).toHaveBeenCalledTimes(2);
-    expect(bodySprite(layer).tint).toBe(HIGHLIGHT_NO_TINT);
+  it('keeps the bind when a pick marks the entity', () => {
+    const { pool, bind, snapshot } = setup();
+    pool.reconcile(frameOf(snapshot));
+    pool.reconcile(frameOf(snapshot, { marks: new Map([[SETTLER, 'candidate']]) }));
+    expect(bind).toHaveBeenCalledTimes(1);
   });
 
   it('binds again when the entity returns after a frame off the draw list', () => {
@@ -298,7 +294,7 @@ describe('BindStamp.bindHolds', () => {
     const pe = createPooled(item.kind, undefined);
     const epoch = new FrameEpoch();
     const stamp = new BindStamp();
-    stamp.record(item, epoch, undefined, undefined, pe.motion, LAYERS);
+    stamp.record(item, epoch, undefined, pe.motion, LAYERS);
     return { pe, epoch, stamp };
   }
 
@@ -321,7 +317,7 @@ describe('BindStamp.bindHolds', () => {
         binder.bind(createPooled(item.kind, undefined), recording(item, bound), layers, BIND_FRAME, 0);
       }
       const { epoch, stamp } = stampOf(item);
-      expect(stamp.bindHolds(recording(item, compared), epoch.bind, undefined, undefined)).toBe(true);
+      expect(stamp.bindHolds(recording(item, compared), epoch.bind, undefined)).toBe(true);
     }
     expect([...bound].filter((key) => !compared.has(key))).toEqual([]);
   });
@@ -331,22 +327,20 @@ describe('BindStamp.bindHolds', () => {
     const item = recording(spriteItem('settler', { lift: 1 }), read);
     const { epoch, stamp } = stampOf(item);
     read.clear();
-    expect(stamp.bindHolds(item, epoch.bind, undefined, undefined)).toBe(true);
-    expect(stamp.bindHolds(item, epoch.bind, true, undefined)).toBe(false);
-    expect(stamp.bindHolds(item, epoch.bind, undefined, ERASED)).toBe(false);
-    expect(stamp.bindHolds(item, epoch.bind + 1, undefined, undefined)).toBe(false);
+    expect(stamp.bindHolds(item, epoch.bind, undefined)).toBe(true);
+    expect(stamp.bindHolds(item, epoch.bind, ERASED)).toBe(false);
+    expect(stamp.bindHolds(item, epoch.bind + 1, undefined)).toBe(false);
     expect([...read]).toEqual([]);
   });
 
   it.each([
-    ['the highlight', {}, true],
-    ['the team colour', { player: OTHER_PLAYER }, undefined],
-    ['the fog ghost', { ghost: true }, undefined],
-  ] as const)('binds again over the same layers when %s changes', (_, fields, highlight) => {
+    ['the team colour', { player: OTHER_PLAYER }],
+    ['the fog ghost', { ghost: true }],
+  ] as const)('binds again over the same layers when %s changes', (_, fields) => {
     const item = spriteItem('settler');
     const { pe, epoch, stamp } = stampOf(item);
     expect(stamp.presents(pe.motion, LAYERS)).toBe(true);
-    expect(stamp.bindHolds({ ...item }, epoch.bind, undefined, undefined)).toBe(true);
-    expect(stamp.bindHolds({ ...item, ...fields }, epoch.bind, highlight, undefined)).toBe(false);
+    expect(stamp.bindHolds({ ...item }, epoch.bind, undefined)).toBe(true);
+    expect(stamp.bindHolds({ ...item, ...fields }, epoch.bind, undefined)).toBe(false);
   });
 });

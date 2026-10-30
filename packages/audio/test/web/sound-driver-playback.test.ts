@@ -74,6 +74,7 @@ const index: SoundIndex = {
   attackAlertsByTribe: new Map(),
   landscapeAmbienceByRecord: new Map(),
   murmurByTribe: new Map(),
+  musicCultureByTribe: new Map(),
   poolGains: new Map(),
   wavGains: new Map(),
 };

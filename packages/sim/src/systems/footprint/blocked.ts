@@ -6,7 +6,7 @@ import { nodeOfPosition } from '../../nav/halfcell.js';
 import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import type { ContentContext } from '../context.js';
 import { heldBuildingTypesStand, type WalkBody, walkBodyOf } from './building-blocked-cache.js';
-import { ANCHOR_ONLY, buildingFootprintOf } from './geometry.js';
+import { ANCHOR_ONLY, houseFootprintOf } from './geometry.js';
 import { walkBlockMask } from './walk-block-mask.js';
 
 // Walk-block overlays for routing and render, over the memoized building cells and the incrementally
@@ -56,7 +56,7 @@ export function constructionSitePlots(world: World, content: ContentSet): readon
   for (const e of world.query(UnderConstruction, Building, Position)) {
     const b = world.get(e, Building);
     types.set(e, b.buildingType);
-    const footprint = buildingFootprintOf(content, b.buildingType, b.tribe);
+    const footprint = houseFootprintOf(content, b);
     const p = world.get(e, Position);
     const { hx, hy } = nodeOfPosition(p.x, p.y);
     const body = footprint !== undefined && footprint.blocked.length > 0 ? footprint.blocked : ANCHOR_ONLY;
@@ -83,7 +83,7 @@ export function buildingWalkBodyOf(
   const b = world.tryGet(building, Building);
   const p = world.tryGet(building, Position);
   if (b === undefined || p === undefined) return null;
-  const footprint = buildingFootprintOf(ctx.content, b.buildingType, b.tribe);
+  const footprint = houseFootprintOf(ctx.content, b);
   if (footprint === undefined || footprint.blocked.length === 0) return null;
   const { hx, hy } = nodeOfPosition(p.x, p.y);
   return walkBodyOf(terrain, footprint, hx, hy);

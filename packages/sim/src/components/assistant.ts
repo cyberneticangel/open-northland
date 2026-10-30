@@ -125,6 +125,82 @@ export const AssistantWeaponVetoes = defineComponent<{
   goods: readonly number[];
 }>('AssistantWeaponVetoes', 'players');
 
+/** The recruit intents that arm a weapon class and so also dress him in armor. */
+export const ASSISTANT_ARMING_INTENTS = ['trainSword', 'trainSpear', 'trainBow'] as const;
+export type AssistantArmingIntent = (typeof ASSISTANT_ARMING_INTENTS)[number];
+
+/** One weapon class's armor choice: every armor good in the order its recruits shop for them, and the
+ *  goods the assistant never hands that class. */
+export interface AssistantArmorOrder {
+  order: readonly number[];
+  off: readonly number[];
+}
+
+/**
+ * The per-player armor choice of each weapon class the assistant arms. A class without an entry shops the
+ * default order, strongest protection first, with nothing off; the carrier lives while any class has one.
+ */
+export const AssistantArmorOrders = defineComponent<{
+  /** The player slot the choices belong to (`[0, MAX_PLAYERS)`). */
+  player: number;
+  trainSword?: AssistantArmorOrder | undefined;
+  trainSpear?: AssistantArmorOrder | undefined;
+  trainBow?: AssistantArmorOrder | undefined;
+}>('AssistantArmorOrders', 'players');
+
+/** `player`'s {@link AssistantArmorOrders} carrier, or null while every class keeps the default. */
+export function assistantArmorOrdersEntity(world: World, player: number): Entity | null {
+  let best: Entity | null = null;
+  for (const e of world.query(AssistantArmorOrders)) {
+    if (world.get(e, AssistantArmorOrders).player !== player) continue;
+    if (best === null || e < best) best = e;
+  }
+  return best;
+}
+
+/** `player`'s own armor choice for `intent`, or undefined while that class keeps the default. */
+export function assistantArmorOrder(
+  world: World,
+  player: number,
+  intent: AssistantArmingIntent,
+): AssistantArmorOrder | undefined {
+  const carrier = assistantArmorOrdersEntity(world, player);
+  return carrier === null ? undefined : world.get(carrier, AssistantArmorOrders)[intent];
+}
+
+/**
+ * The per-player weapon order of each weapon class the assistant arms: the class's weapon goods in the
+ * order its recruits shop them. A class without an entry shops the strongest first; which weapons it never
+ * takes is {@link AssistantWeaponVetoes}. The carrier lives while any class has an entry.
+ */
+export const AssistantWeaponOrders = defineComponent<{
+  /** The player slot the orders belong to (`[0, MAX_PLAYERS)`). */
+  player: number;
+  trainSword?: readonly number[] | undefined;
+  trainSpear?: readonly number[] | undefined;
+  trainBow?: readonly number[] | undefined;
+}>('AssistantWeaponOrders', 'players');
+
+/** `player`'s {@link AssistantWeaponOrders} carrier, or null while every class keeps the default. */
+export function assistantWeaponOrdersEntity(world: World, player: number): Entity | null {
+  let best: Entity | null = null;
+  for (const e of world.query(AssistantWeaponOrders)) {
+    if (world.get(e, AssistantWeaponOrders).player !== player) continue;
+    if (best === null || e < best) best = e;
+  }
+  return best;
+}
+
+/** `player`'s own weapon order for `intent`, or undefined while that class keeps the default. */
+export function assistantWeaponOrder(
+  world: World,
+  player: number,
+  intent: AssistantArmingIntent,
+): readonly number[] | undefined {
+  const carrier = assistantWeaponOrdersEntity(world, player);
+  return carrier === null ? undefined : world.get(carrier, AssistantWeaponOrders)[intent];
+}
+
 /**
  * The per-player assistant counter block - the sibling carrier of {@link AssistantGrants}: at most one per
  * player, created on the first non-default write and destroyed when every counter returns to
@@ -199,9 +275,7 @@ export const AssistantChildOrder = defineComponent<{ sex: 'female' | 'male' }>(
 /** The training-counter kinds a recruit booking can carry; the three class kinds also arm the recruit. */
 export const ASSISTANT_RECRUIT_INTENTS = [
   'trainSoldiers',
-  'trainSword',
-  'trainSpear',
-  'trainBow',
+  ...ASSISTANT_ARMING_INTENTS,
 ] as const satisfies readonly AssistantCounterKind[];
 export type AssistantRecruitIntent = (typeof ASSISTANT_RECRUIT_INTENTS)[number];
 

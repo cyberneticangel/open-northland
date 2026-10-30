@@ -272,15 +272,15 @@ function planBreak(
   // work holding a load runs the ladder down to the delivery rung first, so it is not parked at the door
   // with its hands full.
   if (planVehicleCargo(plan, load)) return true;
-  if (load === undefined || load.amount <= 0) {
-    // A trader commanding a cart works its route from here, above the rider rung that would otherwise
-    // keep it at the door; the rung yields while the cart is under way, and the rider rung boards it.
-    if (planTrader(plan)) return true;
-    if (planRider(world, ctx, terrain, e, pass.spacing, pass.idle)) return true;
+  if (
+    (load === undefined || load.amount <= 0) &&
+    planRider(world, ctx, terrain, e, pass.spacing, pass.idle)
+  ) {
+    return true;
   }
   // BARRACKS DRILL: a player errand outranking the settler's trade for as long as it lasts, and above the
   // equip errand below because the drill ends in a profession change.
-  if (planTraining(world, ctx, terrain, e, settler, here, limit, pass.spacing, pass.idle)) return true;
+  if (planTraining(plan, settler, pass.spacing, pass.idle, load)) return true;
   // EQUIP ERRAND: the player's or the assistant's, outranking the DEFEND hold below, socialising and every
   // economy rung, but under the needs drives and the ownership gate. A DEFEND guard walks the errand and
   // re-holds its unchanged anchor afterwards, since the combat walk-back pass defers to a live errand. A
@@ -382,6 +382,13 @@ function planEconomy(
   alert: () => boolean,
 ): void {
   const { world, ctx, terrain, entity: e } = plan;
+
+  // A trader works its route, a unit of it in its hands included, before the delivery rung below would
+  // carry that unit off to a store.
+  if (planTrader(plan)) {
+    noteWorkTaken(world, e);
+    return;
+  }
 
   // Deliver a carried load first: a settler must free its hands before any empty-handed work. A load with
   // no sink in reach leaves it standing, which is no work taken. A porter with room in its cart fills it

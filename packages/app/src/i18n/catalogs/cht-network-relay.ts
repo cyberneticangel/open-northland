@@ -38,6 +38,7 @@ export const chtNetworkRelay = {
     seatTaken: '第 {seat} 號席位已被 {nick} 佔用',
     seatModeUnavailable: '第 {seat} 號席位無法設為「{mode}」',
     seatTribeUnavailable: '第 {seat} 號席位沒有可選擇的民族',
+    colorTaken: '席位 {wearer} 已使用該顏色',
     seatDifficultyUnavailable: '第 {seat} 號席位不能設定電腦等級',
     seatRequired: '請先入座',
     notMember: '{nick} 不在房間裡',

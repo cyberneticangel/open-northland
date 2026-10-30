@@ -25,13 +25,16 @@ import {
   extractLandscape,
   extractRawFrameAtomics,
   extractRawFrameGaits,
+  extractRecordFootprints,
   extractTribes,
   extractUpgradeTargets,
   extractVehicles,
   extractWeapons,
   iniBytesToSections,
+  type RecordFootprint,
   type RuleSection,
   type SourceRef,
+  widenRecordFootprints,
 } from '@open-northland/formats/ini';
 import { BASE_BUILDING_GRAPHICS_FILE, BUILDING_GRAPHICS_FILE } from '../../data-layout.js';
 import { readSourceFile, type SourceRoots } from '../../roots.js';
@@ -54,6 +57,21 @@ function fillTribeOverlay<V>(into: Map<number, ByTribe<V>>, rows: ReadonlyMap<nu
   for (const [typeId, byTribe] of rows) {
     const merged = new Map(into.get(typeId));
     for (const [tribe, value] of byTribe) if (!merged.has(tribe)) merged.set(tribe, value);
+    into.set(typeId, merged);
+  }
+}
+
+/** {@link fillOverlay} per `(typeId, tribe, EditName)`: a fallback record joins the ones a type has. */
+function fillRecordOverlay(
+  into: Map<number, RecordFootprint[]>,
+  rows: ReadonlyMap<number, readonly RecordFootprint[]>,
+): void {
+  for (const [typeId, records] of rows) {
+    const merged = [...(into.get(typeId) ?? [])];
+    for (const record of records) {
+      if (!merged.some((r) => r.tribe === record.tribe && r.editName === record.editName))
+        merged.push(record);
+    }
     into.set(typeId, merged);
   }
 }
@@ -93,6 +111,7 @@ export async function extractIniTables(roots: SourceRoots, sources: readonly Ini
     hitpoints: new Map<number, ByTribe<number>>(),
     upgradeTargets: new Map<number, number>(),
     footprints: new Map<number, ByTribe<BuildingFootprint>>(),
+    recordFootprints: new Map<number, RecordFootprint[]>(),
   } satisfies BuildingGraphicsOverlays;
   const pushHouseVisuals = (sections: readonly RuleSection[], src: SourceRef): void => {
     buildingBobs.push(...extractBuildingBobs(sections, src));
@@ -131,6 +150,7 @@ export async function extractIniTables(roots: SourceRoots, sources: readonly Ini
     foldOverlay(buildingGraphicsOverlays.hitpoints, extractHouseHitpoints(sections));
     foldOverlay(buildingGraphicsOverlays.upgradeTargets, extractUpgradeTargets(sections));
     foldOverlay(buildingGraphicsOverlays.footprints, extractBuildingFootprints(sections));
+    foldOverlay(buildingGraphicsOverlays.recordFootprints, extractRecordFootprints(sections));
   }
 
   // Houses only the base table defines join after every rule source, stamped `base`. Each keeps the base
@@ -141,6 +161,12 @@ export async function extractIniTables(roots: SourceRoots, sources: readonly Ini
   fillTribeOverlay(buildingGraphicsOverlays.hitpoints, extractHouseHitpoints(baseHouses));
   fillOverlay(buildingGraphicsOverlays.upgradeTargets, extractUpgradeTargets(baseHouses));
   fillTribeOverlay(buildingGraphicsOverlays.footprints, extractBuildingFootprints(baseHouses));
+  fillRecordOverlay(buildingGraphicsOverlays.recordFootprints, extractRecordFootprints(baseHouses));
+  const recordFootprints = widenRecordFootprints(
+    buildingGraphicsOverlays.recordFootprints,
+    buildingGraphicsOverlays.footprints,
+    buildingGraphicsOverlays.upgradeTargets,
+  );
 
   return {
     goods,
@@ -167,6 +193,6 @@ export async function extractIniTables(roots: SourceRoots, sources: readonly Ini
     buildingFlagPoints,
     buildingSoldierFlagPoints,
     buildingHolyFirePoints,
-    buildingGraphicsOverlays,
+    buildingGraphicsOverlays: { ...buildingGraphicsOverlays, recordFootprints },
   };
 }

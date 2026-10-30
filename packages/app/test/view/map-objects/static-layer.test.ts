@@ -1,6 +1,7 @@
 import type { Entity, SimEvent } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
 import { bindStaticLayer, type HarvestableSpawn } from '../../../src/view/map-objects/static-layer.js';
+import { testSight } from '../../support/sight.js';
 import { building, snapshotOf } from '../../support/snapshot.js';
 
 /** The static layer's two sim bindings composed: a harvestable's quad belongs to the handover, so a
@@ -32,25 +33,36 @@ const BUSH = 30 as Entity;
 /** The map's width in half-cell nodes. */
 const NODE_WIDTH = 64;
 
-function bind(harvestables: HarvestableSpawn) {
+/** The bush as the map placed it, ripe. */
+const BUSH_ENTITY = { id: BUSH, components: { BerryBush: { stage: 'ripe' } } };
+
+function bind(
+  harvestables: HarvestableSpawn,
+  seesNode: (hx: number, hy: number) => boolean = () => true,
+  bush: readonly (typeof BUSH_ENTITY)[] = [],
+) {
   const removed: string[] = [];
-  const ghosts: number[] = [];
   let refs: ReadonlySet<number> = new Set();
-  const { onEvents, harvestableSpriteOf } = bindStaticLayer(
+  const sight = testSight(seesNode);
+  const { onEvents, onSight, harvestableSpriteOf, memory } = bindStaticLayer(
     {
       setStaticallyDrawnRefs: (next: ReadonlySet<number>) => {
         refs = next;
       },
       removeMapObject: (sprite: string) => removed.push(sprite),
-      adoptFogGhost: (entity: number) => ghosts.push(entity),
     },
     { placements: PLACEMENTS, byPlacement: SPRITES },
     harvestables,
     { buildings: TYPES },
-    () => snapshotOf([building(1, HOUSE, 4, 4)]),
+    () => snapshotOf([building(1, HOUSE, 4, 4), ...bush]),
     NODE_WIDTH,
+    sight,
   );
-  return { removed, ghosts, refs: () => refs, onEvents, harvestableSpriteOf };
+  const look = (): void => {
+    sight.look();
+    onSight();
+  };
+  return { removed, refs: () => refs, onEvents, look, harvestableSpriteOf, memory };
 }
 
 const razed: SimEvent = { kind: 'berryBushRazed', bush: BUSH, at: { hx: 9, hy: 8 } };
@@ -83,5 +95,31 @@ describe('bindStaticLayer', () => {
     expect([...refs()]).toEqual([]);
     onEvents([razed]);
     expect(removed).toHaveLength(2);
+  });
+
+  it('keeps what a save remembers, and retires a held quad worked since only once it is seen', () => {
+    let watching = false;
+    const fresh = bind(
+      { kind: 'fresh', placementByEntity: [[BUSH, 1]], pooledPlacements: [] },
+      () => watching,
+      [BUSH_ENTITY],
+    );
+    const saved = fresh.memory();
+    expect(saved).toEqual({ removed: [0], held: [[BUSH, 1, 'ripe']] });
+
+    // Unchanged when the world restores: the quad stays bound, as fresh.
+    const intact = bind({ kind: 'restored', placements: [1], memory: saved }, () => watching, [BUSH_ENTITY]);
+    intact.look();
+    expect(intact.removed).toEqual(['grass']);
+    expect(intact.harvestableSpriteOf(BUSH)).toBe('bush');
+
+    // Razed after the memory was taken: the quad holds in the fog and leaves once seen.
+    const razedSince = bind({ kind: 'restored', placements: [1], memory: saved }, () => watching);
+    razedSince.look();
+    expect([...razedSince.refs()]).toEqual([BUSH]);
+    watching = true;
+    razedSince.look();
+    expect(razedSince.removed).toEqual(['grass', 'bush']);
+    expect([...razedSince.refs()]).toEqual([]);
   });
 });

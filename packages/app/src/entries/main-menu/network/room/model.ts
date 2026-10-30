@@ -41,9 +41,9 @@ export function seatCivilization(seat: RoomSeatView): number | null {
     : null;
 }
 
-/** The creator chooses any seat's civilization and a seated member its own, as the relay allows; a
- *  saved world's civilizations stand. */
-export function canSetSeatTribe(
+/** The creator chooses any seat's colour and civilization and a seated member its own, as the relay
+ *  allows; a saved world's choices stand. */
+export function canSetSeatLook(
   room: RoomView,
   seat: RoomSeatView,
   nick: string,

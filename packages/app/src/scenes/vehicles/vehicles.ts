@@ -8,7 +8,7 @@ import {
   type Simulation,
   systems,
 } from '@open-northland/sim';
-import { JOB_CARRIER, JOB_SOLDIER, JOB_SOLDIER_SWORD, JOB_TRADER } from '../../catalog/jobs.js';
+import { JOB_CARRIER, JOB_SOLDIER, JOB_SOLDIER_SWORD } from '../../catalog/jobs.js';
 import { TERRAIN_IMPASSABLE, TERRAIN_OPEN } from '../../catalog/terrain.js';
 import { HUMAN_PLAYER, PRIMARY_TRIBE } from '../../game/rules.js';
 import {
@@ -26,7 +26,7 @@ import type { SceneDefinition } from '../types.js';
 
 /**
  * Every vehicle type standing on a shore for two tribes, turned to a few facings, one cart loaded, the
- * catapult mid-attack, one catapult wrecked a second in so its ruin decals show, a trader who attaches
+ * catapult mid-attack, one catapult wrecked a second in so its ruin decals show, a carrier who attaches
  * to the viking handcart and drives it off once aboard, a war party boarding the viking small ship at
  * its mooring, and a crewed ox cart and catapult ordered across the bottom rows so a drive slides node
  * to node at each type's pace once each commander has boarded. The browser view is the check that each
@@ -75,9 +75,10 @@ const WRECK_AT = { x: 6, y: 6 } as const;
 const WRECK_TICK = 12;
 /** Claims a position no session transport hands out for that tick. */
 const WRECK_SEQUENCE = 1_000_000;
-/** The trader who crews the viking handcart: attached at once, the cart's goto holds until it boards. */
-const TRADER_AT = { x: 3, y: 4 } as const;
-const TRADER_GOAL = { x: 12, y: 6 } as const;
+/** The carrier who crews the viking handcart, posted nowhere: attached at once, the cart's goto holds
+ *  until it boards. */
+const DRIVER_AT = { x: 3, y: 4 } as const;
+const DRIVER_GOAL = { x: 12, y: 6 } as const;
 /** The war party that boards the viking small ship: a swordsman and two recruits spawned a few nodes
  *  from its mooring on the shore, attached and asked aboard (the sandbox declares no hero trade). */
 const PARTY_AT: readonly { readonly job: number; readonly x: number; readonly y: number }[] = [
@@ -124,10 +125,10 @@ function build(sim: Simulation): void {
   if (catapult !== undefined) sim.world.mut(catapult, Vehicle).task = 'attacks';
   const wreck = spawnVehicleDirect(sim, VEHICLE_CATAPULT, WRECK_AT.x, WRECK_AT.y);
   sim.enqueueAt(adminCommand({ kind: 'debugKill', target: wreck }), WRECK_TICK, WRECK_SEQUENCE);
-  const trader = spawnSettlerDirect(sim, JOB_TRADER, TRADER_AT.x, TRADER_AT.y, HUMAN_PLAYER);
+  const driver = spawnSettlerDirect(sim, JOB_CARRIER, DRIVER_AT.x, DRIVER_AT.y, HUMAN_PLAYER);
   if (handcart !== undefined) {
-    sim.enqueue(playerCommand(HUMAN_PLAYER, { kind: 'attachToVehicle', entity: trader, vehicle: handcart }));
-    const goal = cellAnchorNode(TRADER_GOAL.x, TRADER_GOAL.y);
+    sim.enqueue(playerCommand(HUMAN_PLAYER, { kind: 'attachToVehicle', entity: driver, vehicle: handcart }));
+    const goal = cellAnchorNode(DRIVER_GOAL.x, DRIVER_GOAL.y);
     sim.enqueue(
       playerCommand(HUMAN_PLAYER, { kind: 'moveVehicle', vehicle: handcart, x: goal.hx, y: goal.hy }),
     );
@@ -219,7 +220,7 @@ export const vehiclesScene: SceneDefinition = {
       predicate: (sim) => sim.vehiclesOf(HUMAN_PLAYER).filter((v) => v.moored).length === 2,
     },
     {
-      label: 'the trader boarded the handcart and drove it off, leaving the map',
+      label: 'the carrier boarded the handcart and drove it off, leaving the map',
       predicate: (sim) => {
         const cart = sim.vehiclesOf(HUMAN_PLAYER).find((v) => v.vehicleType === VEHICLE_HANDCART);
         const rider = cart?.passengers[0];

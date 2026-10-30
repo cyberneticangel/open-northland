@@ -1,4 +1,4 @@
-import type { RoomSeatView, RoomView, VacantSeatMode } from '@open-northland/net-protocol';
+import type { PlayerFlag, RoomSeatView, RoomView, VacantSeatMode } from '@open-northland/net-protocol';
 import { components } from '@open-northland/sim';
 import { localizedMapText } from '../../../../game/map/strings.js';
 import { currentLocale, formatMessage, messages, tribeName } from '../../../../i18n/index.js';
@@ -7,11 +7,12 @@ import { node } from '../../dom.js';
 import { colorChip, colorPalette } from '../../lobby-controls/color.js';
 import { seatModeControl } from '../../lobby-controls/seat-mode.js';
 import { tribePicker } from '../../lobby-controls/tribe.js';
+import { flagBadge } from '../flags/catalog.js';
 import { button, selectControl } from './controls.js';
 import {
   canClaimSeat,
   canSetSeatDifficulty,
-  canSetSeatTribe,
+  canSetSeatLook,
   roomPermissions,
   savedSeatHint,
   seatCivilization,
@@ -71,6 +72,7 @@ export function roomSeats(deps: NetworkRoomDeps) {
     const colorOptions = {
       label: copy.color,
       name: colorName,
+      taken: (seat: number) => formatMessage(messages().mainMenu.lobby.teamColourTaken, { seat: seat + 1 }),
       change: (color: number) => {
         showPalette(null);
         client.setSeat(player, { color });
@@ -96,8 +98,8 @@ export function roomSeats(deps: NetworkRoomDeps) {
           {
             value: seat.color,
             disabled: frozen,
-            unavailable: (color) =>
-              room.seats.some((other) => other.player !== player && other.color === color),
+            wearer: (color) =>
+              room.seats.find((other) => other.player !== player && other.color === color)?.player,
           },
           player,
         ),
@@ -148,7 +150,10 @@ export function roomSeats(deps: NetworkRoomDeps) {
     const faction = node('span', 'network-room__faction');
     const detail = node('span', 'network-room__muted');
     const readiness = node('span', 'network-room__readiness');
-    nameLine.append(name, yours, host, detail);
+    // Holds the occupant's flag; replaced only when the flag changes, as the room view repeats.
+    const flagSlot = node('span', 'network-room__seat-flag');
+    let shownFlag: PlayerFlag | undefined;
+    nameLine.append(flagSlot, name, yours, host, detail);
     const identityText = node('div', 'network-room__seat-description');
     identityText.append(nameLine, faction);
     identity.append(identityText, take, move.root);
@@ -169,7 +174,7 @@ export function roomSeats(deps: NetworkRoomDeps) {
       palette,
       update(room: RoomView, seat: RoomSeatView, connected: boolean): void {
         const permissions = roomPermissions(room, client.nick, connected);
-        const frozen = !permissions.canSetupSeats;
+        const lookLocked = !canSetSeatLook(room, seat, client.nick, connected);
         const member = room.members.find((member) => member.nick === seat.nick);
         const status =
           member?.connected === false
@@ -186,6 +191,12 @@ export function roomSeats(deps: NetworkRoomDeps) {
           if (saved.recommended) details.push(copy.previousSeat);
         }
         const mine = seat.nick === client.nick;
+        const flag = seat.nick === null ? undefined : member?.flag;
+        if (flag !== shownFlag) {
+          shownFlag = flag;
+          const badge = flagBadge(flag);
+          flagSlot.replaceChildren(...(badge === null ? [] : [badge]));
+        }
         name.textContent =
           seat.nick ??
           (seat.mode === 'map-ai'
@@ -217,10 +228,10 @@ export function roomSeats(deps: NetworkRoomDeps) {
         take.textContent = permissions.self?.seat == null ? copy.takeSeat : copy.changeSeat;
         mode.root.hidden = seat.nick !== null;
         human.hidden = seat.nick === null;
-        chip.update({ value: seat.color, disabled: frozen, expanded: paletteSeat === player });
-        paintPalette(room, seat, frozen);
+        chip.update({ value: seat.color, disabled: lookLocked, expanded: paletteSeat === player });
+        paintPalette(room, seat, lookLocked);
         mode.update(seat.mode, !permissions.creator || seat.nick !== null);
-        tribe?.update(seat, !canSetSeatTribe(room, seat, client.nick, connected));
+        tribe?.update(seat, lookLocked);
         // Only a seat the computer plays takes a level.
         difficulty.root.classList.toggle(
           'is-unused',

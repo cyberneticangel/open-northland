@@ -17,6 +17,7 @@ import {
   staffOf,
   supplyRunsTo,
   trainingHouseOf,
+  trainingSeated,
 } from '../../../game/snapshot/index.js';
 import { messages } from '../../../i18n/index.js';
 import { type BuildingDef, jobDisplayName, type UnitPanelModelContext } from './context.js';
@@ -253,16 +254,25 @@ export function buildingStaff(
       jobType: null,
     });
   }
-  const drilling = entitiesUnder(snapshot, TRAINEES, ent.id);
-  if (drilling.length > 0) {
+  const trainees = entitiesUnder(snapshot, TRAINEES, ent.id);
+  const seated = trainees.filter(trainingSeated);
+  const queued = trainees.filter((e) => !trainingSeated(e));
+  if (seated.length > 0)
     groups.push({
       key: 'trainees',
       label: copy.trainees,
-      people: drilling.map((e) => personOf(ctx, e)),
+      people: seated.map((e) => personOf(ctx, e)),
       capacity: null,
       jobType: null,
     });
-  }
+  if (queued.length > 0)
+    groups.push({
+      key: 'traineesQueued',
+      label: copy.traineesQueued,
+      people: queued.map((e) => personOf(ctx, e)),
+      capacity: null,
+      jobType: null,
+    });
   if (groups.length === 0) return null;
   const slots = (def?.workers ?? []).reduce((sum, slot) => sum + slot.count, 0);
   return {

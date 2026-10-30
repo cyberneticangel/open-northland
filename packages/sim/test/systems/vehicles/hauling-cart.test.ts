@@ -15,6 +15,7 @@ import {
   Vehicle,
   VehicleStock,
 } from '../../../src/components/index.js';
+import { contentIndex } from '../../../src/core/content-index.js';
 import type { Entity } from '../../../src/ecs/world.js';
 import { checkInvariants } from '../../../src/harness/invariants.js';
 import {
@@ -30,7 +31,7 @@ import { reap } from '../../../src/systems/lifecycle/death.js';
 import { atomicDuration } from '../../../src/systems/readviews/animations.js';
 import { MEAL_UNITS } from '../../../src/systems/settlers/atomics/effects/goods/index.js';
 import { PICKUP_ATOMIC_ID, PILEUP_ATOMIC_ID } from '../../../src/systems/settlers/atomics/start.js';
-import { HANDCART_FULL_SPEED_LOSS_PERCENT } from '../../../src/systems/vehicles/drag.js';
+import { cartLiftTicks, HANDCART_FULL_SPEED_LOSS_PERCENT } from '../../../src/systems/vehicles/drag.js';
 import {
   carryCapacityOf,
   haulingCartSpeedLossPercent,
@@ -446,13 +447,15 @@ describe('the cart as a work tool', () => {
     expect(carryCapacityOf(s.world, s.content, porter)).toBe(HANDCART_SLOTS);
   });
 
-  it('loads and unloads beside the standing cart, one clip a unit, as a trader does', () => {
+  it('loads and unloads beside the standing cart, one handcart lift a unit, as a trader does', () => {
     const s = sim();
     const hq = placeHouse(s, HQ_AT);
     const { porter, cart } = postedPorterWithCart(s, hq);
     expect(runUntil(s, TAKE_TICKS, () => s.world.get(porter, HaulingCart).taken)).toBeGreaterThan(0);
     dropPile(s, WOOD, PILE_AT, PILE_UNITS);
     const identity = s.world.get(porter, Settler);
+    const cartType = contentIndex(s.content).vehicles.get(s.world.get(cart, Vehicle).vehicleType);
+    if (cartType === undefined) throw new Error('cart type not in the fixture');
     const clips = { haulLoad: 0, haulUnload: 0 };
     let last: object | undefined;
     const count = () => {
@@ -463,7 +466,9 @@ describe('the cart as a work tool', () => {
       if (kind !== 'haulLoad' && kind !== 'haulUnload') return;
       clips[kind] += 1;
       const atomicId = kind === 'haulLoad' ? PICKUP_ATOMIC_ID : PILEUP_ATOMIC_ID;
-      expect(atomic.duration).toBe(atomicDuration(s.content, identity, atomicId));
+      expect(atomic.duration).toBe(
+        cartLiftTicks(s.content, cartType, atomicDuration(s.content, identity, atomicId)),
+      );
       // The cart stands beside the carrier through the lift, the carrier on foot, the heap's rest claimed.
       if (kind === 'haulLoad') expect(s.world.has(porter, PickupClaim)).toBe(true);
       expect(s.world.get(porter, HaulingCart).taken).toBe(false);

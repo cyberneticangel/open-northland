@@ -2,6 +2,7 @@ export * from './bob-atlases.js';
 export * from './building-tribe.js';
 export * from './cadaver.js';
 export * from './catalog/animal-locomotion.js';
+export * from './catalog/carried-load-band.js';
 export * from './catalog/legacy-house-names.js';
 export * from './fingerprint/content.js';
 export * from './fingerprint/fnv.js';

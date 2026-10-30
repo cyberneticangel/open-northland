@@ -5,6 +5,7 @@ import type {
   BuildingSignSheet,
   WaveLoop,
 } from '@open-northland/render';
+import { PLAYER_COLOR_COUNT, playerSignAtlasStem } from '../../catalog/roster.js';
 import { servedAtlasStem } from '../ir/joins.js';
 import { loadIr, loadLayer, MissingAtlasError } from '../ir/load.js';
 import type { ContentIr, LandscapeGfxRow } from '../ir/rows.js';
@@ -40,8 +41,8 @@ const GARRISON_RECORDS: readonly string[] = [
   'soldier 05',
 ];
 
-/** Player slots the original ships recoloured sign records for (`player01`...`player10`). */
-const SIGN_PLAYER_COUNT = 10;
+/** The player slot whose records lend their frames to a colour the original has no records for. */
+const TEMPLATE_SLOT = 0;
 
 /** One player slot's resolved sign refs: the served `ls_temp.human_playerNN` stem, a wave loop of bobs
  *  per kind, and the garrison flag's per-star wave loops when that slot's `soldier` records resolved. */
@@ -54,6 +55,8 @@ export interface BuildingSignPlayerRef {
 /**
  * Resolve each player slot's sign records from the IR. A slot resolves only when every kind's record is
  * present with a frame and all name one served atlas stem; anything else leaves the slot `undefined`.
+ * The original ships records for `player01`...`player10`; a later colour draws slot 0's frames from
+ * its toned atlas.
  */
 export function resolveBuildingSignRefs(
   ir: ContentIr | null,
@@ -63,9 +66,12 @@ export function resolveBuildingSignRefs(
   for (const rec of gfx) {
     if (rec.editName !== undefined && !byName.has(rec.editName)) byName.set(rec.editName, rec);
   }
-  return Array.from({ length: SIGN_PLAYER_COUNT }, (_, slot) =>
+  const slots = Array.from({ length: PLAYER_COLOR_COUNT }, (_, slot) =>
     resolveSlot(byName, `player${String(slot + 1).padStart(2, '0')} `),
   );
+  const template = slots[TEMPLATE_SLOT];
+  if (template === undefined) return slots;
+  return slots.map((ref, slot) => ref ?? { ...template, stem: playerSignAtlasStem(slot) });
 }
 
 /** One slot's six-record resolution: every kind present, one shared stem, or `undefined`. */

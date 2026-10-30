@@ -83,7 +83,11 @@ describe('rangeRingsOf', () => {
       building(doored.typeId),
     ]);
     const { hy } = nodeOfPosition(TOWER_AT.x, TOWER_AT.y);
-    const fromDoor = systems.workplaceShoreSearchRadius(content, doored.typeId, PRIMARY_TRIBE, hy);
+    const fromDoor = systems.workplaceShoreSearchRadius(
+      content,
+      { buildingType: doored.typeId, tribe: PRIMARY_TRIBE },
+      hy,
+    );
     expect(fromDoor).toBeLessThan(systems.FISH_SHORE_SEARCH_RADIUS);
     expect(rangeRingsOf(content, world, [1, 2])).toEqual([
       { entity: FLAG, radiusNodes: systems.FISH_SHORE_SEARCH_RADIUS, metric: 'manhattan', kind: 'work' },
@@ -112,7 +116,12 @@ describe('rangeRingsOf', () => {
 
   it("draws a defence-capable building's fire reach in its own kind, whether its alarm is up or not", () => {
     const { hx, hy } = nodeOfPosition(TOWER_AT.x, TOWER_AT.y);
-    const reach = systems.shelterFireRadius(content, shelter.typeId, PRIMARY_TRIBE, hx, hy);
+    const reach = systems.shelterFireRadius(
+      content,
+      { buildingType: shelter.typeId, tribe: PRIMARY_TRIBE },
+      hx,
+      hy,
+    );
     expect(reach).toBeGreaterThan(0);
     const ring = [{ entity: TOWER, radiusNodes: reach, metric: 'hex', kind: 'defence' }];
     expect(rangeRingsOf(content, snapshotOf([building(shelter.typeId)]), [TOWER])).toEqual(ring);

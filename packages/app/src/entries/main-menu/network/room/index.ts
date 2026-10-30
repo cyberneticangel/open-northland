@@ -4,6 +4,7 @@ import { formatClockTime, formatMessage, messages } from '../../../../i18n/index
 import { node } from '../../dom.js';
 import { createMapDetailsCard } from '../../map-select/card.js';
 import type { MapSelectItem } from '../../map-select/model.js';
+import { nickWithFlag } from '../flags/catalog.js';
 import { button } from './controls.js';
 import { roomPermissions } from './model.js';
 import { roomObservers } from './observers.js';
@@ -206,6 +207,10 @@ function chatRow(line: ChatLine): HTMLElement {
   const row = node('p');
   const time = node('time', 'network-room__chat-time', formatClockTime(line.at));
   time.setAttribute('datetime', new Date(line.at).toISOString());
-  row.append(time, node('strong', '', `${line.from}: `), document.createTextNode(line.text));
+  row.append(
+    time,
+    nickWithFlag('strong', '', `${line.from}: `, line.flag),
+    document.createTextNode(line.text),
+  );
   return row;
 }

@@ -132,6 +132,7 @@ export function presentItem(
   sheet: SpriteSheet | undefined,
   environmentMotion = false,
   wind?: WindSway,
+  seaClock?: number,
 ): readonly ResolvedLayer[] | null {
   if (repeatsInTick(track, item, tick, frameAlpha, sheet, environmentMotion)) return track.tickPresent.layers;
   if (track.motion.tick === -1) {
@@ -186,6 +187,7 @@ export function presentItem(
     environmentMotion ? tick + frameAlpha : clocks.animation,
     held ? 0 : idleElapsed,
     environmentMotion && !held ? wind : undefined,
+    seaClock ?? clocks.animation,
   );
   const last = track.tickPresent;
   const repeatable =

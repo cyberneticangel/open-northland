@@ -21,6 +21,36 @@ export interface TargetFlash {
   readonly progress: number;
 }
 
+/** How an armed pick draws an entity it judged: a `candidate` takes the order, a `refused` one turns it down
+ *  and draws plain (the pointer refuses over it), a `doomed` one is what the next press tears down. A
+ *  presentation addition, not taken from the original. */
+export type TargetTone = 'candidate' | 'refused' | 'doomed';
+
+/** How a drawn tone outlines its entity, and the lift it takes while it is the one aimed at. Artistic
+ *  choice: a pale sky-blue contour, apart from the ivory selection and the amber work flag and clear of
+ *  straw roofs and grass, and the attack red for what a press destroys. */
+export const TARGET_MARK_STYLE: Readonly<
+  Record<Exclude<TargetTone, 'refused'>, { readonly outline: number; readonly liftTone: TargetFlashTone }>
+> = {
+  candidate: { outline: 0x7ee0ff, liftTone: 'order' },
+  doomed: { outline: 0xff4f3d, liftTone: 'attack' },
+};
+/** The aimed target's lift, a steady step above the selection pulse's peak. */
+export const TARGET_MARK_LIFT = 0.24;
+
+/** Artistic choice: every other candidate breathes slowly between a faint and a clear lift, so the eye
+ *  finds the targets across a busy settlement without mistaking them for the aimed one. */
+const TARGET_BREATH_MEAN = 0.1;
+const TARGET_BREATH_SWING = 0.07;
+const TARGET_BREATH_PERIOD_SECONDS = 1.4;
+
+export function targetMarkBreath(timeSeconds: number): number {
+  return (
+    TARGET_BREATH_MEAN +
+    TARGET_BREATH_SWING * Math.sin((timeSeconds * Math.PI * 2) / TARGET_BREATH_PERIOD_SECONDS)
+  );
+}
+
 /** The colour each lift tone moves towards, by tone code: white (the selection pulse's too), then each
  *  flash tone's. The sprite shaders index this array, so a code is its position here. */
 const LIFT_COLOURS = ['vec3(1.0)', 'vec3(1.0, 0.5, 0.42)', 'vec3(0.6, 1.0, 0.5)'] as const;

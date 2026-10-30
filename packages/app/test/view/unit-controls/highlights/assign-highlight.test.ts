@@ -1,5 +1,5 @@
 import { lastByTypeId } from '@open-northland/data';
-import type { BuildingHighlightItem } from '@open-northland/render';
+import type { TargetMark } from '@open-northland/render';
 import type { WorldSnapshot } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
 import { JOB_CARRIER, JOB_COLLECTOR } from '../../../../src/catalog/jobs.js';
@@ -18,7 +18,7 @@ import { countingSnapshot, type Ent, snapshotOf } from '../../../support/snapsho
 
 /**
  * The "przydziel miejsce pracy" verdict - the button places each settler's CURRENT trade only, so a
- * building is green iff it offers that exact trade (canonically) with a free slot. Matched by
+ * building is lit iff it offers that exact trade (canonically) with a free slot. Matched by
  * `canonicalJobType`, so a picker-assigned raw id lines up with the building's rebased slot id.
  */
 
@@ -53,13 +53,13 @@ describe('tradeSlotsOf - the slots that seat a current trade', () => {
 
 /**
  * The snapshot-level projection over real sandbox content - the functions the view actually calls. The
- * key invariant: the highlight verdict (`computeAssignHighlight`, what the player sees green) and the click
- * resolver (`workerGroupAt`, what a click posts) must agree building-for-building, so a green building
- * posts the settler in a trade it offers and a red one still sends the order the sim refuses with a reason.
+ * key invariant: the highlight verdict (`computeAssignHighlight`, what the player sees lit) and the click
+ * resolver (`workerGroupAt`, what a click posts) must agree building-for-building, so a lit building
+ * posts the settler in a trade it offers and a refused one still sends the order the sim refuses with a reason.
  * Both read one verdict; this proves they stay in lockstep over a live world.
  */
 describe('computeAssignHighlight / workerGroupAt over sandbox content', () => {
-  it('highlights own candidate buildings and the green/red verdict matches what a click would bind', () => {
+  it('highlights own candidate buildings and the lit/refused verdict matches what a click would bind', () => {
     const scene = getScene('sandbox');
     if (scene === undefined) throw new Error('sandbox scene missing');
     const sim = createSceneSim(scene);
@@ -80,17 +80,17 @@ describe('computeAssignHighlight / workerGroupAt over sandbox content', () => {
     const items = computeAssignHighlight(snapshot, [settler.id], buildingsByType);
     expect(items.length).toBeGreaterThan(0); // some own building employs someone
 
-    // Lockstep: every highlighted building takes the click, and a green one offers the settler a trade.
+    // Lockstep: every highlighted building takes the click, and a lit one offers the settler a trade.
     for (const item of items) {
       const workers = workerGroupAt(snapshot, item.id, [settler.id], buildingsByType);
       expect(workers).not.toBeNull();
-      if (item.ok) expect(workers?.[0]?.jobPriority.length).toBeGreaterThan(0);
+      if (item.tone === 'candidate') expect(workers?.[0]?.jobPriority.length).toBeGreaterThan(0);
     }
-    // At least one candidate is green (the settler's trade has an open slot somewhere) and the resolver
+    // At least one candidate is lit (the settler's trade has an open slot somewhere) and the resolver
     // posts the settler there under a real job id.
-    const green = items.find((i) => i.ok);
-    expect(green).toBeDefined();
-    expect(workerGroupAt(snapshot, green?.id ?? -1, [settler.id], buildingsByType)).toEqual([
+    const lit = items.find((i) => i.tone === 'candidate');
+    expect(lit).toBeDefined();
+    expect(workerGroupAt(snapshot, lit?.id ?? -1, [settler.id], buildingsByType)).toEqual([
       { entity: settler.id, jobPriority: [expect.any(Number)] },
     ]);
 
@@ -126,9 +126,9 @@ describe('a building still under construction', () => {
       },
     ]);
 
-  it('is a candidate, greened for the trade it will employ', () => {
+  it('is a candidate, lit for the trade it will employ', () => {
     const snapshot = world();
-    expect(computeAssignHighlight(snapshot, [1], byType)).toEqual([{ id: 2, ok: true }]);
+    expect(computeAssignHighlight(snapshot, [1], byType)).toEqual([{ id: 2, tone: 'candidate' }]);
     expect(workerGroupAt(snapshot, 2, [1], byType)).toEqual([
       { entity: 1, jobPriority: [rebaseSlotJob(COIN_MAKER)] },
     ]);
@@ -158,21 +158,21 @@ describe('a workplace pick armed for a group', () => {
     },
   });
 
-  it('reds a workplace whose matching slot is full, and still sends the order the sim refuses', () => {
+  it('refuses a workplace whose matching slot is full, and still sends the order the sim refuses', () => {
     const snapshot = snapshotOf([coinMaker(1, 10), coinMaker(2, 10), coinMaker(3), mint(10)]);
-    expect(computeAssignHighlight(snapshot, [3], byType)).toEqual([{ id: 10, ok: false }]);
+    expect(computeAssignHighlight(snapshot, [3], byType)).toEqual([{ id: 10, tone: 'refused' }]);
     expect(workerGroupAt(snapshot, 10, [3], byType)).toEqual([
       { entity: 3, jobPriority: [rebaseSlotJob(COIN_MAKER)] },
     ]);
   });
 
-  it('reds a full workplace a selected member already works at', () => {
+  it('refuses a full workplace a selected member already works at', () => {
     const snapshot = snapshotOf([coinMaker(1, 10), coinMaker(2, 10), coinMaker(3), mint(10)]);
-    expect(computeAssignHighlight(snapshot, [1, 3], byType)).toEqual([{ id: 10, ok: false }]);
+    expect(computeAssignHighlight(snapshot, [1, 3], byType)).toEqual([{ id: 10, tone: 'refused' }]);
     expect(workerGroupAt(snapshot, 10, [1, 3], byType)?.map((w) => w.entity)).toEqual([1, 3]);
   });
 
-  it('sends only the members it offers a trade when a red workplace offers one', () => {
+  it('sends only the members it offers a trade when a refused workplace offers one', () => {
     const miller: Ent = {
       id: 4,
       components: { Settler: { tribe: PRIMARY_TRIBE, jobType: 19 }, Owner: { player: HUMAN_PLAYER } },
@@ -185,28 +185,28 @@ describe('a workplace pick armed for a group', () => {
       mint(10),
       mint(11),
     ]);
-    expect(computeAssignHighlight(snapshot, [3, 4], byType)).toContainEqual({ id: 10, ok: false });
+    expect(computeAssignHighlight(snapshot, [3, 4], byType)).toContainEqual({ id: 10, tone: 'refused' });
     // The coin maker's full slot is the refusal to tell, not the unemployed miller's missing trade.
     expect(workerGroupAt(snapshot, 10, [3, 4], byType)).toEqual([
       { entity: 3, jobPriority: [rebaseSlotJob(COIN_MAKER)] },
     ]);
   });
 
-  it('sends a member of another trade to a red workplace with no trade to try', () => {
+  it('sends a member of another trade to a refused workplace with no trade to try', () => {
     const miller: Ent = {
       id: 4,
       components: { Settler: { tribe: PRIMARY_TRIBE, jobType: 19 }, Owner: { player: HUMAN_PLAYER } },
     };
     const snapshot = snapshotOf([miller, mint(10)]);
-    expect(computeAssignHighlight(snapshot, [4], byType)).toEqual([{ id: 10, ok: false }]);
+    expect(computeAssignHighlight(snapshot, [4], byType)).toEqual([{ id: 10, tone: 'refused' }]);
     expect(workerGroupAt(snapshot, 10, [4], byType)).toEqual([{ entity: 4, jobPriority: [] }]);
   });
 
-  it('greens a workplace for the unemployed members and posts every member it offers a trade', () => {
+  it('lights a workplace for the unemployed members and posts every member it offers a trade', () => {
     const snapshot = snapshotOf([coinMaker(1, 10), coinMaker(2), mint(10), mint(11, OTHER_MINT)]);
     expect(computeAssignHighlight(snapshot, [1, 2], byType)).toEqual([
-      { id: 10, ok: true },
-      { id: 11, ok: true },
+      { id: 10, tone: 'candidate' },
+      { id: 11, tone: 'candidate' },
     ]);
     expect(workerGroupAt(snapshot, 11, [1, 2], byType)?.map((w) => w.entity)).toEqual([1, 2]);
   });
@@ -237,7 +237,7 @@ describe('pick-mode highlight cost', () => {
     const pick = buildingPickController({ snapshot: () => current, content: sim.content });
 
     pick.arm({ kind: 'workplace', units: [settler.id] });
-    const frame = (): readonly BuildingHighlightItem[] | null => pick.highlight();
+    const frame = (): readonly TargetMark[] | null => pick.highlight();
     const wash = frame();
     const afterFirst = first.scans();
     expect(afterFirst).toBeGreaterThan(0);

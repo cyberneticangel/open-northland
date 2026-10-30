@@ -113,6 +113,7 @@ export const plSurfaces = {
       overseerTaken: 'Nadzorujesz',
       teamColour: 'Kolor drużyny',
       teamColourLocked: 'ta mapa ma stałe kolory',
+      teamColourTaken: 'ma go gracz {seat}',
       tribe: 'Plemię',
       difficultyHeader: 'Poziom',
       difficultyTitle:
@@ -215,6 +216,9 @@ export const plSurfaces = {
       hoverOutline: 'Obrys pod kursorem',
       hoverOutlineTip:
         'Kontur wokół postaci lub budynku, nad którym zatrzymuje się kursor, jak w oryginale. Zmienia się w grze od razu.',
+      cursorHints: 'Podpowiedzi przy kursorze',
+      cursorHintsTip:
+        'Napis przy kursorze: co zrobi kliknięcie i nazwa rzeczy pod kursorem, np. zwierzęcia, sterty towarów lub skrzyni.',
       groupNumbers: 'Numery grup',
       groupNumbersTip:
         'Malutki numer grupy przy każdej jednostce przypisanej do grupy. Jednostka w kilku grupach pokazuje do trzech, np. 1,2,3.',
@@ -245,10 +249,13 @@ export const plSurfaces = {
         'Pogłębia i zmiękcza cienie budynków, drzew i dekoracji. Osadnicy i zwierzęta rzucają cień własnej sylwetki, pochylony zgodnie ze światłem budynków. Po wyłączeniu zostają cienie oryginału.',
       enhancedWater: 'Ulepszona woda',
       enhancedWaterTip:
-        'Krzyżujące się fale, ciemniejsze płycizny i jeszcze ciemniejsza głębia, chłodniejszy, bardziej niebieski kolor oraz refleks wędrujący po głębokiej wodzie. Po wyłączeniu zostaje woda oryginału.',
+        'Krzyżujące się fale ze spokojnymi i wzburzonymi obszarami, zmienne odblaski, fale zalewające plażę i cofające się, ciemniejsze płycizny i jeszcze ciemniejsza głębia oraz chłodniejszy, bardziej niebieski kolor. Po wyłączeniu zostaje woda oryginału.',
       buildingDamage: 'Zniszczenia budynków',
       buildingDamageTip:
         'Wyrwy w dachach, odsłonięte belki, dym, ogień i odpadające fragmenty. Wyłącz, aby używać prostszego dymu i odciążyć grafikę.',
+      nightLights: 'Światło nocą',
+      nightLightsTip:
+        'Nocą ogniska, domy i osadnicy rozświetlają mapę: okolice ognisk dostają ciepłą poświatę, a postacie i domy zachowują część dziennych barw. Po wyłączeniu noc jest równomiernie przyciemniona, a grafika ma mniej pracy.',
       environmentMotion: 'Ruch otoczenia',
       environmentMotionTip:
         'Drzewa, które oryginał rysuje jedną nieruchomą klatką, kołyszą się na wietrze razem ze swoim cieniem, ryby pływają płynnie, a wiatr w roślinności projektu jest wygładzony. Osadnicy i zwierzęta zachowują krok oryginału, a oryginalne animacje nie dostają dodatkowych klatek. We wczytanym zapisie drzewa stoją nieruchomo.',
@@ -282,6 +289,10 @@ export const plSurfaces = {
       unitResponsesTip:
         'Czy osadnicy odpowiadają głosem na rozkazy i na zaznaczenie. Bez odpowiedzi rozkaz potwierdza samo kliknięcie.',
       unitResponseModes: { all: 'Zawsze', selection: 'Tylko przy zaznaczeniu', off: 'Nigdy' },
+      musicSource: 'Muzyka',
+      musicSourceTip:
+        'Muzyka mapy gra utwór tej mapy i zmienia nastrój przy walce. Muzyka nacji gra na zmianę utwory twojego ludu.',
+      musicSources: { map: 'Mapa', nation: 'Nacja' },
       soundQuality: 'Jakość dźwięków',
       soundQualityTip:
         'Bezstratne to oryginalne nagrania. Lekkie są skompresowane i ważą kilka razy mniej, co skraca wczytywanie w przeglądarce. Różnicę trudno usłyszeć.',
@@ -346,6 +357,7 @@ export const plSurfaces = {
         professionPicker: 'Lista zawodów osadnika',
         equipmentPicker: 'Okno ekwipunku osadników',
         attackMove: 'Atak w marszu',
+        dockShips: 'Zacumuj zaznaczone statki',
         hudToggle: 'Ukryj/pokaż interfejs',
         speedCycle: 'Prędkość gry ×1 / ×2 / ×3',
         loadGame: 'Wczytaj grę',
@@ -357,6 +369,7 @@ export const plSurfaces = {
         upgradeBuilding: 'Rozbuduj zaznaczony budynek',
         defenceOn: 'Włącz tryb obrony we wszystkich budynkach',
         defenceOff: 'Wyłącz tryb obrony we wszystkich budynkach',
+        buildingAlarm: 'Bij na alarm lub odwołaj alarm w zaznaczonym budynku',
         nextCivilian: 'Następny cywil',
         nextScout: 'Następny zwiadowca',
         nextSingleWoman: 'Następna niezamężna kobieta bez domu',
@@ -529,6 +542,8 @@ export const plSurfaces = {
         '{shift} + klik ustawia polecenie w kolejce za bieżącym: ruch, atak, budowę, musztrę, drogowskazy, skrzynie, zakładanie przedmiotów, potrzeby, zwiad, zajmowanie zwierząt, wsiadanie oraz jazdę, atak i załadunek pojazdów.',
       buildMany: 'Przytrzymaj {shift} przy stawianiu budynku, a postawisz kilka takich, po jednym na klik.',
       attackMove: '{key} to atak w ruchu: jednostki idą do celu i atakują wszystko po drodze.',
+      dockShips:
+        '{key} cumuje zaznaczone statki przy wskazanym brzegu, każdy w swoim miejscu. Z Ctrl/Cmd (klik po {key} albo prawy klik przy brzegu) załogi wysiadają po zacumowaniu.',
       postGraduates:
         'W oknie asystenta ({key}) opcja „{graduatesOption}” sama wysyła świeżo wyszkolonych osadników ze szkół do warsztatów.',
       moveFlags:
@@ -684,10 +699,18 @@ export const plSurfaces = {
       'Indygo',
       'Magenta',
       'Różowy',
+      'Bordowy',
+      'Granatowy',
+      'Oliwkowy',
+      'Brązowy',
+      'Ciemnozielony',
+      'Śliwkowy',
+      'Biały',
+      'Lawendowy',
     ],
     summaryAnimations: 'Wszystkie dostępne sekwencje wybranej postaci.',
     summaryHeads: 'Ten sam chód z każdym dostępnym wyglądem głowy.',
-    summaryColors: 'Ten sam chód we wszystkich szesnastu kolorach graczy.',
+    summaryColors: 'Ten sam chód we wszystkich dwudziestu czterech kolorach graczy.',
     missingAtlas:
       'Uruchom pipeline assetów na paczce danych Open Northland, aby wczytać atlas „{character}” ({stem}).',
     missingFrames:

@@ -9,6 +9,7 @@ import {
   VOICE_CLASSES,
   type VoiceClass,
 } from '@open-northland/data';
+import { cultureOfTribe, type MusicCulture } from '../music/pools.js';
 
 /**
  * The lookup-shaped view of a decoded {@link SoundBank} the director reads each frame, built once at
@@ -49,6 +50,8 @@ export interface SoundIndex {
   /** Settler tribe → its murmur pools ({@link murmurPools}); a voiceless tribe in
    *  {@link BORROWED_TRIBE_VOICES} murmurs with its lender. */
   readonly murmurByTribe: ReadonlyMap<number, MurmurPools>;
+  /** Settler tribe type id → the culture whose music its nation soundtrack plays. */
+  readonly musicCultureByTribe: ReadonlyMap<number, MusicCulture>;
   /** A `[GfxLandscape]` record index → the object ambience its placed objects sound (birds in a tree). */
   readonly landscapeAmbienceByRecord: ReadonlyMap<number, LandscapeAmbience>;
   /** A static group's, jingle's or landscape pool's file list (the very array the maps above hold) →
@@ -319,10 +322,20 @@ export function buildSoundIndex(
     animalCalls,
     attackAlertsByTribe,
     murmurByTribe: murmurPools(sounds, tribes, groupsByName, poolGains),
+    musicCultureByTribe: musicCultures(tribes),
     landscapeAmbienceByRecord: landscapeAmbience(sounds, landscapeRecords, poolGains),
     poolGains,
     wavGains,
   };
+}
+
+function musicCultures(tribes: readonly AuthoredId[]): Map<number, MusicCulture> {
+  const cultures = new Map<number, MusicCulture>();
+  for (const { typeId, id } of tribes) {
+    const culture = id === undefined ? null : cultureOfTribe(id);
+    if (typeId !== undefined && culture !== null) cultures.set(typeId, culture);
+  }
+  return cultures;
 }
 
 /**

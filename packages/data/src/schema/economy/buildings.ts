@@ -66,6 +66,15 @@ export const BuildingTribeVariant = z.strictObject({
 });
 export type BuildingTribeVariant = z.infer<typeof BuildingTribeVariant>;
 
+/** A named `[GfxHouse]` record whose own footprint differs from its tribe's default for the type: a map
+ *  places the record by `EditName`, such as the viking headquarters' hall beside the default ship. */
+export const BuildingRecordFootprint = z.strictObject({
+  tribe: TypeId,
+  editName: z.string(),
+  footprint: BuildingFootprint,
+});
+export type BuildingRecordFootprint = z.infer<typeof BuildingRecordFootprint>;
+
 export const BuildingType = z.strictObject({
   typeId: TypeId,
   id: z.string(), // e.g. "headquarters"
@@ -119,6 +128,8 @@ export const BuildingType = z.strictObject({
   footprint: BuildingFootprint.optional(),
   /** The other tribes' own {@link BuildingTribeVariant}s, ascending by tribe. */
   tribeVariants: z.array(BuildingTribeVariant).default([]),
+  /** The named records that stand on another footprint than their tribe's default. */
+  recordFootprints: z.array(BuildingRecordFootprint).default([]),
   /**
    * Extracted `logichousetype` `logicbuildonbiopattern`: the building's walk-block body must stand on
    * ground carrying the vegetation regrow/plant flags. The source sets it for wells and hives.

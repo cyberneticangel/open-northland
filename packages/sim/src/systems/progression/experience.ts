@@ -15,7 +15,7 @@ import { contentIndex } from '../../core/content-index.js';
 import type { Entity, World } from '../../ecs/world.js';
 import type { SystemContext } from '../context.js';
 import { WEAPON_MAIN_TYPE } from '../readviews/combat.js';
-import { declaresNoTrades, isHeroJob, isScoutJob, isSoldierJob, isTraderJob } from '../readviews/index.js';
+import { declaresNoTrades, isHeroJob, isSoldierJob, isTraderJob } from '../readviews/index.js';
 import { isCarrierJob, type WorkplaceOperators } from '../stores/index.js';
 
 /**
@@ -174,22 +174,6 @@ export function grantTradeExperience(world: World, ctx: SystemContext, settler: 
   const s = world.tryGet(settler, Settler);
   if (s !== undefined && s.jobType !== null && isTraderJob(ctx.content, s.jobType))
     accrueGeneralTrack(world, ctx, settler, s.jobType);
-}
-
-/**
- * The scout's signpost-craft bucket, an extension: the original gives the scout no experience track at
- * all, but here every erected signpost trains it (authored). Rate 1 per post, so raw XP is the repeat
- * count. The id sits outside the original's experience-type space (`logicdefines.inc`
- * `JOB_EXPERIENCE_TYPE_MAXIMUM` is 78), so no extracted track can collide.
- */
-export const SCOUT_EXPERIENCE_TYPE = 100;
-
-/** Grant a scout one signpost-craft XP for a guidepost it actually erected; the caller checks the post
- *  stood. */
-export function grantScoutExperience(world: World, content: ContentSet, settler: Entity): void {
-  const s = world.tryGet(settler, Settler);
-  if (s === undefined || !isScoutJob(content, s.jobType)) return;
-  accrueExperience(world, settler, SCOUT_EXPERIENCE_TYPE, 1);
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { HouseholdEffect } from '../../details-panel/model/index.js';
+import type { KeybindingAction } from '../../keybindings.js';
 import type { GoodIconPainter } from '../good-art.js';
 import type { TipChip } from '../parts/tip-layer.js';
 import type { SettlerPanelActions } from '../settler-panel/actions.js';
@@ -14,6 +15,8 @@ export interface BuildingPanelActions {
   /** Ask the player whether to raze the building named `name`, then raze it. */
   readonly demolish: (building: number, name: string) => void;
   readonly setAlarm: (building: number, on: boolean) => void;
+  /** Raise or call off the alarm in every shelter of `building`'s owner. */
+  readonly setAlarmEverywhere: (building: number, on: boolean) => void;
   /** Stand `garrison` down from the tower and select them, so the next click sends them on. */
   readonly releaseGarrison: (building: number, garrison: readonly number[]) => void;
   /** Allow or forbid a household ware in every home of `player`. */
@@ -39,6 +42,8 @@ export interface BuildingPanelDeps {
   readonly actions: Pick<SettlerPanelActions, 'centre' | 'select' | 'show' | 'clearSelection'>;
   readonly building: BuildingPanelActions;
   readonly windows: BuildingPanelWindows;
+  /** The key bound to `action`, as the player reads it. */
+  readonly keyLabel: (action: KeybindingAction) => string;
   /** The owner's buildings of the shown one's type, ascending; an index read. */
   readonly buildingPeers: (building: number) => readonly number[];
 }

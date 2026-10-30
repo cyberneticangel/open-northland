@@ -39,12 +39,8 @@ export const BUILD_ROAD_ATOMIC = 41;
 export const BUILD_WALL_ATOMIC = 42;
 export const BUILD_ROAD_CLIP = 'viking_builder_build_road';
 const BUILD_WALL_CLIP = 'viking_builder_build_wall';
-/** The mod's build-road and build-wall clip length. */
-export const BUILD_CLIP_TICKS = 15;
-/** Ticks per authored clip tick the sim plays a one-strike site's clip at. */
-export const ONE_STRIKE_CLIP_PACE = 2;
-/** How long a road or wall strike runs. */
-export const BUILD_STRIKE_TICKS = BUILD_CLIP_TICKS * ONE_STRIKE_CLIP_PACE;
+/** The mod's build-road and build-wall clip length, which a road or wall strike runs for. */
+export const BUILD_STRIKE_TICKS = 15;
 const STORE = 1;
 const HOUSE = 2;
 /** A home built of wood alone, which a store short of wood leaves waiting. */
@@ -153,8 +149,8 @@ function roadContent() {
       },
     ],
     atomicAnimations: [
-      { id: BUILD_ROAD_CLIP, name: BUILD_ROAD_CLIP, length: BUILD_CLIP_TICKS },
-      { id: BUILD_WALL_CLIP, name: BUILD_WALL_CLIP, length: BUILD_CLIP_TICKS },
+      { id: BUILD_ROAD_CLIP, name: BUILD_ROAD_CLIP, length: BUILD_STRIKE_TICKS },
+      { id: BUILD_WALL_CLIP, name: BUILD_WALL_CLIP, length: BUILD_STRIKE_TICKS },
     ],
     buildings: [
       {

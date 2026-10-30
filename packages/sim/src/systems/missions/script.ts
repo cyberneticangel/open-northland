@@ -16,6 +16,8 @@ export const MISSION_LANDSCAPE_NAME_FIELD = 'landscape';
 export interface MissionHouseRef {
   readonly typeId: number;
   readonly tribe: number;
+  /** The house record the name joined, which may stand on a footprint of its own. */
+  readonly record?: string;
 }
 
 /**

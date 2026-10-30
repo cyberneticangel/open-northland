@@ -60,8 +60,27 @@ settler in daylight. We read the author's intent instead:
   They draw as one additive quad at `OVERBRIGHT_SHARE` (a quarter) of their excess: a warm lift that
   keeps the shadows. Tuned by eye against the alternatives: the script's literal 1.34 red as a true
   multiply on the ground, or a half share of the lift, both read as the yellow wash players reported.
+- A darkening grade draws with most of its darkness taken out (`shownGrade`,
+  `packages/render/src/data/lighting/grade.ts`): a sunset keeps its hue at about 0.94 luma instead of
+  0.84, and a night keeps more of its darkness (0.56 shows at about 0.63) and leans blue. Tuned by
+  eye after players found the literal sunset too dark and the night flat.
+- As the grade darkens past dusk, the world draws into a texture and composites
+  (`world-renderer/offscreen-world.ts`): the unlit world multiplies by a light map cleared to the
+  grade, with a low warm pool at the foot of each finished house and a brighter flickering pool with a
+  visible flame at each map object drawn with the `fire` palette (`light-sites.ts`). Settlers and
+  vehicles with an owner, and the houses, mark their own body layers lit: the world's programs write
+  a lit mask beside the colour in the same draw (`lighting/night-mask.ts`), so a figure keeps part of
+  its daylight colours with no light on the ground around it, a house's walls glow from its foot,
+  fading toward the roof, and what the painter draws in front covers a mark again. Houses light up one
+  by one through the dusk; their walls hold steady while their pools flicker slightly. The house
+  palettes draw windows and doors with the same wood and plaster ramps as the beams and walls, so the
+  glow follows the whole figure rather than its openings.
+- The graphics setting "Night lights" (`nightLights`) turns the composite off: the night then draws
+  as the flat shown grade, with no pools, flames or lit figures.
 - Every other index stays on the terrain as its palette colour divided by the scene's multiply, so
-  the product on screen is exactly what the script asked for.
+  the product on screen is what the script asked for. Under a darkening grade a brightening local
+  tint (the glow under a fire) keeps a fifth of its excess instead (`LOCAL_GLOW_SHARE`): the fire's
+  own light brightens that ground again, and the divided glow blew out under it.
 - A step fades exponentially over about 4 game seconds (`LIGHT_FADE_SECONDS`); a load or seek snaps.
   The terrain's local tints take their new divisor at once, so a glow runs a few seconds ahead of the
   scene it is divided by. An approximation: fading the ground too would be a per-frame pass over the

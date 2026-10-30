@@ -164,9 +164,9 @@ export function readVehicleDriver(
 }
 
 /**
- * A posted carrier pulling the hauling cart it has taken (`HaulingCart.taken`) draws as that cart's
- * driving figure: the item takes the cart's type and itself as the driver, which `cartDriveLook` reads
- * the way it reads a cart's commander. Nothing while the carrier still walks to the cart.
+ * A posted carrier or a trader pulling the hauling cart it has taken (`HaulingCart.taken`) draws as that
+ * cart's driving figure: the item takes the cart's type and itself as the driver, which `cartDriveLook`
+ * reads the way it reads a cart's commander. Nothing while the puller still walks to the cart.
  */
 export function readHaulingCartDriver(
   item: MutableDrawItem,

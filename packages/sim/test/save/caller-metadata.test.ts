@@ -27,6 +27,13 @@ describe('opaque caller metadata in the save header', () => {
     expect(save.header.session).toBeNull();
     expect(() => exportSaveGame(sim(), { view: { v: NaN } })).toThrow('save.header.view');
   });
+  it('carries the presentation text beside the sections, and rejects a non-string one', () => {
+    const save = parseSaveGame(exportSaveGame(sim(), { presentation: '{"memory":1}' }));
+    expect(save.presentation).toBe('{"memory":1}');
+    expect(save.header).not.toHaveProperty('presentation');
+    expect(parseSaveGame(exportSaveGame(sim())).presentation).toBeNull();
+    expect(() => parseSaveGame({ ...save, presentation: { memory: 1 } })).toThrow('save.presentation');
+  });
   it('rejects old format metadata and a missing current field', () => {
     const save = exportSaveGame(sim());
     const header = { ...save.header, formatVersion: 3, session: { untrusted: 'legacy extra' } };

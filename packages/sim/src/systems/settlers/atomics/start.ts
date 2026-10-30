@@ -22,6 +22,7 @@ import { accessibleStockAmounts, refillingGoodsOf } from '../../stores/index.js'
 import {
   beginCartLift,
   carryCapacityOf,
+  haulingCartLiftTicks,
   liftsWithHaulingCart,
   pullsHaulingCart,
 } from '../../vehicles/hauling-cart.js';
@@ -207,7 +208,7 @@ export function startPickup(
 
 /**
  * A carrier with its hauling cart lifts off the store or pile `from` beside the standing cart, one unit
- * a clip: the cart is stood down here if still in hand, and one `haulLoad` plays; the planner's
+ * a lift: the cart is stood down here if still in hand, and one `haulLoad` plays; the planner's
  * hauling-cart rung plays the next while the lift continues ({@link cartLiftContinues}).
  */
 export function startCartLoad(
@@ -226,12 +227,12 @@ export function startCartLoad(
     e,
     atomicId,
     { kind: 'haulLoad', from, goodType },
-    atomicDuration(ctx.content, settler, atomicId),
+    haulingCartLiftTicks(world, ctx.content, e, atomicDuration(ctx.content, settler, atomicId)),
     from,
   );
 }
 
-/** The unload twin of {@link startCartLoad}: one unit out of the standing cart into `store` a clip. */
+/** The unload twin of {@link startCartLoad}: one unit out of the standing cart into `store` a lift. */
 export function startCartUnload(
   world: World,
   ctx: SystemContext,
@@ -245,7 +246,7 @@ export function startCartUnload(
     e,
     PILEUP_ATOMIC_ID,
     { kind: 'haulUnload', store },
-    atomicDuration(ctx.content, settler, PILEUP_ATOMIC_ID),
+    haulingCartLiftTicks(world, ctx.content, e, atomicDuration(ctx.content, settler, PILEUP_ATOMIC_ID)),
     store,
   );
 }

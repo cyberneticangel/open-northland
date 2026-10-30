@@ -1,10 +1,13 @@
-import type {
-  BuildingFootprint,
-  BuildingTribeVariant,
-  BuildingType,
-  GoodQuantity,
+import {
+  type BuildingFootprint,
+  type BuildingRecordFootprint,
+  type BuildingTribeVariant,
+  type BuildingType,
+  buildingFootprintFor,
+  type GoodQuantity,
+  sameFootprintCells,
 } from '@open-northland/data';
-import type { ByTribe } from '@open-northland/formats/ini';
+import type { ByTribe, RecordFootprint } from '@open-northland/formats/ini';
 
 /**
  * The `[GfxHouse]` graphics-table fields keyed by building `typeId`. The logic house table carries none
@@ -17,6 +20,8 @@ export interface BuildingGraphicsOverlays {
   /** Building `typeId` → the next size level's `typeId`. */
   readonly upgradeTargets: ReadonlyMap<number, number>;
   readonly footprints: ReadonlyMap<number, ByTribe<BuildingFootprint>>;
+  /** Building `typeId` → every named record's own footprint. */
+  readonly recordFootprints: ReadonlyMap<number, readonly RecordFootprint[]>;
 }
 
 /** The lowest tribe's entry, the one a type's top-level field carries. */
@@ -48,6 +53,21 @@ function tribeVariants(
   return variants;
 }
 
+/** The named records of `type` that stand on another footprint than their tribe's default, ascending by
+ *  tribe, then name. */
+function recordFootprints(
+  type: Pick<BuildingType, 'footprint' | 'tribeVariants'>,
+  records: readonly RecordFootprint[] | undefined,
+): BuildingRecordFootprint[] {
+  return (records ?? [])
+    .filter((r) => {
+      const standard = buildingFootprintFor(type, r.tribe);
+      return standard === undefined || !sameFootprintCells(standard, r.footprint);
+    })
+    .map((r) => ({ tribe: r.tribe, editName: r.editName, footprint: r.footprint }))
+    .sort((a, b) => a.tribe - b.tribe || (a.editName < b.editName ? -1 : a.editName > b.editName ? 1 : 0));
+}
+
 /**
  * Joins the graphics-table overlays onto the logic buildings by `typeId`: the lowest tribe's values on the
  * type itself, every other tribe's in `tribeVariants`. A building the graphics table omits keeps its schema
@@ -65,6 +85,10 @@ export function applyBuildingGraphicsOverlays(
     const footprints = overlays.footprints.get(b.typeId);
     const footprint = lowestTribe(footprints)?.[1];
     const variants = tribeVariants(footprints, hitpoints);
+    const records = recordFootprints(
+      { ...(footprint ? { footprint } : {}), tribeVariants: variants },
+      overlays.recordFootprints.get(b.typeId),
+    );
     return {
       ...b,
       ...(cost ? { construction: cost } : {}),
@@ -72,6 +96,7 @@ export function applyBuildingGraphicsOverlays(
       ...(upgradeTarget !== undefined ? { upgradeTarget } : {}),
       ...(footprint ? { footprint } : {}),
       ...(variants.length > 0 ? { tribeVariants: variants } : {}),
+      ...(records.length > 0 ? { recordFootprints: records } : {}),
     };
   });
 }

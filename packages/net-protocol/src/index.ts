@@ -21,6 +21,7 @@ export type {
   HallChatLine,
   LobbySettings,
   OnlinePlayer,
+  PlayerFlag,
   PlayerWireEnvelope,
   RecentPlayer,
   RelayWireEnvelope,
@@ -43,12 +44,12 @@ export type {
   WireEnvelope,
   WireFrame,
 } from './messages.js';
-export { DESCRIPTOR_WORLD } from './messages.js';
+export { DESCRIPTOR_WORLD, withFlag } from './messages.js';
 export { clientMessageKind, parseClientMessage } from './parse/client.js';
 export { closingCode } from './parse/reason.js';
 export { saveOrdersText } from './parse/save-orders.js';
 export { parseServerMessage } from './parse/server.js';
-export { parseLine, parseNick, parseRelayBuild } from './parse/text.js';
+export { parseFlag, parseLine, parseNick, parseRelayBuild } from './parse/text.js';
 export { parseBlobBytes, SYNC_DOMAINS } from './parse/wire.js';
 export type { ClosingCode, ClosingReason, RelayReason, RelayReasonCode } from './reasons.js';
 export { RelayTransport } from './relay-transport.js';

@@ -62,29 +62,41 @@ function canPlaceAnchor(
     const slot = cy * w + cx;
     if ((exclusion[slot] ?? 0) > 0 || (palisadeBody[slot] ?? 0) > 0) return false;
   }
-  // 3. `logicbuildonbiopattern` checks the walk-block body against the source's vegetation ground flags.
-  // The original tests every surrounding triangle; the collision join conservatively collapses each
-  // cell's two triangles into `plantable`, so wells and hives accept grass and reject sand/plaster.
-  if (buildOnBioPattern) {
-    for (const c of footprint.blocked) {
-      const cx = x + footprintCellDx(y, c);
-      const cy = y + c.dy;
-      if (!terrain.inBounds(cx, cy) || !terrain.isPlantable(terrain.nodeAt(cx, cy))) return false;
-    }
+  // 3. `logicbuildonbiopattern`: wells and hives need grass (`plantable`) under their walk-block body.
+  // Project rule: one body node on grass is enough, so a well or hive fits on the edge of a small patch.
+  // The original tests every triangle around the body against its vegetation ground flags. An approximated
+  // footprint has no walk-block body and so no ground to test.
+  return (
+    !buildOnBioPattern || footprint.blocked.length === 0 || bodyTouchesGrass(terrain, footprint.blocked, x, y)
+  );
+}
+
+function bodyTouchesGrass(
+  terrain: TerrainGraph,
+  body: readonly FootprintCell[],
+  x: number,
+  y: number,
+): boolean {
+  for (const c of body) {
+    const cx = x + footprintCellDx(y, c);
+    const cy = y + c.dy;
+    if (terrain.inBounds(cx, cy) && terrain.isPlantable(terrain.nodeAt(cx, cy))) return true;
   }
-  return true;
+  return false;
 }
 
 /** A wall needs only its own cells: walkable ground clear of every body, whether a building, resource,
  * signpost or another wall. It keeps no margin, so a line runs between trees and stones and up to a
  * building's wall. With `overUpgradeGround` it may stand where a building only keeps room for its
- * upgrade, which razes it when it starts. Project rule. */
+ * upgrade, which razes it when it starts. Project rule. `allowance` names, per slot, the stamps a site
+ * may stand over. */
 export function canPlacePalisadeAnchor(
   grid: PlacementGrid,
   body: readonly FootprintCell[],
   x: number,
   y: number,
   overUpgradeGround = false,
+  allowance?: (slot: number) => { readonly obstacle: number; readonly walls: number } | undefined,
 ): boolean {
   const { terrain, obstacle, palisadeBody, upgradeReserve } = grid;
   for (const c of body) {
@@ -92,8 +104,9 @@ export function canPlacePalisadeAnchor(
     const cy = y + c.dy;
     if (!terrain.inBounds(cx, cy) || !terrain.isWalkable(terrain.nodeAt(cx, cy))) return false;
     const slot = cy * terrain.width + cx;
-    const waived = overUpgradeGround ? (upgradeReserve[slot] ?? 0) : 0;
-    if ((obstacle[slot] ?? 0) > waived || (palisadeBody[slot] ?? 0) > 0) return false;
+    const allowed = allowance?.(slot);
+    const waived = (overUpgradeGround ? (upgradeReserve[slot] ?? 0) : 0) + (allowed?.obstacle ?? 0);
+    if ((obstacle[slot] ?? 0) > waived || (palisadeBody[slot] ?? 0) > (allowed?.walls ?? 0)) return false;
   }
   return true;
 }
@@ -165,9 +178,10 @@ export function placementProbe(
   terrain: TerrainGraph,
   buildingType: number,
   tribe: number | undefined,
+  record?: string,
 ): PlacementProbe {
   const building = contentIndex(content).buildings.get(buildingType);
-  const footprint = building === undefined ? undefined : buildingFootprintFor(building, tribe);
+  const footprint = building === undefined ? undefined : buildingFootprintFor(building, tribe, record);
   const buildOnBioPattern = needsBioGround(world, building?.buildOnBioPattern);
   if (footprint === undefined) {
     return { canPlace: (x, y) => canPlaceWithoutFootprint(world, terrain, buildOnBioPattern, x, y) };

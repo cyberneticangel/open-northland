@@ -1,4 +1,4 @@
-import type { PlacementGhost, PlacementOverlayFrame } from '@open-northland/render';
+import type { BerthMark, PlacementGhost, PlacementOverlayFrame } from '@open-northland/render';
 import type { LinePreviewNode } from '../../hud/tool-panel/line-tool.js';
 import {
   type BuildingPick,
@@ -24,6 +24,9 @@ export interface PlacementCursorInput {
   readonly signpostActive: boolean;
   /** The ship whose dock pick is armed, or null. */
   readonly dockVehicle: number | null;
+  /** The shore points a dock click at a tile would moor its ships at (the armed dock pick's, or the
+   *  selected ships' right-click), empty where it docks nothing. Absent, no berth shows. */
+  readonly berthsAt?: (tile: { readonly col: number; readonly row: number }) => readonly BerthMark[];
   /** A pick that plants a work flag is armed: the flag follows the cursor until the click plants it or,
    *  for a flag trade's workplace pick, names a building. */
   readonly flagActive: boolean;
@@ -65,8 +68,9 @@ export interface PlacementCursorInput {
 /**
  * The ghost stays hidden over ground that rejects it, matching the original's vanishing house cursor.
  * A held building takes precedence over a wall or road tool, those over a pending signpost, those over an armed
- * dock pick, whose wash of mooring spots floats no ghost, and all of them over a pending work flag, which
- * has no wash: the sim snaps the flag to the nearest workable node on the click.
+ * dock pick, whose wash of mooring spots stands the berth posts, and all of them over a pending work flag,
+ * which has no wash: the sim snaps the flag to the nearest workable node on the click. With none of them,
+ * selected ships still show where a right-click would moor them.
  */
 export function placementCursor(input: PlacementCursorInput): PlacementCursor {
   const { building } = input;
@@ -89,8 +93,9 @@ export function placementCursor(input: PlacementCursorInput): PlacementCursor {
     };
   }
   if (building === null && palisadeGfxIndex === null && !input.signpostActive) {
-    if (input.dockVehicle !== null) return { overlay: input.dockOverlay(input.dockVehicle), ghost: null };
-    if (!input.flagActive) return { overlay: null, ghost: null };
+    if (input.dockVehicle !== null)
+      return { overlay: input.dockOverlay(input.dockVehicle), ghost: berthGhost(input) };
+    if (!input.flagActive) return { overlay: null, ghost: berthGhost(input) };
     const tile = input.tileAt();
     return {
       overlay: null,
@@ -135,4 +140,10 @@ export function placementCursor(input: PlacementCursorInput): PlacementCursor {
   return input.canPlaceSignpostAt(tile.col, tile.row)
     ? { overlay, ghost: { kind: 'signpost', col: tile.col, row: tile.row, player: input.localPlayer } }
     : { overlay, ghost: null };
+}
+
+function berthGhost(input: PlacementCursorInput): PlacementGhost | null {
+  const tile = input.berthsAt === undefined ? null : input.tileAt();
+  const berths = tile === null ? [] : (input.berthsAt?.(tile) ?? []);
+  return berths.length === 0 ? null : { kind: 'berths', berths };
 }

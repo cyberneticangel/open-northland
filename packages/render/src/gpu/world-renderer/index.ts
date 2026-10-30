@@ -1,7 +1,7 @@
 export {
   BASELINE_ENHANCEMENTS,
-  type BuildingHighlightItem,
   SPRITE_CULL_MARGIN,
+  type TargetMark,
   type WorldEnhancements,
   type WorldFrame,
   type WorldRendererOptions,

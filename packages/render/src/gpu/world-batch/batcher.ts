@@ -43,6 +43,7 @@ import {
   type OutlineSprite,
   outlineOf,
   spriteBloodEffect,
+  spriteNightLit,
   spriteSelectionEffect,
 } from '../selection/sprite-effect.js';
 import { glProgramFor } from '../shaders/program-source.js';
@@ -277,8 +278,9 @@ function restoreListedPages(slots: TextureSource[], count: number): void {
   }
 }
 
-/** Vertex layout: Pixi's six (x, y, u, v, colour, textureIdAndRound) + element flags + frame UV box. */
-export const WORLD_VERTEX_SIZE = 17;
+/** Vertex layout: Pixi's six (x, y, u, v, colour, textureIdAndRound) + element flags + frame UV box +
+ *  selection, blood, splashes and night values. */
+export const WORLD_VERTEX_SIZE = 18;
 const STRIDE = WORLD_VERTEX_SIZE * 4;
 export const WORLD_ATTRIBUTE_OFFSETS = {
   aPosition: 0,
@@ -290,6 +292,7 @@ export const WORLD_ATTRIBUTE_OFFSETS = {
   aSelection: 11 * 4,
   aBlood: 12 * 4,
   aSplashes: 13 * 4,
+  aNight: 17 * 4,
 } as const;
 
 /** A world sprite drawn through a palette LUT names its row here; its texture names the LUT. */
@@ -364,6 +367,7 @@ export function worldBatchGeometry(attributeBuffer: Buffer, indexBuffer: Buffer)
       aSelection: { buffer: attributeBuffer, format: 'float32', stride: STRIDE, offset: o.aSelection },
       aBlood: { buffer: attributeBuffer, format: 'float32', stride: STRIDE, offset: o.aBlood },
       aSplashes: { buffer: attributeBuffer, format: 'float32x4', stride: STRIDE, offset: o.aSplashes },
+      aNight: { buffer: attributeBuffer, format: 'float32', stride: STRIDE, offset: o.aNight },
     },
     indexBuffer,
   });
@@ -462,6 +466,7 @@ function defineWorldBatcher(): WorldBatcherClass {
   const packing = {
     selection: 0,
     blood: 0,
+    night: 0,
     splashes: undefined as Float32Array | undefined,
     textureIdAndRound: 0,
     argb: 0,
@@ -528,6 +533,7 @@ function defineWorldBatcher(): WorldBatcherClass {
     f32[index + 9] = packing.selection;
     f32[index + 10] = packing.blood;
     for (let i = 0; i < 4; i++) f32[index + 11 + i] = packing.splashes?.[i] ?? 0;
+    f32[index + 15] = packing.night;
     return index + WORLD_VERTEX_SIZE - 2;
   }
 
@@ -761,6 +767,7 @@ function defineWorldBatcher(): WorldBatcherClass {
       const textureIdAndRound = (textureId << 16) | (element.roundPixels & 0xffff);
       packing.selection = spriteSelectionEffect(renderableOf(element));
       packing.blood = spriteBloodEffect(renderableOf(element));
+      packing.night = spriteNightLit(renderableOf(element));
       const surface = surfaceOf(renderableOf(element));
       // Body coats are positive packed data; a facade uses the same slot for its negative UV cutoff.
       if (surface?.enabled === true && surface.facade) packing.blood = -surface.clipY;
@@ -793,6 +800,7 @@ function defineWorldBatcher(): WorldBatcherClass {
       const textureIdAndRound = (textureId << 16) | (element.roundPixels & 0xffff);
       packing.selection = spriteSelectionEffect(renderableOf(element));
       packing.blood = spriteBloodEffect(renderableOf(element));
+      packing.night = spriteNightLit(renderableOf(element));
       const surface = surfaceOf(renderableOf(element));
       if (surface?.enabled === true && surface.facade) packing.blood = -surface.clipY;
       packing.splashes = surface?.enabled === true ? surface.packed : undefined;

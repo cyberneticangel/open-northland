@@ -3,6 +3,7 @@ export {
   type AtlasImageEncoding,
   type AtlasManifest,
   type BuildTimeSheet,
+  frameHasBuildTimes,
   indexAtlasFrames,
   lookupFrame,
   type SpriteAtlas,

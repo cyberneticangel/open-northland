@@ -21,6 +21,7 @@ import {
   samePlainData,
 } from '../../session/index.js';
 import type { FogGates } from '../projections/index.js';
+import type { MooringRule } from '../unit-controls/orders/berths.js';
 
 /** The host's placement answers the overlays walk; the gates below read the same ones. */
 export interface PlacementProbeViews {
@@ -63,7 +64,8 @@ export interface PlacementClickGates {
   ) => Promise<void>;
   /** The gate conversion a click at a node would make, its span centre resolved as the preview does. */
   readonly askPalisadeGate: (col: number, row: number) => Promise<PalisadeGateProbeView | null>;
-  readonly askMoorAt: (vehicle: number, col: number, row: number) => Promise<boolean>;
+  /** A ship's mooring rule over the shore the viewer sees, as of now. */
+  readonly askMooring: (vehicle: number) => Promise<MooringRule | null>;
 }
 
 /** The placement rules the cursor ghosts and overlays read, and the click gates beside them. */
@@ -77,6 +79,8 @@ export interface PlacementGates extends PlacementClickGates {
     owner?: number,
   ) => boolean;
   readonly canPlaceSignpostAt: (col: number, row: number) => boolean;
+  /** `canPlaceSignpostAt`, undefined while the node's answer is on its way rather than refused. */
+  readonly signpostAnswerAt: (col: number, row: number) => boolean | undefined;
   /** With `overUpgradeGround`, ground a building keeps for its upgrade takes a wall too. */
   readonly canPlacePalisadeAt: (
     gfxIndex: number,
@@ -94,11 +98,17 @@ export interface PlacementGates extends PlacementClickGates {
   /** Changes whenever `canPlaceRoadAt` may answer differently. */
   readonly roadAnswersKey: () => string;
   readonly probes: PlacementProbeViews;
+  /** {@link PlacementClickGates.askMooring}'s last answer; undefined while it is being answered. */
+  readonly mooring: (vehicle: number) => MooringRule | null | undefined;
+  /** Bumped when a grid or mooring answer lands or changes. */
+  readonly answersVersion: () => number;
   dispose(): void;
 }
 
 /** The span's centre sits at this index of the probe's five nodes. */
 const GATE_SPAN_CENTER = 2;
+/** How often a selected fleet's berth preview asks its ships' mooring rules again while vehicles move. */
+const MOORING_PREVIEW_REFRESH_MS = 500;
 
 type IndexedGateSites = GateSites & { readonly isCenter: (col: number, row: number) => boolean };
 
@@ -196,9 +206,27 @@ export function createPlacementGates(
   };
   const askMooring = (vehicle: number) => (): Promise<MooringProbe | null> =>
     host.mooringProbe(vehicle as Entity).then((answer) => (answer === null ? null : mooringProbeOf(answer)));
-  // The sim answers from its memo, keyed on the sea's labels, and the blocker version moves with them.
+  // The sim answers from its memo, keyed on the sea's labels, and the blocker version moves with them. It
+  // moves whenever any vehicle steps, so the preview of a selected fleet asks again at most every
+  // MOORING_PREVIEW_REFRESH_MS; the click asks fresh (`askMooring`).
+  let mooringVersion = { at: Number.NEGATIVE_INFINITY, version: '' };
+  const previewVersion = (): string => {
+    const now = performance.now();
+    if (now - mooringVersion.at >= MOORING_PREVIEW_REFRESH_MS)
+      mooringVersion = { at: now, version: blockerVersion() };
+    return mooringVersion.version;
+  };
   const mooring = (vehicle: number): MooringProbe | null | undefined =>
-    moorings.read(`${vehicle}`, askMooring(vehicle), blockerVersion());
+    moorings.read(`${vehicle}`, askMooring(vehicle), previewVersion());
+  // The fog rule matches the dock overlay's, so a dimmed shore in the fog takes no dock click either.
+  const seenMooring = (probe: MooringProbe | null): MooringRule | null =>
+    probe === null
+      ? null
+      : {
+          key: `${probe.key}:${fogGates.revision()}`,
+          moors: (col, row) => fogGates.seesNode(col, row) && probe.canMoor(col, row),
+          docks: (col, row) => probe.canDock(col, row),
+        };
   const askOwnNodes = (owner: number) => (): Promise<NodeSetAnswer> => host.ownPalisadeNodes(owner);
   const askSites = (): Promise<readonly PalisadeGateProbeResult[]> =>
     host.palisadeGateSites(closedGates, localPlayer);
@@ -232,6 +260,11 @@ export function createPlacementGates(
       return verdict === null || verdict === true;
     },
     canPlaceSignpostAt: (col, row) => fogGates.seesNode(col, row) && signpost().at(col, row) === true,
+    signpostAnswerAt: (col, row) => {
+      if (!fogGates.seesNode(col, row)) return false;
+      const verdict = signpost().at(col, row);
+      return verdict === undefined ? undefined : verdict === true;
+    },
     canPlacePalisadeAt: (gfxIndex, col, row, overUpgradeGround) =>
       fogGates.seesNode(col, row) && palisade(gfxIndex).at(col, row, overUpgradeGround) === true,
     palisadeBuiltAt: (owner, col, row) => {
@@ -279,12 +312,13 @@ export function createPlacementGates(
       if (!fogGates.seesNode(at.col, at.row)) return null;
       return gateProbes.fresh(`${at.col},${at.row}`, askGateProbe(at.col, at.row), layout, true);
     },
-    askMoorAt: (vehicle, col, row) =>
-      fogGates.seesNode(col, row)
-        ? moorings
-            .fresh(`${vehicle}`, askMooring(vehicle), blockerVersion(), true)
-            .then((probe) => probe?.canMoor(col, row) === true)
-        : Promise.resolve(false),
+    askMooring: (vehicle) =>
+      moorings.fresh(`${vehicle}`, askMooring(vehicle), blockerVersion(), true).then(seenMooring),
+    mooring: (vehicle) => {
+      const probe = mooring(vehicle);
+      return probe === undefined ? undefined : seenMooring(probe);
+    },
+    answersVersion: () => grids.version + moorings.version,
     probes: {
       building,
       signpost,
@@ -329,6 +363,6 @@ function gateSitesOf(
       return hit === undefined ? null : { col: hit.col, row: hit.row };
     },
     isCenter: (col, row) => centers.has(`${col},${row}`),
-    highlight: [...walls].map((id) => ({ id, ok: true })),
+    highlight: [...walls].map((id) => ({ id, tone: 'candidate' })),
   };
 }

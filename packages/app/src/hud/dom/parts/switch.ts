@@ -1,18 +1,13 @@
 import { button, isDisabled, onPress, setAttribute, setDisabled, setTip } from './dom.js';
 
-/** An on/off pill with a knob for a standing setting; `small` for one that depends on the row above. */
+/** An on/off pill with a knob for a standing setting. */
 export interface Switch {
   readonly element: HTMLButtonElement;
   update(on: boolean, enabled: boolean): void;
 }
 
-export function createSwitch(
-  label: string,
-  tip: string,
-  onToggle: (next: boolean) => void,
-  small = false,
-): Switch {
-  const control = button(small ? 'on-switch on-switch--small' : 'on-switch');
+export function createSwitch(label: string, tip: string, onToggle: (next: boolean) => void): Switch {
+  const control = button('on-switch');
   control.setAttribute('role', 'switch');
   control.setAttribute('aria-label', label);
   setTip(control, tip);

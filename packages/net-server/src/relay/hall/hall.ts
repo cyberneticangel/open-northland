@@ -3,8 +3,10 @@ import {
   MAX_HALL_CHAT_LINES,
   MAX_PRESENCE_ENTRIES,
   type OnlinePlayer,
+  type PlayerFlag,
   type RecentPlayer,
   type ServerMessage,
+  withFlag,
 } from '@open-northland/net-protocol';
 import { HALL_RECORD_VERSION, type HallRecord } from './record.js';
 
@@ -41,8 +43,13 @@ export class Hall {
     for (const { nick, at } of seen) this.seen.set(nick, at);
   }
 
-  say(from: string, text: string, at: number): Extract<ServerMessage, { kind: 'hallChat' }> {
-    const line = { from, text, at };
+  say(
+    from: string,
+    text: string,
+    at: number,
+    flag?: PlayerFlag,
+  ): Extract<ServerMessage, { kind: 'hallChat' }> {
+    const line = { from, ...withFlag(flag), text, at };
     this.lines.push(line);
     if (this.lines.length > MAX_HALL_CHAT_LINES) this.lines.shift();
     this.said++;
@@ -70,15 +77,17 @@ export class Hall {
 
   /** `online` lists every connection; a nick on several shows once, in a room if any of them is. */
   presence(online: readonly OnlinePlayer[], now: number): PresenceMessage {
-    const rooms = new Map<string, string | null>();
-    for (const { nick, room } of online) if (!rooms.has(nick) || room !== null) rooms.set(nick, room);
+    const players = new Map<string, OnlinePlayer>();
+    for (const player of online) {
+      if (!players.has(player.nick) || player.room !== null) players.set(player.nick, player);
+    }
     this.forgetSeen(now);
     const recent: RecentPlayer[] = [];
-    for (const [nick, at] of this.seen) if (!rooms.has(nick)) recent.push({ nick, at });
+    for (const [nick, at] of this.seen) if (!players.has(nick)) recent.push({ nick, at });
     recent.reverse();
     return {
       kind: 'presence',
-      online: [...rooms].slice(0, MAX_PRESENCE_ENTRIES).map(([nick, room]) => ({ nick, room })),
+      online: [...players.values()].slice(0, MAX_PRESENCE_ENTRIES),
       recent: recent.slice(0, MAX_PRESENCE_ENTRIES),
     };
   }
@@ -93,7 +102,8 @@ export class Hall {
     this.forgetSeen(now);
     return {
       version: HALL_RECORD_VERSION,
-      chat: [...this.lines],
+      // Flags are left out, so the record keeps its layout; a restart forgets them.
+      chat: this.lines.map(({ from, text, at }) => ({ from, text, at })),
       seen: [...this.seen].map(([nick, at]) => ({ nick, at })),
     };
   }

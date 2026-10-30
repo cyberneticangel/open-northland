@@ -38,6 +38,7 @@ export const chsNetworkRelay = {
     seatTaken: '席位 {seat} 已被 {nick} 占用',
     seatModeUnavailable: '席位 {seat} 不能设为“{mode}”',
     seatTribeUnavailable: '席位 {seat} 没有可选的民族',
+    colorTaken: '席位 {wearer} 已使用该颜色',
     seatDifficultyUnavailable: '席位 {seat} 不能设置电脑等级',
     seatRequired: '请先入座',
     notMember: '{nick} 不在房间里',

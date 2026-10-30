@@ -92,7 +92,7 @@ it('shows the link as it stands on a HUD mounted after the link changed', async 
   mocks.mountHud.mockReturnValue({ link, observe: vi.fn(), dispose: vi.fn() });
   const worker = { dispose: vi.fn(), driver: {}, host: {}, offThreadTickCost: vi.fn() };
   mocks.assemble.mockResolvedValue({ app: { destroy: vi.fn() }, loaded: {}, hosted: { worker } });
-  mocks.present.mockResolvedValue({ destroy: vi.fn(), viewState: () => null });
+  mocks.present.mockResolvedValue({ destroy: vi.fn(), viewState: () => null, presentation: () => null });
   let port: NetWorldPort | undefined;
   let onWorld: ((world: HostedRelayedWorld) => void) | undefined;
   const handover = {
@@ -170,7 +170,7 @@ function presentedGame() {
       progress.reached = true;
       await runtime.untilStart(presented.shown);
       progress.started = true;
-      return { destroy: vi.fn(), viewState: () => presented.view };
+      return { destroy: vi.fn(), viewState: () => presented.view, presentation: () => null };
     },
   );
   const worldShown = vi.fn();

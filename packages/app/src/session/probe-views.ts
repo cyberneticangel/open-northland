@@ -96,7 +96,11 @@ export function sameGridAnswer(held: NodeGridAnswer | null, landed: NodeGridAnsw
 
 /** The mooring probe over its received answer. */
 export function mooringProbeOf(answer: MooringAnswer): MooringProbe {
-  return { key: answer.key, canMoor: (x, y) => nodeSetHas(answer.spots, x, y) };
+  return {
+    key: answer.key,
+    canMoor: (x, y) => nodeSetHas(answer.spots, x, y),
+    canDock: (x, y) => nodeSetHas(answer.docks, x, y),
+  };
 }
 
 /** Two node sets holding the same nodes. */

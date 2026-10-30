@@ -25,8 +25,9 @@ const ROWS_PER_HUMAN = 2;
 export const HUMAN_LUT_ROWS = 4096;
 /** Humans kept for the shared fallbacks a full LUT hands out (see {@link HumanPaletteLut.rowFor}). */
 export const SHARED_HUMANS = 64;
-/** Row pairs after the shared ones kept for the team palettes, one per player colour slot. */
-export const TEAM_HUMANS = 16;
+/** Row pairs after the shared ones kept for the team palettes, one per player colour (the app's
+ *  `PLAYER_COLOR_COUNT`), so no two colours drawn in one frame share a row. */
+export const TEAM_HUMANS = 24;
 /** Team-colour slots and sexes a shared fallback key makes room for. */
 const PLAYER_KEYS = 256;
 const SEXES = 2;

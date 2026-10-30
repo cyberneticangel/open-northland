@@ -98,7 +98,7 @@ export function anySettlerOnWalls(sim: Simulation): boolean {
   for (const e of sim.world.query(Building, Position)) {
     const b = sim.world.get(e, Building);
     const type = sim.content.buildings.find((row) => row.typeId === b.buildingType);
-    const footprint = type === undefined ? undefined : buildingFootprintFor(type, b.tribe);
+    const footprint = type === undefined ? undefined : buildingFootprintFor(type, b.tribe, b.record);
     const p = sim.world.get(e, Position);
     const anchor = nodeOfPosition(p.x, p.y);
     for (const cell of footprint?.blocked ?? []) {

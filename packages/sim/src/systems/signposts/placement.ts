@@ -12,7 +12,7 @@ import type { Entity, World } from '../../ecs/world.js';
 import { hexDistanceBetween, type NodeArea, nodeOfPosition, positionOfNode } from '../../nav/halfcell.js';
 import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import type { SystemContext } from '../context.js';
-import { buildingFlagBodyNodes, buildingFootprintOf, doorNodeOf } from '../footprint/geometry.js';
+import { buildingFlagBodyNodes, doorNodeOf, houseFootprintOf } from '../footprint/geometry.js';
 import {
   buildingDoorwayNodes,
   canPlaceWorkFlag,
@@ -155,8 +155,8 @@ export function displaceSignpostsFromFootprint(world: World, ctx: SystemContext,
   const p = world.tryGet(building, Position);
   if (b === undefined || p === undefined) return;
   const anchor = nodeOfPosition(p.x, p.y);
-  const covered = buildingFlagBodyNodes(ctx.content, terrain, b.buildingType, b.tribe, anchor.hx, anchor.hy);
-  const footprint = buildingFootprintOf(ctx.content, b.buildingType, b.tribe);
+  const covered = buildingFlagBodyNodes(ctx.content, terrain, b, anchor.hx, anchor.hy);
+  const footprint = houseFootprintOf(ctx.content, b);
   const door = doorNodeOf(terrain, footprint, anchor.hx, anchor.hy);
   if (door !== null) covered.add(door);
   const enclosed = [...world.query(Signpost, Position)].filter((e) =>

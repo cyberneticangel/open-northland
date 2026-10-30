@@ -4,6 +4,7 @@ import {
   type RoomSettings,
   type RoomState,
   type RoomView,
+  withFlag,
 } from '@open-northland/net-protocol';
 import type { SeatTable } from '../lobby/seats.js';
 import type { Member } from '../member.js';
@@ -28,6 +29,7 @@ export function roomView(
     seats: seats.views(),
     members: [...members.values()].map((member) => ({
       nick: member.nick,
+      ...withFlag(member.flag),
       seat: member.seat,
       connected: member.connected,
       compatibility: member.compatibility,

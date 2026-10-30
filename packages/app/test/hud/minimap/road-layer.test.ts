@@ -1,9 +1,8 @@
-import { halfCellToScreen, terrainWorldBounds } from '@open-northland/render';
+import { halfCellToScreen, type SeenRoadNetwork, terrainWorldBounds } from '@open-northland/render';
 import { cellOfNode, FOG_MODE, FOG_STATE, type FogView } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
 import { createRoadRaster, fogCellXOfNode, ROAD_DOT_COLOUR } from '../../../src/hud/minimap/road-layer.js';
 import { type DotRaster, stampMark } from '../../../src/hud/minimap/stamps.js';
-import { type Ent, snapshotOf } from '../../support/snapshot.js';
 
 const MAP_CELLS = 8;
 const NODE_WIDTH = 2 * MAP_CELLS;
@@ -41,22 +40,18 @@ function expectSameRaster(actual: Uint8Array, expected: Uint8Array): void {
   expect(Buffer.compare(actual, expected)).toBe(0);
 }
 
-/** A road network of one shard whose node reads are counted. */
-function network(nodes: readonly number[], revision: number): { world: Ent[]; reads: () => number } {
+/** A seen road network whose node reads are counted. */
+function network(nodes: readonly number[], revision: number): { view: SeenRoadNetwork; reads: () => number } {
   let reads = 0;
-  const shard = {
-    block: 0,
-    revision,
-    get nodes() {
-      reads++;
-      return nodes;
-    },
-  };
+  const set = new Set(nodes);
   return {
-    world: [
-      { id: 1, components: { RoadNetwork: { revision } } },
-      { id: 2, components: { RoadShard: shard } },
-    ],
+    view: {
+      revision,
+      get nodes() {
+        reads++;
+        return set;
+      },
+    },
     reads: () => reads,
   };
 }
@@ -76,7 +71,7 @@ describe('minimap road raster', () => {
   it('stamps every laid node at its half-cell spot', () => {
     const raster = blankRaster();
     const draw = createRoadRaster(raster, GEOMETRY);
-    expect(draw(snapshotOf(network([NEAR, FAR], 1).world), null, STAMP_SCALE)).toBe(true);
+    expect(draw(network([NEAR, FAR], 1).view, null, STAMP_SCALE)).toBe(true);
     expectSameRaster(raster.rgba, stamped([NEAR, FAR]));
   });
 
@@ -84,13 +79,13 @@ describe('minimap road raster', () => {
     const raster = blankRaster();
     const draw = createRoadRaster(raster, GEOMETRY);
     const roads = network([NEAR, FAR], 1);
-    draw(snapshotOf(roads.world), null, STAMP_SCALE);
+    draw(roads.view, null, STAMP_SCALE);
     const readsAfterBake = roads.reads();
-    expect(draw(snapshotOf(roads.world, 1), null, STAMP_SCALE)).toBe(false);
+    expect(draw(roads.view, null, STAMP_SCALE)).toBe(false);
     expect(roads.reads()).toBe(readsAfterBake);
 
     const longer = network([NEAR, FAR, node(6, 4)], 2);
-    expect(draw(snapshotOf(longer.world, 2), null, STAMP_SCALE)).toBe(true);
+    expect(draw(longer.view, null, STAMP_SCALE)).toBe(true);
     expect(longer.reads()).toBeGreaterThan(0);
     expectSameRaster(raster.rgba, stamped([NEAR, FAR, node(6, 4)]));
   });
@@ -101,7 +96,7 @@ describe('minimap road raster', () => {
     const roads = network([NEAR, FAR], 1);
     expect(
       draw(
-        snapshotOf(roads.world),
+        roads.view,
         fogOf((cellX) => cellX < 4, 1),
         STAMP_SCALE,
       ),
@@ -112,14 +107,14 @@ describe('minimap road raster', () => {
     // A sighting elsewhere bumps the generation but explores nothing new: the raster keeps.
     expect(
       draw(
-        snapshotOf(roads.world, 1),
+        roads.view,
         fogOf((cellX) => cellX < 4, 2),
         STAMP_SCALE,
       ),
     ).toBe(false);
     expect(
       draw(
-        snapshotOf(roads.world, 2),
+        roads.view,
         fogOf(() => true, 3),
         STAMP_SCALE,
       ),
@@ -131,18 +126,18 @@ describe('minimap road raster', () => {
   it('redraws whole for another seat and for another stamp size', () => {
     const raster = blankRaster();
     const draw = createRoadRaster(raster, GEOMETRY);
-    const world = network([NEAR, FAR], 1).world;
+    const world = network([NEAR, FAR], 1).view;
     draw(
-      snapshotOf(world),
+      world,
       fogOf(() => true, 1),
       STAMP_SCALE,
     );
     // The other seat has explored less under the same generation: its own fog, from scratch.
     const otherSeat = fogOf((cellX) => cellX < 4, 1, OTHER_SEAT);
-    expect(draw(snapshotOf(world), otherSeat, STAMP_SCALE)).toBe(true);
+    expect(draw(world, otherSeat, STAMP_SCALE)).toBe(true);
     expectSameRaster(raster.rgba, stamped([NEAR]));
     const zoomedStamp = STAMP_SCALE / 2;
-    expect(draw(snapshotOf(world), null, zoomedStamp)).toBe(true);
+    expect(draw(world, null, zoomedStamp)).toBe(true);
     expectSameRaster(raster.rgba, stamped([NEAR, FAR], zoomedStamp));
   });
 

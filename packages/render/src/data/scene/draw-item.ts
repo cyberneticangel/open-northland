@@ -134,6 +134,9 @@ export interface DrawItem extends Readonly<StaticDrawFields> {
   /** For an `acting` sprite: its current atomic's length in ticks (`CurrentAtomic.duration`), which a
    *  frame list naming no clip length is stretched over, and at whose end any list holds its last entry. */
   readonly atomicDuration?: number;
+  /** For an `acting` sprite: its clip plays once over the whole atomic, whatever clip length its frame
+   *  list names: a lift into or out of a hold, whose atomic a cart's kind lengthens or shortens. */
+  readonly atomicStretched?: boolean;
   /** For a settler: hauling a good (`Carrying` present). Orthogonal to {@link state}, since a settler
    *  can carry while `moving` or `acting`; the loaded gait replaces the empty-handed one (the
    *  original's `..._walk_wood` instead of `..._walk`). For a vehicle: its hold is not empty. */
@@ -288,6 +291,7 @@ export function newDrawItem(
     atomicId: undefined,
     elapsed: undefined,
     atomicDuration: undefined,
+    atomicStretched: undefined,
     carrying: undefined,
     carryGood: undefined,
     driver: undefined,

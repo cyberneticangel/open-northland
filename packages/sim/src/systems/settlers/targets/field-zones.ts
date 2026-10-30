@@ -76,7 +76,7 @@ function zoneOf(
   if (building === undefined || position === undefined) return null;
   return translatedCells(
     terrain,
-    buildingFieldZone(content, building.buildingType, building.tribe),
+    buildingFieldZone(content, building),
     nodeHxOfPosition(position.x, position.y),
     nodeHyOfPosition(position.x, position.y),
   );

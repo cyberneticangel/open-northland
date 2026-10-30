@@ -276,5 +276,29 @@ describe('narration', () => {
       engine.resumeNarration();
       expect(lastSource(ctx).started).toBe(true);
     });
+
+    it('goes on from where it stands at a new tempo, on a clip stretched to its length', async () => {
+      const { engine, ctx } = await running();
+      engine.playNarration(clip(4));
+      ctx.currentTime = 1;
+      engine.setNarrationRate(2);
+      const fast = lastSource(ctx);
+      expect((fast.buffer as AudioBuffer).duration).toBeCloseTo(2, 2);
+      expect(fast.startOffset).toBeCloseTo(0.5);
+      ctx.currentTime = 2;
+      expect(engine.narrationState()).toMatchObject({ status: 'playing', positionS: 3, durationS: 4 });
+      engine.seekNarration(1);
+      expect(lastSource(ctx).startOffset).toBeCloseTo(0.5);
+      expect(lastSource(ctx).buffer).toBe(fast.buffer);
+    });
+
+    it('takes a tempo set before audio started', async () => {
+      const ctx = new FakeContext();
+      const engine = new WebAudioEngine({ createContext: () => ctx as unknown as AudioContext });
+      engine.setNarrationRate(1.5);
+      await engine.resume();
+      engine.playNarration(clip(3));
+      expect((lastSource(ctx).buffer as AudioBuffer).duration).toBeCloseTo(2, 2);
+    });
   });
 });

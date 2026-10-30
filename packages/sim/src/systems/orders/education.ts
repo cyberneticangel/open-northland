@@ -53,16 +53,9 @@ export function learn(world: World, ctx: SystemContext, command: Extract<Command
     if (job === undefined || !typeAllowed(world, ctx, owner, settler.tribe, 'job', job)) return;
   }
   const pending = world.tryGet(entity, TrainingOrder);
-  const school = contentIndex(ctx.content).buildings.get(world.get(house, Building).buildingType);
-  if (school?.schoolSize !== undefined && pending?.house !== house) {
-    let occupied = 0;
-    for (const student of world.query(TrainingOrder))
-      if (world.get(student, TrainingOrder).house === house) occupied++;
-    if (occupied >= school.schoolSize) return;
-  }
   if (pending?.house === house && pending.lesson?.kind === target && pending.lesson.typeId === typeId) return;
   if (pending?.house !== house && !mayWalkToDrill(world, ctx, entity, house)) return;
-  startDrill(world, entity, house, Math.max(...requirements.map((r) => r.amount)) * SCHOOL_LESSON_TICKS);
+  startDrill(world, ctx, entity, house, Math.max(...requirements.map((r) => r.amount)) * SCHOOL_LESSON_TICKS);
   world.mut(entity, TrainingOrder).lesson = { kind: target, typeId };
 }
 

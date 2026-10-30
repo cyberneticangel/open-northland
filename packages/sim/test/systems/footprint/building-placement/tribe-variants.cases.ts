@@ -1,6 +1,6 @@
 import { parseContentSet } from '@open-northland/data';
 import { describe, expect, it } from 'vitest';
-import { Health } from '../../../../src/components/index.js';
+import { Building, Health } from '../../../../src/components/index.js';
 import { Simulation } from '../../../../src/index.js';
 import { buildingBlockedCells, canPlaceBuilding } from '../../../../src/systems/index.js';
 import { ctxOf, grassMap, HUT, placedBuilding, placementContent, terrainOf, VIKING } from './support.js';
@@ -77,5 +77,45 @@ describe("a building type's per-tribe footprint and life pool", () => {
     sim.step();
     expect(sim.world.get(placedBuilding(sim, 0), Health).max).toBe(SARACEN_HUT_HITPOINTS);
     expect(sim.world.get(placedBuilding(sim, 1), Health).max).toBe(HUT_HITPOINTS);
+  });
+});
+
+describe("a map-placed house record's own footprint", () => {
+  const HALL = 'viking hall';
+
+  function recordSim(): Simulation {
+    const base = placementContent();
+    const content = parseContentSet({
+      ...base,
+      buildings: base.buildings.map((b) =>
+        b.typeId === HUT
+          ? { ...b, recordFootprints: [{ tribe: VIKING, editName: HALL, footprint: SARACEN_HUT_FOOTPRINT }] }
+          : b,
+      ),
+    });
+    return new Simulation({ seed: 1, content, map: grassMap(16, 16) });
+  }
+
+  it("blocks the named record's body and keeps the default for a record without one", () => {
+    const sim = recordSim();
+    const terrain = terrainOf(sim);
+    const place = (y: number, record: string): void =>
+      sim.enqueueSetup({
+        kind: 'placeBuilding',
+        buildingType: HUT,
+        x: 2,
+        y,
+        tribe: VIKING,
+        force: true,
+        record,
+      });
+    place(2, HALL);
+    place(10, 'viking hut');
+    sim.step();
+    expect(sim.world.get(placedBuilding(sim, 0), Building).record).toBe(HALL);
+    expect(sim.world.get(placedBuilding(sim, 1), Building).record).toBeUndefined();
+    const blocked = buildingBlockedCells(sim.world, ctxOf(sim), terrain);
+    expect([2, 3, 4, 5, 6].every((hx) => blocked.has(terrain.nodeAt(hx, 2)))).toBe(true);
+    expect(blocked.has(terrain.nodeAt(6, 10))).toBe(false); // the hall's east end, absent from the default
   });
 });

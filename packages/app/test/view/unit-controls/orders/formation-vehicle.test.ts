@@ -13,7 +13,7 @@ import { inlineSessionHost } from '../../../../src/session/inline-host.js';
 import { createAnsweredOrders } from '../../../../src/view/unit-controls/orders/answered.js';
 import { createUnitOrderController } from '../../../../src/view/unit-controls/orders/controller.js';
 import { createPendingGroundOrders } from '../../../../src/view/unit-controls/orders/pending-ground.js';
-import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
+import { withPointHits } from '../../../support/point-hits.js';
 
 const TARGET = { hx: 26, hy: 20 };
 const LATER = { hx: 26, hy: 26 };
@@ -73,7 +73,7 @@ function harness({
       issued.push(command);
       sim.enqueue(playerCommand(0, command));
     });
-  const targets: UnitTargets = {
+  const targets = withPointHits({
     owned: () => [],
     buildings: () => [],
     flags: () => [],
@@ -91,7 +91,7 @@ function harness({
           const position = sim.world.get(entity, components.Position);
           return { ref: entity, ...tileToScreen(fx.toFloat(position.x), fx.toFloat(position.y)) };
         }),
-  };
+  });
   const orders = createUnitOrderController({
     answered: createAnsweredOrders(),
     pendingGroundOrders: pending,

@@ -1,5 +1,6 @@
 import {
   type BuildingFootprint,
+  type BuildingRecordFootprint,
   type BuildingTribeVariant,
   type MapAiSeat,
   type MapScript,
@@ -43,7 +44,8 @@ export interface SeatTribeRemap {
   /** A settler's tribe by its job typeId; an unresolved job counts as no hero. */
   human(thing: FlowingThing, job: number | undefined, tribe: number): number;
   vehicle(thing: FlowingThing, tribe: number): number;
-  building(thing: FlowingThing, typeId: number, tribe: number): number;
+  /** A house's tribe by its type and, for a map-placed house, its record. */
+  building(thing: FlowingThing, typeId: number, tribe: number, record?: string): number;
   /** The re-tribed seats, for the handover safety net the mission script carries. */
   readonly seatTribes: readonly MissionSeatTribe[];
 }
@@ -62,6 +64,7 @@ interface SeatBuildingRow {
   readonly typeId?: number;
   readonly footprint?: BuildingFootprint;
   readonly tribeVariants?: readonly BuildingTribeVariant[];
+  readonly recordFootprints?: readonly BuildingRecordFootprint[];
 }
 
 /** The content rows the remap reads: the drawn house types, the hero jobs and the house footprints. */
@@ -76,11 +79,15 @@ export function seatTribeRemap(flows: SeatFlows, rows: SeatTribeRows): SeatTribe
   /** A house a handover delivers keeps its authored people when the two peoples stand its type on
    *  different footprint cells, as the handover net rules; the seat's own houses are placed fresh.
    *  A type without a row has no footprint for either. */
-  const sameCells = (typeId: number, authored: number, chosen: number): boolean => {
+  const sameCells = (typeId: number, authored: number, chosen: number, record?: string): boolean => {
     const row = footprints.get(typeId);
     if (row === undefined) return true;
-    const type = { footprint: row.footprint, tribeVariants: row.tribeVariants ?? [] };
-    return sameBuildingFootprintCells(type, authored, chosen);
+    const type = {
+      footprint: row.footprint,
+      tribeVariants: row.tribeVariants ?? [],
+      recordFootprints: row.recordFootprints ?? [],
+    };
+    return sameBuildingFootprintCells(type, authored, chosen, record);
   };
   const drawn = new Map<number, Set<number>>();
   for (const bob of rows.buildingBobs ?? []) {
@@ -105,11 +112,11 @@ export function seatTribeRemap(flows: SeatFlows, rows: SeatTribeRows): SeatTribe
     human: (thing, job, current) =>
       job !== undefined && heroJobs.has(job) ? current : reached('human', thing, current),
     vehicle: (thing, current) => reached('vehicle', thing, current),
-    building: (thing, typeId, current) => {
+    building: (thing, typeId, current, record) => {
       const change = flowOf(flows, 'house', thing, current);
       if (change === undefined || drawn.get(change.chosen)?.has(typeId) !== true) return current;
       const own = change.seat === thing.owner;
-      return own || sameCells(typeId, current, change.chosen) ? change.chosen : current;
+      return own || sameCells(typeId, current, change.chosen, record) ? change.chosen : current;
     },
     seatTribes: [...flows.changes.values()].map((change) => ({
       player: change.seat,
@@ -169,7 +176,8 @@ function seatedResult(op: MissionResultOp, remap: SeatTribeRemap): MissionResult
     }
     case 'SetHouse': {
       const house = op.houseName;
-      const tribe = remap.building(spawned(op.player, op.objectId, op.point), house.typeId, house.tribe);
+      const thing = spawned(op.player, op.objectId, op.point);
+      const tribe = remap.building(thing, house.typeId, house.tribe, house.record);
       return tribe === house.tribe ? op : { ...op, houseName: { ...house, tribe } };
     }
     default:
@@ -187,7 +195,7 @@ function seatedLine<T extends object>(op: T, remap: SeatTribeRemap): T {
   }
   if ('houseName' in op && isHouseRef(op.houseName)) {
     const house = op.houseName;
-    const tribe = remap.building({ owner }, house.typeId, house.tribe);
+    const tribe = remap.building({ owner }, house.typeId, house.tribe, house.record);
     if (tribe !== house.tribe) seated = { ...seated, houseName: { ...house, tribe } };
   }
   return seated;
@@ -253,7 +261,9 @@ export function seatedPlacements(
   return placements.map((p): AuthoredPlacement => {
     if (p.kind !== 'building' && p.kind !== 'human' && p.kind !== 'vehicle') return p;
     const thing = { owner: p.owner, missionId: p.missionId, at: { hx: p.x, hy: p.y } };
-    if (p.kind === 'building') return { ...p, tribe: remap.building(thing, p.typeId, p.tribe) };
+    if (p.kind === 'building') {
+      return { ...p, tribe: remap.building(thing, p.typeId, p.tribe, p.graphics?.[0]?.editName) };
+    }
     if (p.kind === 'human') {
       const tribe = remap.human(thing, p.jobType, p.tribe);
       return tribe === p.tribe ? p : { ...p, tribe, humanForm: true };

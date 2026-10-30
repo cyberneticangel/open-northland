@@ -1,4 +1,4 @@
-import type { BuildingHighlightItem } from '@open-northland/render';
+import type { TargetMark } from '@open-northland/render';
 import {
   type Entity,
   entitiesWith,
@@ -17,10 +17,11 @@ import {
   staffOf,
   workplaceOf,
 } from '../../../game/snapshot/index.js';
+import { markOf } from './target-mark.js';
 
 /**
- * The pure snapshot projection behind the assign-a-workplace button and its green or red building tint.
- * The button places each member's current profession and never re-trades them, so a building greens when
+ * The pure snapshot projection behind the assign-a-workplace button and its building marks. The button
+ * places each member's current profession and never re-trades them, so a building lights up when
  * a worker slot matches a member's trade canonically and still has room. The sim keeps enforcing its own
  * XP gate on each member's `assignWorker`, and names the reason it refuses one.
  */
@@ -33,8 +34,8 @@ export interface AssignBuildingInfo {
   readonly workers?: WorkerSlots | undefined;
 }
 
-/** The settlers bound to `building` counted by jobType - the capacity check reads it. */
-function staffingOf(snapshot: WorldSnapshot, building: number): Map<number, number> {
+/** The settlers bound to `building` counted by jobType, as the sim's `jobUnderstaffed` counts a slot. */
+export function staffingOf(snapshot: WorldSnapshot, building: number): Map<number, number> {
   const byJob = new Map<number, number>();
   for (const e of staffOf(snapshot, building)) {
     const jobType = settlerJobType(e);
@@ -132,30 +133,30 @@ function workplaceVerdict(
 }
 
 /**
- * The highlight verdicts for a selected group over every own building: green when it has a free seat
+ * The marks for a selected group over every own building: lit when it has a free seat
  * for a member the order would post there. Buildings employing nobody of a member's owner are
- * skipped, not tinted.
+ * skipped, not marked.
  */
 export function computeAssignHighlight(
   snapshot: WorldSnapshot,
   settlerIds: readonly number[],
   buildingsByType: ReadonlyMap<number, AssignBuildingInfo>,
-): BuildingHighlightItem[] {
+): TargetMark[] {
   const settlers = settlersIn(snapshot, settlerIds);
   if (settlers.length === 0) return [];
   const crew = crewOf(settlers);
-  const items: BuildingHighlightItem[] = [];
+  const items: TargetMark[] = [];
   for (const e of entitiesWith(snapshot, 'Building')) {
     const { candidate, ok } = workplaceVerdict(snapshot, e, crew, buildingsByType);
-    if (candidate) items.push({ id: e.id, ok });
+    if (candidate) items.push(markOf(e.id, ok));
   }
   return items;
 }
 
 /**
  * The members a click on one building posts, each with the building's slots for its trade, or null for a
- * building the highlight leaves untinted. Every member the building offers its trade goes along and the sim
- * picks who is seated against its current staffing. A red building that offers no member's trade still
+ * building the marks leave out. Every member the building offers its trade goes along and the sim
+ * picks who is seated against its current staffing. A refused building that offers no member's trade still
  * takes the side's selection, so the sim's refusal tells the player why.
  */
 export function workerGroupAt(

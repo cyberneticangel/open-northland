@@ -5,11 +5,16 @@ import { defineComponent, type Entity } from '../ecs/world.js';
  * to, and the ticks it still owes. A started repetition always plays out, so a drill overshoots
  * `drillTicksLeft` by less than one exercise clip. It survives a needs detour; a move order, a player
  * equip order, a profession change, or a script fixing the trade calls it off.
+ *
+ * A house trains at most its `schoolSize` settlers at once. A free seat goes to the earliest `enrolled`
+ * tick, then the lowest id; the others wait in the yard. A seat is kept until the order ends.
  */
 export const TrainingOrder = defineComponent<{
   house: Entity;
   drillTicksLeft: number;
   lesson?: { kind: 'job' | 'good'; typeId: number };
+  enrolled: number;
+  seated: boolean;
 }>('TrainingOrder', 'settlers');
 
 /**

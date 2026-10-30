@@ -34,7 +34,12 @@ export function createOverviewOrders(deps: OverviewOrderDeps): OverviewPress {
   return (worldX, worldY, event) => {
     // The flat inverse: the overview plots the map without the world view's terrain lift.
     const target: Tile = worldToTile(worldX, worldY);
-    const pick = deps.pickMode.handleOverviewPress(event.button, target, event.shiftKey);
+    const pick = deps.pickMode.handleOverviewPress(
+      event.button,
+      target,
+      event.shiftKey,
+      event.ctrlKey || event.metaKey,
+    );
     if (pick !== null) {
       const cue = pickPressCue(pick);
       if (cue !== null) deps.cue?.(cue);

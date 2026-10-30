@@ -58,8 +58,10 @@ function pushTriangle(
     for (const [hx, hy] of nodes) {
       batch.brightnessUVs.push(...nodeLaneUV(hx, hy, terrain.width, terrain.height, lane.laneTexWidth));
       batch.waves.push(lane.water.wave(hx, hy));
+      // The shore reaches land paint too: the swash washes over the beach beside the water.
       if (shadesWater) batch.water.push(lane.water.surface(hx, hy), lane.water.deep(hx, hy));
       else batch.water.push(0, 0);
+      batch.water.push(lane.water.shore(hx, hy));
     }
   }
   batch.indices.push(base, base + 1, base + 2);

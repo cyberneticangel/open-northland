@@ -17,7 +17,6 @@ const LIFECYCLE: Readonly<Record<UserMessageTypeName, NoticeLifecycle>> = {
   vehicleSiteOccupied: 'state',
   nothingToDo: 'state',
   storageFull: 'state',
-  noVehicleForWork: 'state',
   experienceUnlocks: 'event',
   canProduceNewGood: 'event',
   canDoNewJob: 'event',
@@ -56,6 +55,7 @@ const LIFECYCLE: Readonly<Record<UserMessageTypeName, NoticeLifecycle>> = {
   explorationFinished: 'event',
   settingsNeedRestart: 'event',
   workerRefused: 'event',
+  tradeRefused: 'event',
 };
 
 const LIFECYCLE_BY_TYPE: ReadonlyMap<UserMessageType, NoticeLifecycle> = new Map(
@@ -91,7 +91,6 @@ const POLLED: ReadonlySet<UserMessageType> = new Set<UserMessageType>([
   USER_MESSAGE_TYPE.workplaceNotFound,
   USER_MESSAGE_TYPE.nothingToDo,
   USER_MESSAGE_TYPE.cannotFindGood,
-  USER_MESSAGE_TYPE.noVehicleForWork,
   USER_MESSAGE_TYPE.hungry,
   USER_MESSAGE_TYPE.tired,
   USER_MESSAGE_TYPE.wantsToPray,

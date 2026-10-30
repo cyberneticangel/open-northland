@@ -26,6 +26,8 @@ export interface SystemMenu {
 }
 export interface SystemMenuDeps {
   readonly onQuit: () => void;
+  /** Starts the map again from its beginning; absent where a fresh boot cannot replay the world. */
+  readonly onRestart?: () => void;
   readonly saveLoad: SaveLoadSession;
   readonly settings: GameSettingsRuntime;
   readonly hud: Pick<HudPlane, 'element' | 'currentScale'>;
@@ -162,6 +164,22 @@ export function createSystemMenu(deps: SystemMenuDeps): SystemMenu {
       });
   });
   quit.classList.add('on-system-menu__quit');
+  const onRestart = deps.onRestart;
+  const restart =
+    onRestart === undefined
+      ? null
+      : button(text.restartMission, GLYPH.replay, () => {
+          void confirm
+            .open({
+              title: text.restartMission,
+              message: copy.playAgainConfirm,
+              cancel: text.cancel,
+              confirm: text.restartMission,
+            })
+            .then((confirmed) => {
+              if (confirmed && !scope.signal.aborted) onRestart();
+            });
+        });
   const saves = document.createElement('div');
   saves.className = 'on-system-menu__saves';
   saves.append(save);
@@ -185,6 +203,7 @@ export function createSystemMenu(deps: SystemMenuDeps): SystemMenu {
         onNetwork();
       }),
     );
+  if (restart !== null) frame.body.append(restart);
   frame.body.append(quit, support);
   document.body.append(backdrop);
   hidePanels();

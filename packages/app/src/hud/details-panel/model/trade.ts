@@ -49,6 +49,8 @@ export interface TradeStockRow {
   readonly amount: number;
   /** The house's shelf for the good, in units. */
   readonly capacity: number;
+  /** The edible a dish travels as (bread as food_simple); absent for a good carried as itself. */
+  readonly carriedAs?: number;
 }
 
 /** What each stop of a two-stop own route stores, in its stock table's order. */
@@ -68,6 +70,8 @@ export interface TradeTransferModel {
    *  balanced good. */
   readonly upTo: number;
   readonly keep: number;
+  /** As {@link TradeStockRow.carriedAs}. */
+  readonly carriedAs?: number;
 }
 
 /** One side of an agreement: so many units of a good. */
@@ -161,7 +165,13 @@ function houseStock(ctx: UnitPanelModelContext, snapshot: WorldSnapshot, house: 
     category: row.category,
     amount: row.amount,
     capacity: row.capacity ?? 0,
+    ...carriedAsOf(ctx, row.goodType),
   }));
+}
+
+function carriedAsOf(ctx: UnitPanelModelContext, goodType: number): { readonly carriedAs?: number } {
+  const carried = ctx.edibleGoodForm?.(goodType) ?? goodType;
+  return carried === goodType ? {} : { carriedAs: carried };
 }
 
 function houseLabel(
@@ -207,6 +217,7 @@ function transfersOf(ctx: UnitPanelModelContext, a: TradeStopView, b: TradeStopV
         direction,
         upTo: limits?.upTo ?? TRADE_LIMIT_NONE,
         keep: limits?.keep ?? TRADE_LIMIT_NONE,
+        ...carriedAsOf(ctx, goodType),
       },
     ];
   });

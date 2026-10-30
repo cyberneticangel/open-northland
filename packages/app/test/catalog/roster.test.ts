@@ -1,13 +1,18 @@
+import { PLAYER_COLORS } from '@open-northland/formats/player-palette';
+import { TEAM_HUMANS } from '@open-northland/render';
 import { describe, expect, it } from 'vitest';
 import {
   characterStem,
   DEFAULT_CHARACTER,
   findCharacter,
   headLabel,
+  PLAYER_COLOR_NAMES,
+  PLAYER_SWATCH_COLORS,
   pickWalkRow,
   VIKING_CHARACTERS,
 } from '../../src/catalog/roster.js';
 import type { BobSeqRow } from '../../src/content/ir/rows.js';
+import { en } from '../../src/i18n/en.js';
 
 /**
  * The viking roster's pure half - the shape/consistency of the `jobgraphics.ini` transcription,
@@ -15,6 +20,15 @@ import type { BobSeqRow } from '../../src/content/ir/rows.js';
  * imagelib + head/body atlas the roster names lives in the real-content suite
  * (`test/real-content/catalog/viking-roster.test.ts`).
  */
+
+describe('player colours', () => {
+  it('mirror the pipeline colours, with a swatch, an English name and a team palette row each', () => {
+    expect(PLAYER_COLOR_NAMES).toEqual(PLAYER_COLORS.map((color) => color.name));
+    expect(PLAYER_SWATCH_COLORS).toHaveLength(PLAYER_COLOR_NAMES.length);
+    expect(en.animation.playerColors).toHaveLength(PLAYER_COLOR_NAMES.length);
+    expect(TEAM_HUMANS).toBeGreaterThanOrEqual(PLAYER_COLOR_NAMES.length);
+  });
+});
 
 describe('findCharacter', () => {
   it('resolves a known id and falls back to the civilian for absent/unknown', () => {

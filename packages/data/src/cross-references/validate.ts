@@ -112,6 +112,10 @@ function checkBuildings(set: ContentSet, { goodIds, jobIds, tribeIds, vehicleIds
       if (!tribeIds.has(v.tribe))
         errors.push(`building "${b.id}" has a variant for unknown tribe ${v.tribe}`);
     }
+    for (const r of b.recordFootprints) {
+      if (!tribeIds.has(r.tribe))
+        errors.push(`building "${b.id}" record "${r.editName}" names unknown tribe ${r.tribe}`);
+    }
     if (b.refillsOwnStock && b.recipes.length > 0)
       errors.push(`building "${b.id}" refills its own stock and also carries a recipe`);
   }

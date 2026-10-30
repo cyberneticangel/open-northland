@@ -41,7 +41,8 @@ export const deNetworkRoom = {
   rejoin: 'Spiel erneut beitreten',
   reconnecting: 'Verbindung verloren. Verbindung wird wiederhergestellt…',
   settings: 'Raumeinstellungen',
-  creatorSettings: 'Nur der Raumersteller kann Plätze und Einstellungen ändern.',
+  creatorSettings:
+    'Einstellungen und Plätze ändert nur der Raumersteller; Farbe und Stamm deines Platzes wählst du selbst.',
   savedSettings: 'Dieser Spielstand behält seine ursprünglichen Regeln und Farben.',
   progression: 'Berufsentwicklung',
   progressionDetail: 'Erfahrungsvoraussetzungen für neue Berufe und die Produktion.',

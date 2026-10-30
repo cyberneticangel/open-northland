@@ -32,8 +32,7 @@ import {
  * the picker offers and which job each row assigns. The soldier band (31..41) collapses to one
  * profession, since a soldier's class is its weapon, and collecting is the single `collector` (8), the
  * original's one outdoor gatherer. Life stages, animals, vehicles and heroes (1..6, 42..55) are not
- * professions; the sea variants (23, 26) need a harbour, and the original's menu never offers the jester
- * (28) (observed).
+ * professions; the sea variants (23, 26) need a harbour, and the jester (28) is not in this game.
  */
 
 /** The picker's ordered groups. */

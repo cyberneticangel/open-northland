@@ -20,8 +20,12 @@ import {
 import type { Pickable } from '../../../../src/view/picking.js';
 import { drillPick, sitePick } from '../../../../src/view/unit-controls/highlights/own-building-picks.js';
 import { createAnsweredOrders } from '../../../../src/view/unit-controls/orders/answered.js';
-import { createUnitOrderController } from '../../../../src/view/unit-controls/orders/controller.js';
-import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
+import {
+  createUnitOrderController,
+  type UnitOrderDeps,
+} from '../../../../src/view/unit-controls/orders/controller.js';
+import { withPointHits } from '../../../support/point-hits.js';
+import { rightClickRiders, rightClickSettlers } from '../../../support/right-click.js';
 
 /**
  * The right-click ladder over an own building. A construction site is hired into by the rules of the
@@ -35,6 +39,7 @@ const {
   Building,
   Damaged,
   Female,
+  HaulingCart,
   Health,
   MissionObjectId,
   Owner,
@@ -120,12 +125,18 @@ async function pressRightClick(
   owned = true,
   click: 'settlers' | 'riders' | 'marker' = 'settlers',
   shiftKey = false,
-): Promise<{ issued: Command[]; ordered: boolean; flashed: [number, TargetFlashTone][] }> {
+): Promise<{
+  issued: Command[];
+  ordered: boolean;
+  flashed: [number, TargetFlashTone][];
+  tradeRefused: number[];
+}> {
   const issued: Command[] = [];
+  const tradeRefused: number[] = [];
   const flashed: [number, TargetFlashTone][] = [];
   const snapshot = sim.snapshot();
   const pickable: Pickable = { ref: building, x: 0, y: 0 };
-  const targets: UnitTargets = {
+  const targets = withPointHits({
     owned: (kind) => (kind === 'building' && owned ? [pickable] : []),
     buildings: () => [pickable],
     enemies: () => [],
@@ -137,8 +148,8 @@ async function pressRightClick(
     wildlife: () => [],
     claimableLivestock: () => [],
     ownedSettlersIn: () => settlers.map((ref) => ({ ref, x: 0, y: 0 })),
-  };
-  const controller = createUnitOrderController({
+  });
+  const deps = {
     answered: createAnsweredOrders(),
     selected: () => new Set<number>(settlers),
     targets,
@@ -151,17 +162,19 @@ async function pressRightClick(
     openActions: () => {},
     askAttachTradeHouse: (trader, house) =>
       Promise.resolve(sim.canAttachTradeHouse(trader as Entity, house as Entity)),
+    onTradeRefused: (house) => tradeRefused.push(house),
     flashTarget: (entity, tone) => flashed.push([entity, tone]),
-  });
+  } satisfies UnitOrderDeps;
+  const controller = createUnitOrderController(deps);
   const event = { ...CLICK, shiftKey } as MouseEvent;
   const ordered =
     click === 'settlers'
-      ? controller.issueRightClick(event)
+      ? rightClickSettlers(controller, deps, event)
       : click === 'marker'
-        ? controller.issueRightClick(event, building)
-        : controller.issueRiderTradeHouse(event, null, () => undefined);
+        ? rightClickSettlers(controller, deps, event, building)
+        : rightClickRiders(controller, deps, event, () => undefined);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  return { issued, ordered, flashed };
+  return { issued, ordered, flashed, tradeRefused };
 }
 
 /** How far a one-man formation may step a walk's slot off an occupied node. */
@@ -265,10 +278,10 @@ describe('right-clicking a construction site', () => {
     const snapshot = sim.snapshot();
     const press = (shiftKey: boolean): Command[] => {
       const issued: Command[] = [];
-      createUnitOrderController({
+      const deps = {
         answered: createAnsweredOrders(),
         selected: () => new Set<number>([builder, idle]),
-        targets: {
+        targets: withPointHits({
           owned: (kind) => (kind === 'roadsite' ? [{ ref: road, x: 0, y: 0 }] : []),
           buildings: () => [],
           enemies: () => [],
@@ -280,7 +293,7 @@ describe('right-clicking a construction site', () => {
           wildlife: () => [],
           claimableLivestock: () => [],
           ownedSettlersIn: () => [builder, idle].map((ref) => ({ ref, x: 0, y: 0 })),
-        },
+        }),
         snapshot: (): WorldSnapshot => snapshot,
         content: sim.content,
         mapSize: { width: 16, height: 16 },
@@ -288,7 +301,8 @@ describe('right-clicking a construction site', () => {
         enqueue: (command) => issued.push(command),
         selectOwnSettler: () => {},
         openActions: () => {},
-      }).issueRightClick({ ...CLICK, shiftKey } as MouseEvent);
+      } satisfies UnitOrderDeps;
+      rightClickSettlers(createUnitOrderController(deps), deps, { ...CLICK, shiftKey } as MouseEvent);
       return issued;
     };
 
@@ -489,7 +503,12 @@ describe('a right-click that orders nobody', () => {
     const woman = settlerAt(sim, null);
     sim.world.add(woman, Female, { female: true });
 
-    expect(await pressRightClick(sim, [woman], school)).toEqual({ issued: [], ordered: false, flashed: [] });
+    expect(await pressRightClick(sim, [woman], school)).toEqual({
+      issued: [],
+      ordered: false,
+      flashed: [],
+      tradeRefused: [],
+    });
   });
 
   it('reports nothing when the foundation takes none of the selection', async () => {
@@ -498,7 +517,12 @@ describe('a right-click that orders nobody', () => {
     const woman = settlerAt(sim, null);
     sim.world.add(woman, Female, { female: true });
 
-    expect(await pressRightClick(sim, [woman], site)).toEqual({ issued: [], ordered: false, flashed: [] });
+    expect(await pressRightClick(sim, [woman], site)).toEqual({
+      issued: [],
+      ordered: false,
+      flashed: [],
+      tradeRefused: [],
+    });
   });
 
   it('takes no hero into a home, a workplace or a barracks, and still posts the man beside him', async () => {
@@ -521,6 +545,7 @@ describe('a right-click that orders nobody', () => {
         issued: [],
         ordered: false,
         flashed: [],
+        tradeRefused: [],
       });
     }
     const posted = postedWorkers(await rightClick(sim, [hero, idle], standing, heroContent), standing);
@@ -608,11 +633,14 @@ function riddenVehicle(sim: Simulation, vehicleType: number, rider: Entity): Ent
   return vehicle;
 }
 
-/** A standing house of {@link NEIGHBOUR} stamped as the map's trading post. */
+/** A standing house of {@link NEIGHBOUR} stamped as the map's trading post, its owner a friend both ways. */
 function tradingPost(sim: Simulation): Entity {
   const post = buildingAt(sim, BUILDING_HOME_00, ONE);
   sim.world.mut(post, Owner).player = NEIGHBOUR;
   sim.world.add(post, MissionObjectId, { id: TRADING_POST_ID });
+  sim.enqueueSetup({ kind: 'setDiplomacy', from: HUMAN_PLAYER, to: NEIGHBOUR, state: 'friend' });
+  sim.enqueueSetup({ kind: 'setDiplomacy', from: NEIGHBOUR, to: HUMAN_PLAYER, state: 'friend' });
+  sim.step();
   return post;
 }
 
@@ -663,6 +691,19 @@ describe('right-clicking a standing house with a trader', () => {
     ]);
   });
 
+  it('puts the house on the route of the trader pulling a selected cart', async () => {
+    const sim = new Simulation({ seed: 1, content: sandboxContent() });
+    const home = buildingAt(sim, BUILDING_HOME_00, ONE);
+    const trader = settlerAt(sim, JOB_TRADER);
+    const cart = spawnVehicleDirect(sim, VEHICLE_HANDCART, VEHICLE_AT.x, VEHICLE_AT.y);
+    sim.world.mut(cart, Vehicle).hauler = trader;
+    sim.world.add(trader, HaulingCart, { vehicle: cart, taken: false, parked: true, lift: null });
+
+    expect(await rightClick(sim, [cart], home, sim.content, true, 'riders')).toEqual([
+      { kind: 'attachTradeHouse', entity: trader, house: home },
+    ]);
+  });
+
   it('leaves a Shift click to the cart, which drives there queued, a trade stop being a standing setting', async () => {
     const sim = new Simulation({ seed: 1, content: sandboxContent() });
     const home = buildingAt(sim, BUILDING_HOME_00, ONE);
@@ -673,6 +714,7 @@ describe('right-clicking a standing house with a trader', () => {
       issued: [],
       ordered: false,
       flashed: [],
+      tradeRefused: [],
     });
   });
 
@@ -709,6 +751,7 @@ describe('right-clicking a standing house with a trader', () => {
       issued: [],
       ordered: false,
       flashed: [],
+      tradeRefused: [],
     });
   });
 
@@ -767,5 +810,15 @@ describe('right-clicking a standing house with a trader', () => {
     const issued = await rightClick(sim, [trader], post, sim.content, false);
 
     expect(issued.map((order) => order.kind)).toEqual(['moveUnit']);
+  });
+
+  it('reports the house a route refused, and nothing when the route took it', async () => {
+    const sim = new Simulation({ seed: 1, content: sandboxContent() });
+    const post = tradingPost(sim);
+    const home = buildingAt(sim, BUILDING_HOME_00, ONE);
+    const trader = settlerAt(sim, JOB_TRADER);
+
+    expect((await pressRightClick(sim, [trader], post, sim.content, false)).tradeRefused).toEqual([post]);
+    expect((await pressRightClick(sim, [trader], home)).tradeRefused).toEqual([]);
   });
 });

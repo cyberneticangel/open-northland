@@ -22,6 +22,7 @@ import type { SystemContext } from '../../context.js';
 import { heldGatherGood, holdToGatherGood, jobGathersGood } from '../../economy/gather-goods.js';
 import { isSchoolOrFoundation, schoolMethodJob } from '../../orders/education.js';
 import { keepingOrderQueue } from '../../orders/guards.js';
+import { takeTrainingSeat } from '../../orders/training-seats.js';
 import { reidleAsJob } from '../../orders/work/index.js';
 import { typeAllowed } from '../../progression/unlocks.js';
 import { atomicDuration } from '../../readviews/animations.js';
@@ -34,10 +35,14 @@ import {
 import type { NavigationLimit } from '../../signposts/index.js';
 import { atOrWalk, EXERCISE_ATOMIC_ID, startAtomic } from '../atomics/start.js';
 import { enterBuilding, stepOut } from '../indoors.js';
+import type { PlannerContext } from '../planner/context.js';
 import type { IdleStands } from '../planner/idle-replan.js';
 import type { PlannerSpacing } from '../planner/spacing.js';
 import { interactionCell } from '../targets/index.js';
 import { isUnreachableGoal, unreachableGoals } from '../unreachable-goals.js';
+import { planDelivery } from './economy/delivery.js';
+import { deliveryTargetFor } from './economy/delivery-targets.js';
+import { fetchNeededMaterial } from './economy/site-supply.js';
 import { loiterCell } from './spacing.js';
 
 /**
@@ -50,21 +55,18 @@ export const BARRACKS_DRILL_TICKS = 15 * TICKS_PER_SECOND;
 /**
  * The barracks-drill rung: drive a settler's live `TrainingOrder` one step forward. It walks to the
  * barracks door, steps inside and runs the exercise atomic one repetition at a time until the drill time is
- * served, then steps back out enlisted. A house still under construction is waited for beside its door,
- * re-checked on the idle beat. The order is abandoned when the house is gone or its door is no longer open
+ * served, then steps back out enlisted. A house still under construction is supplied with its missing
+ * material, else waited for beside its door, re-checked on the idle beat. The order is abandoned when the house is gone or its door is no longer open
  * to the settler, rather than looping on a dead errand.
  */
 export function planTraining(
-  world: World,
-  ctx: SystemContext,
-  terrain: TerrainGraph,
-  e: Entity,
+  plan: PlannerContext,
   settler: SettlerIdentity,
-  here: NodeId,
-  limit: NavigationLimit | null,
   spacing: PlannerSpacing,
   idle: IdleStands,
+  load: { goodType: number; amount: number } | undefined,
 ): boolean {
+  const { world, ctx, terrain, entity: e, here, limit } = plan;
   const order = world.tryGet(e, TrainingOrder);
   if (order === undefined) return false;
   // A script that fixes the trade mid-term ends the errand: the term could only end in a refused change.
@@ -146,8 +148,10 @@ export function planTraining(
   if (!teaches(world, ctx, order.house) || !sameSide(world, e, order.house)) return abandonDrill(world, e);
   const door = interactionCell(world, ctx, terrain, order.house, here);
   if (!drillDoorOpen(world, ctx, e, door, limit)) return abandonDrill(world, e);
-  if (world.has(order.house, UnderConstruction))
-    return waitBesideFoundation(world, ctx, terrain, e, here, door, spacing, idle);
+  const foundation = world.has(order.house, UnderConstruction);
+  if (foundation && supplyFoundation(plan, spacing, order.house, load)) return true;
+  if (!takeTrainingSeat(world, ctx, e) || foundation)
+    return waitInYard(world, ctx, terrain, e, here, door, spacing, idle);
   enterBuilding(world, e, order.house, here, door, () =>
     startAtomic(
       world,
@@ -162,11 +166,28 @@ export function planTraining(
 }
 
 /**
- * Wait beside an unbuilt house's door, re-checked on the idle beat. The walk goes to a yard cell, not the
- * door, so a failed walk to any yard cell is what tells an unreachable house: the errand is then dropped
- * as it would be at a standing house's door.
+ * Help raise the school or barracks the settler is enrolled at while it is a foundation: fetch a unit of
+ * its missing material and carry it to the site, as a worker posted to a house still going up does. A
+ * load the site has no use for is held through the wait. Owner ruling, not observed in the original.
  */
-function waitBesideFoundation(
+function supplyFoundation(
+  plan: PlannerContext,
+  spacing: PlannerSpacing,
+  house: Entity,
+  load: { goodType: number; amount: number } | undefined,
+): boolean {
+  if (load === undefined || load.amount <= 0) return fetchNeededMaterial(plan, spacing, house);
+  if (deliveryTargetFor(plan, load.goodType) !== house) return false;
+  planDelivery(plan, spacing, load);
+  return true;
+}
+
+/**
+ * Wait beside the house's door for it to stand or for a free seat, re-checked on the idle beat. The walk
+ * goes to a yard cell, not the door, so a failed walk to any yard cell is what tells an unreachable house:
+ * the errand is then dropped as it would be at a standing house's door.
+ */
+function waitInYard(
   world: World,
   ctx: SystemContext,
   terrain: TerrainGraph,

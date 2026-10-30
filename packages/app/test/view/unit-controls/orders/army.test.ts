@@ -11,7 +11,8 @@ import { createOverviewOrders } from '../../../../src/view/unit-controls/orders/
 import { issueRingCommand } from '../../../../src/view/unit-controls/orders/ring-commands.js';
 import { createVehicleOrderController } from '../../../../src/view/unit-controls/orders/vehicle.js';
 import { createPickModeController } from '../../../../src/view/unit-controls/pick-mode.js';
-import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
+import { withPointHits } from '../../../support/point-hits.js';
+import { rightClickSettlers, rightClickVehicles } from '../../../support/right-click.js';
 import { snapshotOf } from '../../../support/snapshot.js';
 
 const COUNT = 1000;
@@ -66,7 +67,7 @@ function harness(
   const marked: unknown[] = [];
   const cues: string[] = [];
   const content = sandboxContent();
-  const targets: UnitTargets = {
+  const targets = withPointHits({
     owned: (kind) => (house && kind === 'building' ? [{ ref: HOUSE, ...POINT, kind: 'building' }] : []),
     buildings: () => (house ? [{ ref: HOUSE, ...POINT, kind: 'building' }] : []),
     flags: () => [],
@@ -78,7 +79,7 @@ function harness(
     claimableLivestock: () => [],
     enemies: () => (enemy ? [{ ref: ENEMY, ...POINT, kind: 'settler' }] : []),
     ownedSettlersIn: (ids) => units.filter((unit) => ids.has(unit.ref)),
-  };
+  });
   const shared = {
     answered: createAnsweredOrders(),
     snapshot: () => snapshot,
@@ -92,21 +93,22 @@ function harness(
     },
     cue: (cue: string) => cues.push(cue),
   };
-  const orders = createUnitOrderController({
+  const orderDeps = {
     ...shared,
-    markOrder: (node) => {
+    markOrder: (node: unknown) => {
       marked.push(node);
     },
     selected: () => selected,
     selectOwnSettler: () => {},
     openActions: () => {},
     drivenVehicles: () => vehicleOrders.selectedOwnVehicles(),
-  });
-  const vehicleOrders = createVehicleOrderController({
-    ...shared,
-    selected: () => selected,
-    viewer: fixedViewerSeat(0),
-  });
+  };
+  const orders = createUnitOrderController(orderDeps);
+  const vehicleDeps = { ...shared, selected: () => selected, viewer: fixedViewerSeat(0) };
+  const vehicleOrders = createVehicleOrderController(vehicleDeps);
+  const rightClick = (event: MouseEvent, onBuilding: number | null = null): boolean =>
+    rightClickSettlers(orders, orderDeps, event, onBuilding);
+  const driveClick = (event: MouseEvent): boolean => rightClickVehicles(vehicleOrders, vehicleDeps, event);
   const pickMode = createPickModeController({
     ...shared,
     nodeAt: () => TARGET,
@@ -133,7 +135,20 @@ function harness(
         siegeVehicles: vehicleOrders.selectedSiegeVehicles,
       },
     );
-  return { issued, orders, vehicleOrders, pickMode, overview, ring, selected, limited, marked, cues };
+  return {
+    issued,
+    orders,
+    rightClick,
+    driveClick,
+    vehicleOrders,
+    pickMode,
+    overview,
+    ring,
+    selected,
+    limited,
+    marked,
+    cues,
+  };
 }
 
 function click(button: number, shiftKey = false): MouseEvent {
@@ -155,8 +170,8 @@ describe('army selection input', () => {
     'submits 1000 soldiers and 25 siege vehicles in two right-click envelopes (enemy=%s)',
     (enemy) => {
       const h = harness(enemy, COUNT, false, 25);
-      expect(h.orders.issueRightClick(click(2))).toBe(true);
-      expect(h.vehicleOrders.issueRightClick(click(2))).toBe(true);
+      expect(h.rightClick(click(2))).toBe(true);
+      expect(h.driveClick(click(2))).toBe(true);
       expect(h.issued.map((command) => command.kind)).toEqual(
         enemy ? ['attackUnitGroup', 'attackWithVehicleGroup'] : ['moveUnitGroup', 'moveVehicleGroup'],
       );
@@ -183,8 +198,8 @@ describe('army selection input', () => {
 
   it('leaves a commander out of a Shift walk its selected vehicle takes itself', () => {
     const h = harness(false, 2, false, 1, true);
-    expect(h.orders.issueRightClick(click(2, true))).toBe(true);
-    expect(h.vehicleOrders.issueRightClick(click(2, true))).toBe(true);
+    expect(h.rightClick(click(2, true))).toBe(true);
+    expect(h.driveClick(click(2, true))).toBe(true);
     const walk = h.issued[0];
     if (walk?.kind !== 'moveUnit') throw new Error('expected one walk');
     expect(walk).toMatchObject({ entity: 2, queued: true });
@@ -231,7 +246,7 @@ describe('army selection input', () => {
 
   it('refuses an oversized right-click on an own building before any group order', () => {
     const h = harness(false, MAX_UNIT_ORDER_MEMBERS + 1, false, 0, false, true);
-    expect(h.orders.issueRightClick(click(2), HOUSE)).toBe(false);
+    expect(h.rightClick(click(2), HOUSE)).toBe(false);
     expect(h.issued).toEqual([]);
     expect(h.limited).toEqual([1]);
     expect(h.cues).toEqual(['fail']);
@@ -248,7 +263,7 @@ describe('army selection input', () => {
 
   it.each(['world', 'overview'] as const)('sends one formation order for a 1000-unit %s click', (surface) => {
     const h = harness();
-    if (surface === 'world') h.orders.issueRightClick(click(2));
+    if (surface === 'world') h.rightClick(click(2));
     else h.overview(POINT.x, POINT.y, click(2));
     expect(h.issued).toHaveLength(1);
     expectWholeArmy(h.issued[0], 'moveUnitGroup');
@@ -274,7 +289,7 @@ describe('army selection input', () => {
 
   it('keeps consecutive normal clicks as replacing group orders', () => {
     const h = harness();
-    h.orders.issueRightClick(click(2));
+    h.rightClick(click(2));
     h.orders.issueAttackMove({ col: 160, row: 80 });
     h.orders.issueMoveTo({ col: 170, row: 80 });
     expect(h.issued.map((order) => order.kind)).toEqual([
@@ -287,7 +302,7 @@ describe('army selection input', () => {
 
   it.each(['right-click', 'armed'] as const)('sends one explicit target attack through %s', (input) => {
     const h = harness(true);
-    if (input === 'right-click') h.orders.issueRightClick(click(2));
+    if (input === 'right-click') h.rightClick(click(2));
     else {
       h.ring('attackInhabitants');
       h.pickMode.handleMouseDown(click(0));

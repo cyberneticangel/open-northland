@@ -87,6 +87,8 @@ function mount(pauseStopsClock = true, briefing: MissionBriefingAnswer = { histo
       stop: () => spoken.push('stop'),
       toggle: () => undefined,
       seek: () => undefined,
+      rate: () => 1,
+      setRate: () => undefined,
       state: () => ({ voice: null, status: 'idle', positionS: 0, durationS: 0 }),
     },
   };

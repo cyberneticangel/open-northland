@@ -1,7 +1,7 @@
 /** The extracted hammer clips are `length 15`; the sandbox runs its house and guide swings twice as long
  *  because the authored 1 frame/tick pace reads frantically fast (named approximation). The road and wall
- *  clips keep the data length because the sim already paces those one-strike clips. The render plays the
- *  whole swing across each construct atomic, and labor advances per completed swing. */
+ *  clips keep the data length, as the real game plays them. The render plays the whole swing across each
+ *  construct atomic, and labor advances per completed swing. */
 const HAMMER_CLIP_LENGTH = 15;
 const SANDBOX_HAMMER_SLOWDOWN = 2;
 const SANDBOX_HAMMER_SWING_LENGTH = HAMMER_CLIP_LENGTH * SANDBOX_HAMMER_SLOWDOWN;

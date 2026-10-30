@@ -8,9 +8,12 @@ import { createAnsweredOrders } from '../../../../src/view/unit-controls/orders/
 import {
   createUnitOrderController,
   type UnitOrderController,
+  type UnitOrderDeps,
 } from '../../../../src/view/unit-controls/orders/controller.js';
 import { createUnitSelection, type UnitSelection } from '../../../../src/view/unit-controls/selection.js';
 import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
+import { withPointHits } from '../../../support/point-hits.js';
+import { rightClickSettlers, rightClickWorkFlag } from '../../../support/right-click.js';
 import { type Ent, snapshotOf } from '../../../support/snapshot.js';
 
 /**
@@ -87,6 +90,8 @@ function harness(
 ): {
   selection: UnitSelection;
   orders: UnitOrderController;
+  rightClick: (event: MouseEvent) => boolean;
+  workFlagClick: (event: MouseEvent) => boolean;
   issued: Command[];
   marked: [Tile, OrderMarkerKind][];
 } {
@@ -94,10 +99,10 @@ function harness(
   const marked: [Tile, OrderMarkerKind][] = [];
   const selection = createUnitSelection(() => true);
   selection.apply(initiallySelected, false);
-  const orders = createUnitOrderController({
+  const deps = {
     answered: createAnsweredOrders(),
     selected: selection.ids,
-    targets: { ...targets, ...overrides },
+    targets: withPointHits({ ...targets, ...overrides }),
     snapshot: () => world,
     content: CONTENT,
     mapSize: MAP_SIZE,
@@ -106,28 +111,36 @@ function harness(
     selectOwnSettler: () => {},
     openActions: () => {},
     markOrder: (node, kind) => marked.push([node, kind]),
-  });
-  return { selection, orders, issued, marked };
+  } satisfies UnitOrderDeps;
+  const orders = createUnitOrderController(deps);
+  return {
+    selection,
+    orders,
+    rightClick: (event) => rightClickSettlers(orders, deps, event),
+    workFlagClick: (event) => rightClickWorkFlag(orders, deps, event),
+    issued,
+    marked,
+  };
 }
 
 describe('unit orders against a selection that moves under them', () => {
   it('sends the units selected now on a move order, not the ones selected at construction', () => {
-    const { selection, orders, issued } = harness();
+    const { selection, rightClick, issued } = harness();
 
     selection.apply([SCOUT.id], false);
-    expect(orders.issueRightClick(clickOn(OPEN_GROUND))).toBe(true); // an order: the click confirms
+    expect(rightClick(clickOn(OPEN_GROUND))).toBe(true); // an order: the click confirms
     expect(issued).toEqual([{ kind: 'moveUnit', entity: SCOUT.id, x: OPEN_GROUND.hx, y: OPEN_GROUND.hy }]);
 
     issued.length = 0;
     selection.apply([GUARD.id], false);
-    orders.issueRightClick(clickOn(OPEN_GROUND));
+    rightClick(clickOn(OPEN_GROUND));
     expect(issued).toEqual([{ kind: 'moveUnit', entity: GUARD.id, x: OPEN_GROUND.hx, y: OPEN_GROUND.hy }]);
   });
 
   it("queues a Shift + right-click walk behind each settler's current order", () => {
-    const { orders, issued } = harness([SCOUT.id]);
+    const { rightClick, issued } = harness([SCOUT.id]);
 
-    orders.issueRightClick({ ...clickOn(OPEN_GROUND), shiftKey: true } as MouseEvent);
+    rightClick({ ...clickOn(OPEN_GROUND), shiftKey: true } as MouseEvent);
     expect(issued).toEqual([
       { kind: 'moveUnit', entity: SCOUT.id, x: OPEN_GROUND.hx, y: OPEN_GROUND.hy, queued: true },
     ]);
@@ -135,37 +148,37 @@ describe('unit orders against a selection that moves under them', () => {
 
   it("queues the strike at an enemy under a Shift + right-click behind each settler's current order", () => {
     const ENEMY = 50;
-    const { orders, issued } = harness([SCOUT.id], {
+    const { rightClick, issued } = harness([SCOUT.id], {
       enemies: () => {
         const p = halfCellToScreen(OPEN_GROUND.hx, OPEN_GROUND.hy);
         return [{ ref: ENEMY, x: p.x, y: p.y, kind: 'settler' }];
       },
     });
 
-    orders.issueRightClick({ ...clickOn(OPEN_GROUND), shiftKey: true } as MouseEvent);
+    rightClick({ ...clickOn(OPEN_GROUND), shiftKey: true } as MouseEvent);
     expect(issued).toEqual([{ kind: 'attackUnit', entity: SCOUT.id, target: ENEMY, queued: true }]);
   });
 
   it('queues a walk to an own building under a Shift + right-click, a post or home being no queued order', () => {
     const HOUSE = 60;
-    const { orders, issued } = harness([SCOUT.id], {
+    const { rightClick, issued } = harness([SCOUT.id], {
       owned: (kind) => {
         const p = halfCellToScreen(OPEN_GROUND.hx, OPEN_GROUND.hy);
         return kind === 'building' ? [{ ref: HOUSE, x: p.x, y: p.y, kind: 'building' }] : [];
       },
     });
 
-    orders.issueRightClick({ ...clickOn(OPEN_GROUND), shiftKey: true } as MouseEvent);
+    rightClick({ ...clickOn(OPEN_GROUND), shiftKey: true } as MouseEvent);
     expect(issued).toEqual([
       { kind: 'moveUnit', entity: SCOUT.id, x: OPEN_GROUND.hx, y: OPEN_GROUND.hy, queued: true },
     ]);
   });
 
   it('marks the clicked spot once per walk or march, red for the march, and nothing when nobody went', () => {
-    const { selection, orders, marked } = harness([SCOUT.id, GUARD.id]);
+    const { selection, orders, rightClick, marked } = harness([SCOUT.id, GUARD.id]);
     const ground: Tile = { col: OPEN_GROUND.hx, row: OPEN_GROUND.hy };
 
-    orders.issueRightClick(clickOn(OPEN_GROUND));
+    rightClick(clickOn(OPEN_GROUND));
     orders.issueAttackMove(ground);
     expect(marked).toEqual([
       [ground, 'move'],
@@ -179,21 +192,21 @@ describe('unit orders against a selection that moves under them', () => {
   });
 
   it('drops a right-click once the selection has been cleared', () => {
-    const { selection, orders, issued } = harness([SCOUT.id]);
+    const { selection, rightClick, issued } = harness([SCOUT.id]);
 
     selection.apply([], false);
-    expect(orders.issueRightClick(clickOn(OPEN_GROUND))).toBe(false); // nobody to command: no click either
+    expect(rightClick(clickOn(OPEN_GROUND))).toBe(false); // nobody to command: no click either
 
     expect(issued).toEqual([]);
   });
 
   it('reports no order for a selection with no settler in it (a building or flag)', () => {
     const BUILDING_ID = 77;
-    const { selection, orders, issued } = harness();
+    const { selection, orders, rightClick, issued } = harness();
 
     const ground: Tile = { col: OPEN_GROUND.hx, row: OPEN_GROUND.hy };
     selection.apply([BUILDING_ID], false);
-    expect(orders.issueRightClick(clickOn(OPEN_GROUND))).toBe(false);
+    expect(rightClick(clickOn(OPEN_GROUND))).toBe(false);
     expect(orders.issueMoveTo(ground)).toBe(false);
     expect(orders.issueSetWorkFlag(ground)).toBe(false);
     expect(issued).toEqual([]);
@@ -232,7 +245,7 @@ describe('unit orders against a selection that moves under them', () => {
   it('strikes a neutral palisade from the action-ring attack mode and walks beside it on a right-click', () => {
     const target = { id: 50, at: OPEN_GROUND };
     const p = halfCellToScreen(target.at.hx, target.at.hy);
-    const { orders, issued } = harness([SCOUT.id], {
+    const { orders, rightClick, issued } = harness([SCOUT.id], {
       // An unowned wall, which the targets offer only to an explicit attack pick.
       enemies: (opts) =>
         opts?.neutralWalls === true ? [{ ref: target.id, x: p.x, y: p.y, kind: 'palisade' }] : [],
@@ -242,7 +255,7 @@ describe('unit orders against a selection that moves under them', () => {
     expect(issued).toEqual([{ kind: 'attackUnit', entity: SCOUT.id, target: target.id }]);
 
     issued.length = 0;
-    expect(orders.issueRightClick(clickOn(target.at))).toBe(true);
+    expect(rightClick(clickOn(target.at))).toBe(true);
     expect(issued).toEqual([{ kind: 'moveUnit', entity: SCOUT.id, x: target.at.hx, y: target.at.hy }]);
   });
 
@@ -294,13 +307,13 @@ describe('unit orders against a selection that moves under them', () => {
       ),
       { id: resource.id, components: { Resource: { goodType } } },
     ]);
-    const { orders, issued } = harness(
+    const { rightClick, issued } = harness(
       [SCOUT.id, GUARD.id],
       { resources: () => [{ ref: resource.id, x: p.x, y: p.y, kind: 'resource', goodType }] },
       snapshot,
     );
 
-    expect(orders.issueRightClick(clickOn(resource.at))).toBe(true);
+    expect(rightClick(clickOn(resource.at))).toBe(true);
 
     // The collector keeps its flag; the settler who gathers nothing walks there as before.
     expect(issued).toEqual([
@@ -310,7 +323,7 @@ describe('unit orders against a selection that moves under them', () => {
 
     // A gathered good is a standing setting: with Shift everyone walks there queued instead.
     issued.length = 0;
-    expect(orders.issueRightClick({ ...clickOn(resource.at), shiftKey: true } as MouseEvent)).toBe(true);
+    expect(rightClick({ ...clickOn(resource.at), shiftKey: true } as MouseEvent)).toBe(true);
     expect(issued.map((command) => command.kind)).toEqual(['moveUnitGroup']);
     expect(issued[0]).toHaveProperty('queued', true);
   });
@@ -321,11 +334,11 @@ describe('unit orders against a selection that moves under them', () => {
     const RESOURCE_GOOD = 5;
     const p = halfCellToScreen(OPEN_GROUND.hx, OPEN_GROUND.hy);
     // The rendered target is the click's source of truth, even past the snapshot it was drawn from.
-    const { orders, issued } = harness([SCOUT.id], {
+    const { workFlagClick, issued } = harness([SCOUT.id], {
       resources: () => [{ ref: RESOURCE, x: p.x, y: p.y, kind: 'resource', goodType: RESOURCE_GOOD }],
     });
 
-    orders.issueSetWorkFlagAt(clickOn(OPEN_GROUND));
+    workFlagClick(clickOn(OPEN_GROUND));
 
     expect(issued).toEqual([
       {

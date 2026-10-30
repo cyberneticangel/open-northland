@@ -1,7 +1,7 @@
 /**
  * Artistic approximation, independent of sim state: a ship at sea rolls (a shear about its keel) and
  * heaves (a pixel lift) on a slow swell, harder under sail; the original draws its ships rigid, and a
- * moored ship lies still here too. Periods are sim ticks (12 Hz).
+ * moored ship lies still here too. Periods are ticks of the water clock at the 12 Hz base rate.
  */
 
 const ROLL_PERIOD_TICKS = 44;

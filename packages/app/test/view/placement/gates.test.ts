@@ -68,8 +68,12 @@ describe('placement gates - the ground an enemy army contests', () => {
     }));
     const gates = createPlacementGates(host, fog, HUMAN_PLAYER);
     expect(gates.canPlaceSignpostAt(FAR.hx, FAR.hy)).toBe(false);
+    expect(gates.signpostAnswerAt(FAR.hx, FAR.hy)).toBeUndefined();
+    const unanswered = gates.answersVersion();
     await landed();
     expect(gates.canPlaceSignpostAt(FAR.hx, FAR.hy)).toBe(true);
+    expect(gates.signpostAnswerAt(FAR.hx, FAR.hy)).toBe(true);
+    expect(gates.answersVersion()).not.toBe(unanswered);
     const previewCalls = probe.mock.calls.length;
     allowed = false; // No blocker change: the held preview still admits this node.
     await expect(gates.askPlaceSignpostAt(FAR.hx, FAR.hy)).resolves.toBe(false);

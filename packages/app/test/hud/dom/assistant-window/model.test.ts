@@ -8,6 +8,8 @@ import {
   birthNotes,
   counterFace,
   counterFromFace,
+  gearMoved,
+  gearToggled,
   PRESS_HOLD_TICKS,
   PressHold,
   trainingNotes,
@@ -174,5 +176,20 @@ describe('assistantWindowWidth', () => {
     expect(assistantWindowWidth({ width: 1440, height: 900 }, minimap)).toBe(ASSISTANT_WINDOW_NARROW_W);
     expect(assistantWindowWidth({ width: 1440, height: 900 }, null)).toBe(ASSISTANT_WINDOW_WIDE_W);
     expect(assistantWindowWidth({ width: 1024, height: 768 }, null)).toBe(ASSISTANT_WINDOW_NARROW_W);
+  });
+});
+
+describe('a gear line', () => {
+  const choice = { order: [4, 3, 1, 2], off: [3] };
+
+  it('moves a good to a place, clamped to the ends, and keeps what is off', () => {
+    expect(gearMoved(choice, 2, 0)).toEqual({ order: [2, 4, 3, 1], off: [3] });
+    expect(gearMoved(choice, 4, 9)).toEqual({ order: [3, 1, 2, 4], off: [3] });
+    expect(gearMoved(choice, 4, -1)).toEqual(choice);
+  });
+
+  it('switches a good off and back on', () => {
+    expect(gearToggled(choice, 1).off).toEqual([3, 1]);
+    expect(gearToggled(choice, 3).off).toEqual([]);
   });
 });

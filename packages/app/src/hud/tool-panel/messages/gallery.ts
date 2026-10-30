@@ -55,6 +55,7 @@ const SEAT_ROWS: ReadonlySet<UserMessageTypeName> = new Set<UserMessageTypeName>
   'playerSighted',
   'diplomacyChanged',
   'playerDied',
+  'tradeRefused',
 ]);
 /** The rows whose text names a good; without one to name they are left out. */
 const GOOD_ROWS: ReadonlySet<UserMessageTypeName> = new Set<UserMessageTypeName>(['canProduceNewGood']);
@@ -170,7 +171,7 @@ export function galleryMessages(
 
   for (const [name, type] of Object.entries(USER_MESSAGE_TYPE) as [UserMessageTypeName, UserMessageType][]) {
     if (SEAT_ROWS.has(name)) {
-      raiseSeat(type, name !== 'playerDied');
+      raiseSeat(type, name !== 'playerDied' && name !== 'tradeRefused');
       continue;
     }
     if (name === 'specialItemFound') {

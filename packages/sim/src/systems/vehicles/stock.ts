@@ -177,12 +177,12 @@ export function modifyVehicleReserved(
 }
 
 /**
- * A commander's own load or unload of `delta` units of `goodType`, the trader's write at a stop: the
- * units are booked and stowed in one step and the good's wanted amount follows the actual one whatever
- * crew is attached. Returns the units moved. Named approximation: the original's trader books a unit
- * on its walk to the door and stows it there, and its wanted-follows-actual rule holds only while no
- * cargo hand is seated; the trader is its cart's hand here, which would flush its own trade cargo as
- * surplus, so wanted stays on the actual amount.
+ * A puller's own load or unload of `delta` units of `goodType`, the write of a trader at a stop and of
+ * a hauling cart's lifts: the units are booked and stowed in one step and the good's wanted amount
+ * follows the actual one whatever crew is attached. Returns the units moved. Named approximation: the
+ * original's trader books a unit on its walk to the door and stows it there, and its wanted-follows-
+ * actual rule holds only while no cargo hand is seated; the trader is its cart's hand here, which would
+ * flush its own trade cargo as surplus, so wanted stays on the actual amount.
  */
 export function tradeVehicleStock(
   world: World,

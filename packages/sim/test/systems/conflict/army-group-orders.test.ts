@@ -184,7 +184,7 @@ describe('atomic army orders', () => {
     const house = sim.world.create();
     const rival = fighterAt(sim, 99, 39, VIKING, WOODCUTTER, { owner: P1 });
     for (const entity of [...army, rival])
-      sim.world.add(entity, TrainingOrder, { house, drillTicksLeft: 100 });
+      sim.world.add(entity, TrainingOrder, { house, drillTicksLeft: 100, enrolled: 0, seated: true });
     sim.enqueue(
       playerCommand(P0, {
         kind: 'unitActionGroup',

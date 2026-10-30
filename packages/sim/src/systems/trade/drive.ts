@@ -1,7 +1,10 @@
 import {
   Building,
+  Carrying,
   dropFallenTradeStops,
   isForeignHouse,
+  Position,
+  Rider,
   TRADE_LIMIT_NONE,
   TRADE_ROUTE_HOUSES,
   type TradeAgreement,
@@ -9,40 +12,42 @@ import {
   TradeRoute,
   type TradeRouteView,
   type TradeStop,
-  VehicleDrive,
 } from '../../components/index.js';
 import { contentIndex } from '../../core/content-index.js';
 import { ONE } from '../../core/fixed.js';
 import type { DeepReadonly, Entity, World } from '../../ecs/world.js';
-import { type HalfCellNode, hexDistance } from '../../nav/halfcell.js';
-import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
+import { type HalfCellNode, hexDistance, nodeOfPosition } from '../../nav/halfcell.js';
+import type { TerrainGraph } from '../../nav/terrain/index.js';
 import type { ContentContext, SystemContext } from '../context.js';
-import { buildingDoorwayNodes, interactionNode, vehicleAnchor } from '../footprint/index.js';
+import { interactionNode, vehicleAnchor } from '../footprint/index.js';
 import { countsAsOwnStock, roomFor, stockOf, typeStoresGood } from '../missions/stock.js';
 import { atomicDuration } from '../readviews/animations.js';
 import { edibleGoodFormOf, isFoodKeptAtHome } from '../readviews/food.js';
 import { isTraderJob } from '../readviews/jobs.js';
-import { atOrWalk, collectAtomicOf, PILEUP_ATOMIC_ID, startAtomic } from '../settlers/atomics/start.js';
+import {
+  atOrWalk,
+  collectAtomicOf,
+  PILEUP_ATOMIC_ID,
+  startAtomic,
+  startRefillWait,
+} from '../settlers/atomics/start.js';
+import { fetchHaulingCart } from '../settlers/drives/economy/hauling-cart.js';
 import type { PlannerContext } from '../settlers/planner/context.js';
 import { interactionCell } from '../settlers/targets/index.js';
 import { LendableTally, storageLendable } from '../settlers/targets/stores/storage-reserve.js';
-import { isUnreachableGoal, noteUnreachableGoal, unreachableGoals } from '../settlers/unreachable-goals.js';
+import { isUnreachableGoal, unreachableGoals } from '../settlers/unreachable-goals.js';
 import { mayFetchGoodFrom } from '../stores/index.js';
-import { releaseRider } from '../vehicles/crew.js';
-import { nodeOf, sendVehicleTo, snapVehicleTarget } from '../vehicles/movement.js';
+import { haulingCartLiftTicks, parkHaulingCart } from '../vehicles/hauling-cart.js';
 import { activeAgreement } from './agreements.js';
-import { type CartHold, cartHoldOf, type TradeCart, tradeCartOf } from './cart.js';
 import { sameFoodClass } from './goods.js';
+import { cartStands, type TraderHold, traderHoldOf } from './hold.js';
 import { refillRestores } from './partner-stock.js';
 import { settlementHouses } from './settlement.js';
 
-/** How close to the stop's door the cart must stand before the trader works the stop, in map-point
- *  steps (original behavior: a hexagon distance over 5 moves the cart). */
+/** How close to the stop's door the trader's hold must be before it works the stop, in map-point steps:
+ *  the standing cart's anchor, or the trader itself while the cart travels with it or it goes on foot
+ *  (original behavior: a hexagon distance over 5 moves the cart). */
 export const TRADE_CART_HOUSE_DISTANCE = 5;
-
-/** How far around the door the cart's move point is looked for, in hexagon rings
- *  (original behavior: radius 20). */
-export const TRADE_CART_SEARCH_RADIUS = 20;
 
 /** A unit the trader moves at a stop: loaded out of `from`, the stop's house or a house of its
  *  settlement, or unloaded into the stop's house. */
@@ -65,87 +70,90 @@ interface LoadScope {
   readonly ctx: SystemContext;
   readonly terrain: TerrainGraph;
   readonly trader: Entity;
-  readonly cart: TradeCart;
+  readonly hold: TraderHold;
   readonly stop: DeepReadonly<TradeStop>;
   readonly exclude: Entity;
 }
 
 /**
- * TRADER - a trader commanding a cart with a valid route works it: it moves the cart to within
- * {@link TRADE_CART_HOUSE_DISTANCE} of each stop, then at the stop unloads what the stop takes and loads
- * what the other stop wants, and moves the cart over. Between the player's own houses the import marks
- * decide what moves; at a foreign house the chosen agreement does, give first, then take. A trader with
- * fewer than two standing houses, or a foreign stop with no valid agreement, is left to the rider rung;
- * one with no cart to command idles on foot (the HUD's `noVehicleForWork` note reads that state). While
- * the cart is under way or holds a goal for its crew the rider rung boards the trader, and the cart's
- * arrival sets it down again (`traderDisembarkSystem`). Original behavior of the trader's job.
- * Approximation: the original's trader carries every unit between the house and the cart's door on its
- * back; here the load and unload clips at the house move the unit straight into and out of the hold.
+ * TRADER - a trader with a valid route works it on foot, a unit in its hands a trip, or with the hauling
+ * cart it pulls as its tool: at each stop it stands the cart within {@link TRADE_CART_HOUSE_DISTANCE} of
+ * the door, unloads what the stop takes and loads what the other stop wants, then takes the cart up and
+ * walks it over. Between the player's own houses the import marks decide what moves; at a foreign house
+ * the chosen agreement does, give first, then take. A trader with fewer than two standing houses, a
+ * foreign stop with no valid agreement, or a seat on a vehicle is left to the rungs below; so is a unit in
+ * its hands that neither own stop takes, which the delivery rung banks elsewhere. Original
+ * behavior of the trader's job, except that the original's trader commands its cart and idles without
+ * one (owner's choice). Approximation: the original's trader carries every unit between the house and
+ * the cart's door; here the load and unload clips at the house move the unit straight into and out of
+ * the standing cart.
  */
 export function planTrader(plan: PlannerContext): boolean {
   const { world, ctx, entity: e } = plan;
-  if (!isTraderJob(ctx.content, plan.jobType)) return false;
+  if (!isTraderJob(ctx.content, plan.jobType) || world.has(e, Rider)) return false;
   if (!world.has(e, TradeRoute) || !routeStandsFinished(world, e)) return false;
-  const cart = tradeCartOf(world, ctx, e);
-  if (cart === null || cartUnderWay(world, cart)) return false;
   if (world.get(e, TradeRoute).current < 0) world.mut(e, TradeRoute).current = 0;
   const current = world.get(e, TradeRoute);
   const stop = current.stops[current.current];
   const other = current.stops[1 - current.current];
   if (stop === undefined || other === undefined) return false;
 
-  const hold = cartHoldOf(world, ctx, cart);
-  const scope = loadScope(plan, cart, stop, other);
-  const action = decide(scope, current, hold, other);
+  const hold = traderHoldOf(world, ctx, e);
+  // A unit in the hands of a trader with a cart, one the ground refused, goes to the delivery rung first.
+  if (hold.cart !== null && world.has(e, Carrying)) return false;
+  const action = decide(loadScope(plan, hold, stop, other), current, hold, other);
   switch (action.kind) {
     case 'wait':
-      return false;
+      return waitWithLoad(plan, hold);
     case 'load':
     case 'unload':
-      return workStop(plan, cart, stop.house, action);
+      return workStop(plan, hold, stop.house, action);
     case 'next':
       break;
   }
   if (!isForeignHouse(world, e, stop.house) && !isForeignHouse(world, e, other.house)) {
-    // Original behavior: an own stop with nothing to move hands the turn to the other one, and the cart
-    // drives only once that stop has a unit to load or unload.
-    const there = decideDomestic(loadScope(plan, cart, other, stop), hold, stop);
+    // Original behavior: an own stop with nothing to move hands the turn to the other one, and the trader
+    // sets out only once that stop has a unit to load or unload.
+    const there = decideDomestic(loadScope(plan, hold, other, stop), hold, stop);
     if (there.kind === 'next') return false;
     world.mut(e, TradeRoute).current = 1 - current.current;
-    return workStop(plan, cart, other.house, there);
+    return workStop(plan, hold, other.house, there);
   }
-  if (!cartNearHouse(world, ctx, cart, other.house) && !driveCartTo(plan, cart, other.house, false)) {
-    return false;
-  }
+  // The cart goes along: one standing at this stop is taken up before the trader sets out.
+  if (cartStands(world, hold)) return fetchHaulingCart(plan);
+  if (failedToReach(plan, other.house)) return waitWithLoad(plan, hold);
   world.mut(e, TradeRoute).current = 1 - current.current;
+  walkTo(plan, other.house, () => {});
   return true;
 }
 
 function loadScope(
   plan: PlannerContext,
-  cart: TradeCart,
+  hold: TraderHold,
   stop: DeepReadonly<TradeStop>,
   other: DeepReadonly<TradeStop>,
 ): LoadScope {
   const { world, ctx, terrain, entity: trader } = plan;
-  return { world, ctx, terrain, trader, cart, stop, exclude: other.house };
+  return { world, ctx, terrain, trader, hold, stop, exclude: other.house };
 }
 
-/** Move one unit at the stop whose house is `stopHouse`: bring the cart within reach of the house the
- *  unit moves at first, then walk over and load or unload. */
-function workStop(plan: PlannerContext, cart: TradeCart, stopHouse: Entity, work: StopWork): boolean {
+/** Move one unit at the stop whose house is `stopHouse`, at the house the unit moves at: a cart standing
+ *  away from that house is taken up first, one in hand is stood beside it on arrival. */
+function workStop(plan: PlannerContext, hold: TraderHold, stopHouse: Entity, work: StopWork): boolean {
   const { world, ctx, entity: e } = plan;
   const house = work.kind === 'load' ? work.from : stopHouse;
-  if (!cartNearHouse(world, ctx, cart, house)) return driveCartTo(plan, cart, house, house !== stopHouse);
+  if (cartStands(world, hold) && !holdNearHouse(world, ctx, e, hold, house)) return fetchHaulingCart(plan);
+  if (failedToReach(plan, house)) return waitWithLoad(plan, hold);
   walkTo(plan, house, () => {
+    parkHaulingCart(world, ctx, e);
     if (work.kind === 'load') {
       const atomicId = collectAtomicOf(world, ctx, house);
       startAtomic(
         world,
         e,
         atomicId,
-        { kind: 'cartLoad', from: house, goodType: work.good },
-        atomicDuration(ctx.content, plan, atomicId),
+        { kind: 'tradeLoad', from: house, goodType: work.good },
+        haulingCartLiftTicks(world, ctx.content, e, atomicDuration(ctx.content, plan, atomicId)),
         house,
       );
       return;
@@ -154,17 +162,21 @@ function workStop(plan: PlannerContext, cart: TradeCart, stopHouse: Entity, work
       world,
       e,
       PILEUP_ATOMIC_ID,
-      { kind: 'cartUnload', store: work.into, goodType: work.good },
-      atomicDuration(ctx.content, plan, PILEUP_ATOMIC_ID),
+      { kind: 'tradeUnload', store: work.into, goodType: work.good },
+      haulingCartLiftTicks(world, ctx.content, e, atomicDuration(ctx.content, plan, PILEUP_ATOMIC_ID)),
       work.into,
     );
   });
   return true;
 }
 
-/** Whether the cart drives or holds a goal until its crew is in: the trader rides along, not works. */
-function cartUnderWay(world: World, cart: TradeCart): boolean {
-  return world.has(cart.vehicle, VehicleDrive) || cart.state.heldGoal !== null;
+/** A trader waiting at a stop with route goods in its hands keeps them there through the wait, which the
+ *  delivery rung below would otherwise carry off to a store; one with free hands, or its goods in the
+ *  cart, is left to the rungs below. */
+function waitWithLoad(plan: PlannerContext, hold: TraderHold): boolean {
+  if (hold.cart !== null || hold.load <= 0) return false;
+  startRefillWait(plan.world, plan.ctx, plan.entity);
+  return true;
 }
 
 function houseDoor(world: World, ctx: SystemContext, house: Entity): HalfCellNode | null {
@@ -172,58 +184,34 @@ function houseDoor(world: World, ctx: SystemContext, house: Entity): HalfCellNod
   return door === null ? null : { hx: door.x, hy: door.y };
 }
 
-/** The node the trader's failed-goal memo keys a house's door by. */
-function doorGoal(terrain: TerrainGraph, door: HalfCellNode): NodeId {
-  return terrain.nodeAtClamped(door.hx, door.hy);
+/** Where the trader's hold is: the standing cart's anchor, else the trader's own node. */
+function holdPoint(world: World, trader: Entity, hold: TraderHold): HalfCellNode | null {
+  if (hold.cart !== null && cartStands(world, hold)) return vehicleAnchor(world, hold.cart);
+  const pos = world.tryGet(trader, Position);
+  return pos === undefined ? null : nodeOfPosition(pos.x, pos.y);
 }
 
-/** Whether the cart stands within {@link TRADE_CART_HOUSE_DISTANCE} steps of the house's door. */
-function cartNearHouse(world: World, ctx: SystemContext, cart: TradeCart, house: Entity): boolean {
-  const anchor = vehicleAnchor(world, cart.vehicle);
-  const door = houseDoor(world, ctx, house);
-  return anchor !== null && door !== null && hexDistance(anchor, door) <= TRADE_CART_HOUSE_DISTANCE;
-}
-
-/**
- * Original behavior: order the cart to the first node in ring order around the house's
- * door, out to {@link TRADE_CART_SEARCH_RADIUS}, that the cart may stand on and that is no house's door
- * (here no carved door passage either) nor the stop's own work point, as a goto the cart holds until the trader boards. When no such node lies within the working distance
- * of the door the trader lets go of the cart and stays on foot (approximation: the original detaches
- * through the detach command with its own note; here the trader's idle-without-a-cart state is what the
- * player sees). A node the cart has no route to keeps the trader seated: the door goes into its
- * failed-goal memo and the search waits the memo out (the original re-aims the vehicle behind its
- * `vehicleNoPath` note and the trader keeps trying). A settlement house the cart finds no place at goes
- * into the memo too, so the trader loads elsewhere meanwhile and keeps its cart. True when the order
- * stands.
- */
-function driveCartTo(
-  plan: PlannerContext,
-  cart: TradeCart,
+/** Whether the trader's hold is within {@link TRADE_CART_HOUSE_DISTANCE} steps of the house's door. */
+function holdNearHouse(
+  world: World,
+  ctx: SystemContext,
+  trader: Entity,
+  hold: TraderHold,
   house: Entity,
-  settlementHouse: boolean,
 ): boolean {
-  const { world, ctx, terrain, entity: e } = plan;
+  const at = holdPoint(world, trader, hold);
   const door = houseDoor(world, ctx, house);
-  if (door === null) return false;
-  const doorNode = doorGoal(terrain, door);
-  if (isUnreachableGoal(unreachableGoals(world, ctx, e), doorNode)) return false;
-  const doors = buildingDoorwayNodes(world, ctx, terrain);
-  // A house with no authored door is worked at its anchor, which the cart leaves free like a door.
-  const goal = snapVehicleTarget(world, ctx, terrain, cart.vehicle, door, {
-    radius: TRADE_CART_SEARCH_RADIUS,
-    exclude: (node) => node === doorNode || doors.has(node),
-  });
-  const point = goal === null ? null : nodeOf(terrain, goal);
-  if (goal === null || point === null || hexDistance(point, door) > TRADE_CART_HOUSE_DISTANCE) {
-    if (settlementHouse) noteUnreachableGoal(world, ctx, e, doorNode);
-    else releaseRider(world, e, cart.vehicle);
-    return false;
-  }
-  if (!sendVehicleTo(world, ctx, terrain, cart.vehicle, goal)) {
-    noteUnreachableGoal(world, ctx, e, doorNode);
-    return false;
-  }
-  return true;
+  return at !== null && door !== null && hexDistance(at, door) <= TRADE_CART_HOUSE_DISTANCE;
+}
+
+/** Whether a walk to the house's work cell failed lately: the trader waits out its failed-goal memo
+ *  there rather than searching the same path again on every stranded retry. */
+function failedToReach(plan: PlannerContext, house: Entity): boolean {
+  const { world, ctx, terrain, entity: e, here } = plan;
+  return isUnreachableGoal(
+    unreachableGoals(world, ctx, e),
+    interactionCell(world, ctx, terrain, house, here),
+  );
 }
 
 function walkTo(plan: PlannerContext, house: Entity, start: () => void): void {
@@ -245,94 +233,121 @@ function routeStandsFinished(world: World, e: Entity): boolean {
 function decide(
   scope: LoadScope,
   route: TradeRouteView,
-  hold: CartHold,
+  hold: TraderHold,
   other: DeepReadonly<TradeStop>,
 ): TradeAction {
   const { world, ctx, trader, stop } = scope;
   const foreign = isForeignHouse(world, trader, stop.house);
   if (!foreign && !isForeignHouse(world, trader, other.house)) return decideDomestic(scope, hold, other);
   const agreement = activeAgreement(world, trader, route);
-  if (agreement === undefined) return WAIT;
+  if (agreement === undefined) return carryHomeWhileNoAgreement(scope, hold, foreign);
   return foreign
     ? decideExchange(world, ctx, trader, route, hold, stop.house, agreement)
     : decidePreparation(scope, route, hold, agreement);
 }
 
 /**
- * At the player's own house before a foreign trip: clear the cart of everything but the give good into
- * the house, then load give goods while the cart has room for the whole exchange and the house (or its
+ * A route whose agreement does not hold waits for it, its goods kept aboard a cart. A trader on foot
+ * brings what its hands hold home first, so the unit is not held through the wait.
+ */
+function carryHomeWhileNoAgreement(scope: LoadScope, hold: TraderHold, foreign: boolean): TradeAction {
+  const held = hold.cart === null ? hold.entries[0] : undefined;
+  if (held === undefined) return WAIT;
+  return foreign ? NEXT : unloadInto(scope.world, scope.ctx, scope.stop.house, held[0]);
+}
+
+/**
+ * Whether the hold is too small for one whole exchange, the give goods out or the take goods back (the
+ * hands; a small cart against a large agreement): the trader then shuttles the exchange over several
+ * trips, the route's `given` and `received` carrying it from one to the next (owner's choice; the
+ * original's trader waits for room it never gets).
+ */
+function shuttles(hold: TraderHold, agreement: DeepReadonly<TradeAgreement>): boolean {
+  return hold.capacity < Math.max(agreement.giveAmount, agreement.takeAmount);
+}
+
+/**
+ * At the player's own house before a foreign trip: clear the hold of everything but the give good into
+ * the house, then load give goods while the hold has room for the whole exchange and the house (or its
  * settlement) has spare; leave once a batch is aboard. Original behavior (reading): the room test keeps
- * space for the take goods every aboard batch will bring back. The player's two limits are this
- * build's own (owner's choice): the give goods load only above `giveKeep`, and no batch starts once the
- * take goods at home plus what the batches aboard bring back reach `takeUpTo`.
+ * space for the take goods every aboard batch will bring back. A {@link shuttles} hold loads what the
+ * exchange still lacks as far as it fits, and leaves empty while take goods are still owed. The player's
+ * two limits are this build's own (owner's choice): the give goods load only above `giveKeep`, and no
+ * batch starts once the take goods at home plus what the batches aboard bring back reach `takeUpTo`.
  */
 function decidePreparation(
   scope: LoadScope,
   route: TradeRouteView,
-  hold: CartHold,
+  hold: TraderHold,
   agreement: DeepReadonly<TradeAgreement>,
 ): TradeAction {
   const { world, ctx, stop } = scope;
   const stray = hold.entries.find(([good]) => !sameFoodClass(ctx, good, agreement.giveGood));
   if (stray !== undefined) return unloadInto(world, ctx, stop.house, stray[0]);
   const aboard = aboardOfClass(ctx, hold, agreement.giveGood);
+  const shuttle = shuttles(hold, agreement);
+  if (shuttle && route.given >= agreement.giveAmount) return NEXT;
   const give = Math.max(1, agreement.giveAmount);
   const extra = Math.max(0, agreement.takeAmount - agreement.giveAmount);
   const batchesAboard = Math.floor(aboard / give);
   const toCompleteBatch = give - (aboard % give);
-  const roomNeeded = (batchesAboard + 1) * extra + toCompleteBatch;
-  const startsBatch = aboard % give === 0;
+  const fits = shuttle
+    ? hold.room > 0 && route.given + aboard < agreement.giveAmount
+    : (batchesAboard + 1) * extra + toCompleteBatch <= hold.room;
+  const startsBatch = shuttle ? route.given + aboard === 0 : aboard % give === 0;
   const filled =
     startsBatch &&
     route.takeUpTo !== TRADE_LIMIT_NONE &&
     homeStockOf(scope, agreement.takeGood) + batchesAboard * agreement.takeAmount >= route.takeUpTo;
-  if (roomNeeded <= hold.room && !filled && !isFoodKeptAtHome(world, ctx, stop.house, agreement.giveGood)) {
+  if (fits && !filled && !isFoodKeptAtHome(world, ctx, stop.house, agreement.giveGood)) {
     const source = loadSourceOf(scope, agreement.giveGood, route.giveKeep);
     if (source !== undefined && hold.carries(source.good)) return { kind: 'load', ...source };
   }
-  return aboard >= agreement.giveAmount ? NEXT : WAIT;
+  return aboard >= (shuttle ? 1 : agreement.giveAmount) ? NEXT : WAIT;
 }
 
 /**
  * At the foreign house: hand the give goods over one by one, then take the agreed goods aboard, then
- * start over while another batch is aboard; go home when the cart runs out or fills up, or when the
+ * start over while another batch is aboard; go home when the hold runs out or fills up, or when the
  * house runs out of the take good mid-batch (what was handed over stays given, as the original's goods
- * vanish into the house). Nothing is handed over while the house holds fewer take goods than one batch
- * pays out, where the original delivers regardless: the trader waits at the house for its seat's refill
- * instead, so one trip sells the whole load (owner's choice). At a house no refill tops up again, whose
- * take good the cart cannot carry, or with no room for the give good, a trader with only give goods
- * aboard waits there, one with anything else aboard carries it home first.
+ * vanish into the house). A {@link shuttles} hold hands over whatever give goods it holds. Nothing is
+ * handed over while the house holds fewer take goods than one batch pays out, where the original
+ * delivers regardless: the trader waits at the house for its seat's refill instead, so one trip sells the
+ * whole load (owner's choice). At a house no refill tops up again, whose take good the hold cannot carry,
+ * or with no room for the give good, a trader with only give goods aboard waits there, one with anything
+ * else aboard carries it home first.
  */
 function decideExchange(
   world: World,
   ctx: SystemContext,
   trader: Entity,
   route: TradeRouteView,
-  hold: CartHold,
+  hold: TraderHold,
   house: Entity,
   agreement: DeepReadonly<TradeAgreement>,
 ): TradeAction {
   const aboard = aboardOfClass(ctx, hold, agreement.giveGood);
+  const batch = shuttles(hold, agreement) ? 1 : agreement.giveAmount;
   const stocked = stockedFormAt(world, ctx, house, agreement.takeGood);
   const onOffer =
     stocked === undefined
       ? 0
       : Math.min(stockOf(world, house, stocked), storageLendable(world, ctx, house, stocked));
   if (route.given < agreement.giveAmount) {
-    if (aboard + route.given < agreement.giveAmount) return NEXT;
+    if (aboard + route.given < Math.min(batch + route.given, agreement.giveAmount)) return NEXT;
     const otherAboard = hold.entries.some(([good]) => !sameFoodClass(ctx, good, agreement.giveGood));
-    // A cart whose hold cannot take the take good would hand the give goods over for nothing.
+    // A hold that cannot take the take good would hand the give goods over for nothing.
     if (stocked !== undefined && !hold.carries(stocked)) return otherAboard ? NEXT : WAIT;
     if (route.given === 0 && onOffer < agreement.takeAmount) {
       if (refillRestores(world, ctx, house, agreement.takeGood, agreement.takeAmount)) return WAIT;
       return otherAboard ? NEXT : WAIT;
     }
-    // The cart holds a dish as its edible, so the unit handed over is whichever aboard good the
+    // The hold keeps a dish as its edible, so the unit handed over is whichever aboard good the
     // agreement's give good matches.
     const giving = hold.entries.find(([good]) => sameFoodClass(ctx, good, agreement.giveGood));
     if (giving === undefined) return NEXT;
     const slot = storableFormAt(world, ctx, house, giving[0]);
-    // A house with no room for the give good: driving home with only give goods aboard brings the same
+    // A house with no room for the give good: going home with only give goods aboard brings the same
     // load straight back.
     if (slot === undefined || roomFor(world, ctx, house, slot) <= 0) return otherAboard ? NEXT : WAIT;
     return { kind: 'unload', good: giving[0], into: house };
@@ -346,13 +361,13 @@ function decideExchange(
     return { kind: 'load', good: stocked, from: house };
   }
   resetExchange(world, trader);
-  return aboard >= agreement.giveAmount
+  return aboard >= batch
     ? decideExchange(world, ctx, trader, world.get(trader, TradeRoute), hold, house, agreement)
     : NEXT;
 }
 
 /** The units aboard that answer for `good`: the good itself, or a dish's edible form of its class. */
-function aboardOfClass(ctx: ContentContext, hold: CartHold, good: number): number {
+function aboardOfClass(ctx: ContentContext, hold: TraderHold, good: number): number {
   let total = 0;
   for (const [aboard, amount] of hold.entries) if (sameFoodClass(ctx, aboard, good)) total += amount;
   return total;
@@ -386,7 +401,7 @@ function resetExchange(world: World, trader: Entity): void {
  */
 function decideDomestic(
   scope: LoadScope,
-  hold: CartHold,
+  hold: TraderHold,
   other: DeepReadonly<TradeStop>,
 ): StopWork | NextStop {
   const { world, ctx, stop } = scope;
@@ -442,19 +457,19 @@ interface LoadSource {
 
 /**
  * Where the stop loads a unit of `good` while `keep` units stay at home: out of the stop's house while it
- * spares one, else, at a settlement stop, out of the settlement house nearest the cart that spares one
- * (ties by id), skipping houses the cart failed to reach. A settlement keeps `keep` summed over its
- * houses, and a house the cart already stands at goes first, so a unit dropped into the storehouse
- * meanwhile does not call the cart back from a settlement house it is still emptying. Undefined when
+ * spares one, else, at a settlement stop, out of the settlement house nearest the hold that spares one
+ * (ties by id), skipping houses the trader failed to reach. A settlement keeps `keep` summed over its
+ * houses, and a house the hold already stands at goes first, so a unit dropped into the storehouse
+ * meanwhile does not call the trader back from a settlement house it is still emptying. Undefined when
  * nothing may leave.
  */
 function loadSourceOf(scope: LoadScope, good: number, keep: number): LoadSource | undefined {
-  const { world, ctx, terrain, trader, cart, stop } = scope;
+  const { world, ctx, terrain, trader, hold, stop } = scope;
   const homeSpare = spareOf(world, ctx, stop.house, good);
   const homeForm = stockedFormAt(world, ctx, stop.house, good);
   const fromHome = homeForm === undefined ? undefined : { from: stop.house, good: homeForm };
   if (!stop.settlement) return homeSpare - keep >= 1 ? fromHome : undefined;
-  const atHome = cartNearHouse(world, ctx, cart, stop.house);
+  const atHome = holdNearHouse(world, ctx, trader, hold, stop.house);
   if (homeSpare - keep >= 1 && atHome) return fromHome;
   const members = settlementHouses(world, ctx, terrain, trader, stop.house, scope.exclude, good);
   const settlementSpare = new LendableTally(world, ctx);
@@ -462,13 +477,13 @@ function loadSourceOf(scope: LoadScope, good: number, keep: number): LoadSource 
   for (const house of members) tallyStock(world, ctx, settlementSpare, house, good);
   if (settlementSpare.total() - keep < 1) return undefined;
   if (homeSpare >= 1 && atHome) return fromHome;
-  const anchor = vehicleAnchor(world, cart.vehicle);
+  const anchor = holdPoint(world, trader, hold);
   const failed = unreachableGoals(world, ctx, trader);
   let best: { readonly house: Entity; readonly distance: number } | undefined;
   for (const house of members) {
     if (spareOf(world, ctx, house, good) < 1) continue;
     const door = houseDoor(world, ctx, house);
-    if (door === null || isUnreachableGoal(failed, doorGoal(terrain, door))) continue;
+    if (door === null || isUnreachableGoal(failed, terrain.nodeAtClamped(door.hx, door.hy))) continue;
     const distance = anchor === null ? 0 : hexDistance(anchor, door);
     // Members run ascending by id, so a later house wins only when strictly nearer.
     if (best === undefined || distance < best.distance) best = { house, distance };

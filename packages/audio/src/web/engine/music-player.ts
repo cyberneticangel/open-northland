@@ -1,5 +1,4 @@
 import {
-  CALM_RETURN_MAX_WAIT_S,
   cueLoops,
   cuePlaySeconds,
   type MusicCue,
@@ -31,7 +30,8 @@ export const MUSIC_STOP_FADE_S = 1.5;
 
 /**
  * Decoded tracks kept beyond the playing one (and one loading for a cue): the sequence's standby if
- * it has one, otherwise the track played last, which a mood flip returns to. A rendered track holds
+ * it has one, otherwise the track played last, which a mood flip returns to. The sequence's upcoming
+ * track is kept on top of these, so a nation's back-to-back handover holds three. A rendered track holds
  * two passes, up to about 254 s, so each decodes to as much as 98 MB of stereo float at 48 kHz.
  */
 export const SPARE_DECODED_TRACKS = 1;
@@ -42,6 +42,10 @@ export const SPARE_DECODED_TRACKS = 1;
  * about 1 Mbit/s plus its decode. A mood change asks for the standby at once.
  */
 export const STANDBY_PREFETCH_LEAD_S = 30;
+
+/** Seconds after a cue opens that its standby loads at the latest, so a map's music, one cue looped
+ *  for the whole game, still has its fight stem decoded before a fight. Approximation. */
+export const STANDBY_PREFETCH_LATEST_S = 30;
 
 const MS_PER_S = 1000;
 
@@ -98,6 +102,10 @@ export class MusicPlayer {
   private silentUntil = 0;
   /** Cancels the running cue's scheduled standby prefetch. */
   private cancelPrefetch: (() => void) | null = null;
+  /** The track the sequence's next cue plays if the mood holds, kept decoded beside the standby so a
+   *  back-to-back handover does not wait on a fetch. */
+  private upcoming: string | null = null;
+  private cancelUpcoming: (() => void) | null = null;
 
   constructor(
     private readonly ctx: AudioContext,
@@ -134,10 +142,11 @@ export class MusicPlayer {
   }
 
   /** End the running cue at its next pass boundary that leaves room for its fade, rather than after
-   *  all its passes, but no later than {@link CALM_RETURN_MAX_WAIT_S} from now; the sequence's next cue
-   *  follows as usual. A cue not sounding yet is replaced. */
-  endAtPassEnd(): void {
+   *  all its passes, but no later than `maxWaitS` from now; the sequence's next cue follows as usual,
+   *  decoded meanwhile. A cue not sounding yet is replaced. */
+  endAtPassEnd(maxWaitS = Number.POSITIVE_INFINITY): void {
     this.prefetchStandbyNow();
+    this.prefetchUpcomingNow();
     const playing = this.current;
     const now = this.ctx.currentTime;
     if ((playing === null && this.loading) || (playing !== null && playing.startsAt > now)) {
@@ -147,7 +156,7 @@ export class MusicPlayer {
     if (playing === null) return;
     const { cue, gain, level, risenAt, source } = playing;
     const boundary = passBoundaryAfter(cue.track, playing.bufferS, playing.startsAt, now + cue.fadeS);
-    const endsAt = Math.min(boundary, now + Math.max(cue.fadeS, CALM_RETURN_MAX_WAIT_S));
+    const endsAt = Math.min(boundary, now + Math.max(cue.fadeS, maxWaitS));
     if (endsAt >= playing.endsAt) return;
     // Before this fade the cue's own end fade has not begun either, so it sits at its level.
     scheduleEnd(gain.gain, level, now, risenAt, endsAt, cue.fadeS);
@@ -225,6 +234,7 @@ export class MusicPlayer {
   /** Silence the running cue, recording in {@link silentUntil} when it stops being audible. */
   private fadeOutCurrent(fadeS: number): void {
     this.unschedulePrefetch();
+    this.unscheduleUpcoming();
     const now = this.ctx.currentTime;
     const playing = this.current;
     if (playing === null) return;
@@ -282,6 +292,7 @@ export class MusicPlayer {
     const spares = [...this.buffers.keys()].filter((file) => !inUse.has(file));
     const kept = new Set<string>();
     if (this.standby !== null && spares.includes(this.standby)) kept.add(this.standby);
+    if (this.upcoming !== null && spares.includes(this.upcoming)) kept.add(this.upcoming);
     for (let i = spares.length - 1; i >= 0 && kept.size < SPARE_DECODED_TRACKS; i--) {
       const file = spares[i];
       if (file !== undefined) kept.add(file);
@@ -295,7 +306,10 @@ export class MusicPlayer {
     this.unschedulePrefetch();
     this.standby = this.sequence?.standby?.()?.file ?? null;
     if (this.standby === null) return;
-    const prefetchAt = playing.endsAt - playing.cue.fadeS - STANDBY_PREFETCH_LEAD_S;
+    const prefetchAt = Math.min(
+      playing.endsAt - playing.cue.fadeS - STANDBY_PREFETCH_LEAD_S,
+      playing.startsAt + STANDBY_PREFETCH_LATEST_S,
+    );
     this.cancelPrefetch = this.schedule(Math.max(0, prefetchAt - this.ctx.currentTime), () => {
       this.cancelPrefetch = null;
       if (this.current === playing) this.prefetchStandbyNow();
@@ -305,6 +319,39 @@ export class MusicPlayer {
   private unschedulePrefetch(): void {
     this.cancelPrefetch?.();
     this.cancelPrefetch = null;
+  }
+
+  /** Decode the sequence's upcoming track once `playing` is within the lead of its end fade, so the
+   *  next cue opens on it as soon as this one has faded. */
+  private scheduleUpcoming(playing: PlayingCue): void {
+    this.unscheduleUpcoming();
+    const sequence = this.sequence;
+    const track = sequence?.upcoming?.() ?? null;
+    this.upcoming = track?.file ?? null;
+    if (sequence === null || track === null) return;
+    const loadAt = playing.endsAt - playing.cue.fadeS - STANDBY_PREFETCH_LEAD_S;
+    this.cancelUpcoming = this.schedule(Math.max(0, loadAt - this.ctx.currentTime), () => {
+      this.cancelUpcoming = null;
+      if (this.current === playing) this.prefetchUpcomingNow();
+    });
+  }
+
+  /** Decode the sequence's upcoming track now, as it stands after a mood change. */
+  private prefetchUpcomingNow(): void {
+    this.unscheduleUpcoming();
+    if (this.ctx.state === 'closed') return;
+    const sequence = this.sequence;
+    const track = sequence?.upcoming?.() ?? null;
+    this.upcoming = track?.file ?? null;
+    if (sequence === null || track === null) return;
+    void this.load(track.file).then((buffer) => {
+      if (buffer === null) sequence.drop(track.file);
+    });
+  }
+
+  private unscheduleUpcoming(): void {
+    this.cancelUpcoming?.();
+    this.cancelUpcoming = null;
   }
 
   /** Decode the sequence's standby track ahead; a cut-in onto it waits on this load. A closed
@@ -386,6 +433,7 @@ export class MusicPlayer {
       this.current = playing;
       this.trimBuffers(null);
       this.schedulePrefetch(playing);
+      this.scheduleUpcoming(playing);
     });
   }
 }

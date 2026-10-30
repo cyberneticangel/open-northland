@@ -14,7 +14,7 @@ import {
   WalkFacing,
 } from '../../../src/components/index.js';
 import type { Entity } from '../../../src/ecs/world.js';
-import { Simulation } from '../../../src/index.js';
+import { fx, Simulation } from '../../../src/index.js';
 import {
   HEX_HEADING,
   hexHeadingBetween,
@@ -152,7 +152,7 @@ describe('landedDamage - animals and buildings', () => {
     const { sim, striker } = setup();
     const house = sim.world.create();
     sim.world.add(house, Position, positionOfNode(VICTIM.hx, VICTIM.hy));
-    sim.world.add(house, Building, { buildingType: 1, tribe: VIKING, built: 0, level: 0 });
+    sim.world.add(house, Building, { buildingType: 1, tribe: VIKING, built: fx.fromInt(0), level: 0 });
     sim.world.add(house, Health, { hitpoints: BASE, max: BASE });
     expect(targetMaterial(sim.world, ctxOf(sim), house)).toBe(ARMOR_MATERIAL.HOUSE);
     expect(blowFrom(sim, striker, house, WEST)).toBe(BASE);
@@ -227,7 +227,7 @@ describe('resolveCombatHit - a blow that does no damage', () => {
     const { sim, striker } = setup();
     const house = sim.world.create();
     sim.world.add(house, Position, positionOfNode(1, 0));
-    sim.world.add(house, Building, { buildingType: 1, tribe: VIKING, built: 0, level: 0 });
+    sim.world.add(house, Building, { buildingType: 1, tribe: VIKING, built: fx.fromInt(0), level: 0 });
     sim.world.add(house, Health, { hitpoints: BASE, max: BASE });
     expect(resolveCombatHit(sim.world, ctxOf(sim), striker, house, swing(0), [], 'melee')).toBeNull();
     expect(sim.world.get(house, Health).hitpoints).toBe(BASE);

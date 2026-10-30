@@ -9,7 +9,7 @@ import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import type { ContentContext } from '../context.js';
 import { type LandscapeBlocks, landscapeBlocks } from '../landscape/view.js';
 import { buildingBlockedCells, walkBodyOf } from './building-blocked-cache.js';
-import { buildingFootprintOf, translatedCells } from './geometry.js';
+import { houseFootprintOf, translatedCells } from './geometry.js';
 import { resourceBlockedCells } from './resource-blocked-cache.js';
 import { tryFootprintCellsOf } from './resource-footprint-cells.js';
 import { standingWallCells } from './standing-walls.js';
@@ -73,7 +73,7 @@ function blockerCellsOf(world: World, content: ContentSet, terrain: TerrainGraph
   const { hx, hy } = nodeOfPosition(p.x, p.y);
   const building = world.tryGet(e, Building);
   if (building !== undefined) {
-    const footprint = buildingFootprintOf(content, building.buildingType, building.tribe);
+    const footprint = houseFootprintOf(content, building);
     if (footprint === undefined) return [];
     const { body, passage } = walkBodyOf(terrain, footprint, hx, hy);
     for (const cell of passage) body.add(cell);

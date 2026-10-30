@@ -350,11 +350,13 @@ describe('bio-pattern placement - wells and hives need grass', () => {
     expect(buildingsPlaced(sim)).toBe(0);
   });
 
-  it('accepts the same bio-pattern building when its body stands on plantable grass', () => {
-    const sim = mappedSim();
+  it('accepts the same bio-pattern building when one body node stands on plantable grass', () => {
+    const cells = grassCells(16, 16);
+    cells.typeIds[3 * 16 + 3] = BARREN; // nodes (6..7, 6..7): anchor (7, 6) keeps body node (8, 6) on grass
+    const sim = new Simulation({ seed: 1, content: placementContent(), map: halfCellMapFromCells(cells) });
     const terrain = terrainOf(sim);
-    expect(canPlaceBuilding(sim.world, ctxOf(sim), terrain, BIO_HUT, VIKING, 6, 6)).toBe(true);
-    expect(placementProbe(sim.world, sim.content, terrain, BIO_HUT, VIKING).canPlace(6, 6)).toBe(true);
+    expect(canPlaceBuilding(sim.world, ctxOf(sim), terrain, BIO_HUT, VIKING, 7, 6)).toBe(true);
+    expect(placementProbe(sim.world, sim.content, terrain, BIO_HUT, VIKING).canPlace(7, 6)).toBe(true);
   });
 
   it('places it on barren ground while the BioGroundRules waiver is on, and refuses again once it is off', () => {

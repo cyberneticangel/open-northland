@@ -49,6 +49,7 @@ const GRANARY = 6; // passive store with ONLY a wheat slot - it can never take a
 const FARMER = 18; // a non-carrier trade with nothing to do on a bare strip
 const HUNTER = 15; // a gathering trade, posted to the store by hand (the fixture HQ seats no hunter slot)
 const WOOD = 1; // the HQ stocks it, so a loose wood pile is deliverable
+const WHEAT = 6; // the granary stocks it alone
 const VIKING = 1;
 const WALL_GFX = 691; // a wall row of the test's own, outside the fixture's landscape catalog
 
@@ -210,6 +211,57 @@ describe('carrier - choosing what to haul', () => {
     expect(sim.world.get(wh, Stockpile).amounts.get(PLANK) ?? 0).toBe(3); // all the plank was hauled in
     expect(sim.world.get(woodPile, Stockpile).amounts.get(WOOD)).toBe(3); // the full good was left untouched
     expect(sim.world.has(porter, Carrying)).toBe(false); // the porter isn't stuck holding a surplus
+  });
+
+  it('a porter works for its own store alone: it leaves a pile only another store takes', () => {
+    // The wood lies beside the granary's porter and the HQ would stock it, but the granary takes wheat only:
+    // the porter lifts the wheat pile beyond the wood, never carrying for the HQ.
+    const sim = new Simulation({ seed: 1, content: testContent(), map: grassMap(12, 1) });
+    hqAt(sim, 11, 0);
+    const granary = granaryAt(sim, 0, 0);
+    const carrier = carrierAt(sim, 1, 0, granary);
+    const wood = sim.world.create();
+    sim.world.add(wood, Position, { x: fx.fromInt(2), y: fx.fromInt(0) });
+    sim.world.add(wood, Stockpile, { amounts: new Map([[WOOD, 3]]) });
+    const wheat = sim.world.create();
+    sim.world.add(wheat, Position, { x: fx.fromInt(4), y: fx.fromInt(0) });
+    sim.world.add(wheat, Stockpile, { amounts: new Map([[WHEAT, 3]]) });
+
+    plannerSystem(sim.world, ctxOf(sim));
+
+    const wheatNode = cellAnchorNode(4, 0);
+    expect(sim.world.tryGet(carrier, MoveGoal)?.cell).toBe(sim.terrain?.nodeAt(wheatNode.hx, wheatNode.hy));
+  });
+
+  it("a porter leaves a workshop's output another store takes, even with no pile to lift", () => {
+    const sim = new Simulation({ seed: 1, content: testContent(), map: grassMap(12, 1) });
+    hqAt(sim, 11, 0);
+    const granary = granaryAt(sim, 0, 0);
+    const carrier = carrierAt(sim, 1, 0, granary);
+    sawmillAt(sim, 3, 0, 2);
+
+    plannerSystem(sim.world, ctxOf(sim));
+
+    expect(sim.world.has(carrier, MoveGoal)).toBe(false);
+  });
+
+  it('a porter lifts the good of a mixed pile its own store takes, past one only another store takes', () => {
+    const sim = new Simulation({ seed: 1, content: testContent(), map: grassMap(12, 1) });
+    hqAt(sim, 11, 0);
+    const granary = granaryAt(sim, 0, 0);
+    const carrier = carrierAt(sim, 2, 0, granary);
+    const pile = sim.world.create();
+    sim.world.add(pile, Position, { x: fx.fromInt(2), y: fx.fromInt(0) });
+    sim.world.add(pile, Stockpile, {
+      amounts: new Map([
+        [WOOD, 3],
+        [WHEAT, 3],
+      ]),
+    });
+
+    plannerSystem(sim.world, ctxOf(sim));
+
+    expect(sim.world.tryGet(carrier, PickupClaim)?.goodType).toBe(WHEAT);
   });
 
   it('a gathering trade posted to a store never ferries a loose pile - the carrier beside it does', () => {

@@ -10,17 +10,28 @@ export const HEADQUARTERS_BUILDING_ID = 'headquarters';
 
 /**
  * Siege classes: headquarters and defensive towers precede ordinary buildings in automatic targeting,
- * while `'other'` is the fallback tier a warrior turns on only when nothing better is in sight. An
+ * while `'other'` is the fallback tier a warrior turns on only when nothing better is in sight. A
+ * `'wall'` is struck like a palisade: on an order or when it bars the way, never picked on sight. An
  * unknown type reads as `'other'`.
  */
-export type BuildingCombatClass = 'hq' | 'tower' | 'other';
+export type BuildingCombatClass = 'hq' | 'tower' | 'wall' | 'other';
 
 export function buildingCombatClass(ctx: SystemContext, buildingType: number): BuildingCombatClass {
   const type = contentIndex(ctx.content).buildings.get(buildingType);
-  if (type === undefined) return 'other';
+  return type === undefined ? 'other' : combatClassOfType(type);
+}
+
+export function combatClassOfType(type: Pick<BuildingType, 'id' | 'kind' | 'workers'>): BuildingCombatClass {
   if (type.id === HEADQUARTERS_BUILDING_ID) return 'hq';
-  if (type.kind === BUILDING_KIND.tower) return 'tower';
+  // The defence wall shares the towers' `logicmaintype` and differs only in having no posts to man.
+  if (type.kind === BUILDING_KIND.tower) return type.workers.length > 0 ? 'tower' : 'wall';
   return 'other';
+}
+
+/** A standing building of the {@link BuildingCombatClass} `'wall'`. */
+export function isWallBuilding(world: World, ctx: SystemContext, e: Entity): boolean {
+  const b = world.tryGet(e, Building);
+  return b !== undefined && buildingCombatClass(ctx, b.buildingType) === 'wall';
 }
 
 /** A settler, a headquarters, a tower, and any non-building entity are never low-priority. */

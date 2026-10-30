@@ -26,7 +26,7 @@ export type AuthoredPlacement =
   | { kind: 'signpost'; x: number; y: number; owner: number }
   | {
       kind: 'building';
-      /** Presentation only; enqueuePlacements never forwards graphics to the sim. */
+      /** The decoded body choices; only the record name reaches the sim, for its footprint. */
       graphics?: readonly AuthoredBuildingGraphics[];
       typeId: number;
       tribe: number;

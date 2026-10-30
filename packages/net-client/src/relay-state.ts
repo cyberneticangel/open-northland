@@ -12,6 +12,7 @@ import {
   type RoomView,
   type ServerMessage,
   type WaitedMember,
+  withFlag,
 } from '@open-northland/net-protocol';
 
 export type ClockState = Extract<ServerMessage, { kind: 'clock' }>;
@@ -76,7 +77,12 @@ export class RelayState {
         );
         break;
       case 'hallChat': {
-        const line: HallChatLine = { from: message.from, text: message.text, at: message.at };
+        const line: HallChatLine = {
+          from: message.from,
+          ...withFlag(message.flag),
+          text: message.text,
+          at: message.at,
+        };
         this.hallChat = [...this.hallChat.slice(1 - MAX_HALL_CHAT_LINES), line];
         break;
       }
@@ -125,7 +131,8 @@ export class RelayState {
         this.chat = message.lines;
         break;
       case 'chat': {
-        const line: ChatLine = { from: message.from, text: message.text, at: message.at, tick: message.tick };
+        const { from, flag, text, at, tick } = message;
+        const line: ChatLine = { from, ...withFlag(flag), text, at, tick };
         // The newest lines up to the relay's own cap, this one included.
         this.chat = [...this.chat.slice(1 - MAX_CHAT_HISTORY_LINES), line];
         break;

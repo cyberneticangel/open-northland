@@ -376,6 +376,16 @@ export const plContent = {
       summary:
         'Kupiec z wózkiem ręcznym kursuje między dwoma własnymi magazynami o różnych zapasach, bez zaznaczonych towarów, więc nic się nie rusza. Zaznacz kupca i w sekcji Handel wybierz dla towaru kierunek (→ A, ⇄, → B), pułap i zapas, który zostaje.',
     },
+    'trade-bread': {
+      title: 'Chleb na szlaku handlowym',
+      summary:
+        'Kupiec z wózkiem ręcznym wozi chleb z piekarni do domu. Dom nie przechowuje chleba, tylko żywność, więc wózek wiezie bochenki jako żywność. Zaznacz kupca i otwórz okno handlu: strzałka chleba z piekarni do domu jest dostępna.',
+    },
+    'trade-on-foot': {
+      title: 'Kupiec pieszo i z wózkiem',
+      summary:
+        'Dwóch kupców przenosi drewno między własnymi magazynami: górny pieszo, po jednej sztuce w rękach na kurs, dolny z wózkiem ręcznym, który ciągnie jak narzędzie i stawia przy drzwiach magazynu na czas załadunku i rozładunku.',
+    },
     tribute: {
       title: 'Trybuty',
       summary:
@@ -415,6 +425,11 @@ export const plContent = {
       title: 'Daleki rejs statku',
       summary:
         'Obsadzony statek na północnym krańcu długiego kanału dostaje rozkaz przybicia do brzegu na jego południowym końcu, dwa razy dalej niż dawny zasięg wehikułów. Opływa wyspę, która zagradza prostą drogę, przepływa cały kanał i cumuje przy wskazanym brzegu.',
+    },
+    'vehicle-dock-fleet': {
+      title: 'Flota przy postrzępionym brzegu',
+      summary:
+        'Pięć obsadzonych statków stoi na morzu przy brzegu z zatoką i przylądkiem. Zaznacz jeden albo kilka i kliknij prawym przy brzegu, naciśnij Z albo użyj przycisku Zacumuj w panelu statku lub grupy: zaokrąglona poświata pokazuje brzeg, przy którym można zacumować, słupki cumownicze z linami pod kursorem pokazują, gdzie przybije każdy statek, a flota rozkłada się wzdłuż brzegu z wolną wodą między kadłubami. Z Ctrl/Cmd (klik po Z albo prawy klik przy brzegu) załogi wysiadają po zacumowaniu, a przycisk Wysadź wszystkich w panelu grupy samych statków wysadza załogi zacumowanych.',
     },
     'ship-wakes': {
       title: 'Piana wokół statków',
@@ -485,6 +500,11 @@ export const plContent = {
       title: 'Nauka w budowanym budynku',
       summary:
         'Cywil zostaje wysłany do budowanych koszar, a zbieracz do budowanej szkoły, zanim budowniczowie je skończą. Obaj czekają przy drzwiach, wchodzą, gdy budynek stanie, i wychodzą jako żołnierz i cieśla. Zaznacz wolnego cywila i kliknij budowę prawym przyciskiem, aby wysłać go samodzielnie.',
+    },
+    'school-queue': {
+      title: 'Kolejka do pełnej szkoły',
+      summary:
+        'Siedmiu zbieraczy idzie naraz uczyć się ciesielstwa. Szkoła ma pięć miejsc: piątka wchodzi, dwóch czeka na podwórku i zaczyna, gdy pierwsi skończą.',
     },
     'school-graduates': {
       title: 'Absolwenci idą do pracy',
@@ -865,10 +885,20 @@ export const plContent = {
       summary:
         'Marsz oblężniczy AI z wytrzymałym niebieskim oddziałem na drodze fali. Katapulty ostrzeliwują go, gdy fala się zbliża, a gdy oddział jest dość blisko, cała fala szarżuje, zanim ruszy dalej na wieżę.',
     },
+    'home-roofs': {
+      title: 'Dachy domów',
+      summary:
+        'Każdy poziom domu wikingów dwa razy. Na poziomach 4 i 5 dachówki mają dwa kolory, brązowy i niebieskoszary, jak w warsztatach; poziomy 1-3 wyglądają zawsze tak samo.',
+    },
     'tower-finials': {
       title: 'Szczyty wież',
       summary:
         'Frankijska i saraceńska wieża obronna, każda dwa razy: lewą obsadza łucznik, prawa stoi pusta. Puste wieże zachowują własną ozdobę szczytu, frankijski proporzec i saraceński półksiężyc; na obsadzonych zastępuje ją flaga załogi, zamiast powiewać nad nią.',
+    },
+    'defence-wall': {
+      title: 'Mury obronne przed wieżą',
+      summary:
+        'Gracz stawia dwa mury obronne między swoją obsadzoną wieżą a wrogiem, z przejściem pośrodku. Mury stoją bliżej wroga niż wieża, ale wrogi oddział w postawie Atak nie zatrzymuje się przy nich: mur, tak jak palisada, nie jest celem wybieranym na widok. Oddział przechodzi przez lukę i tłucze wieżę, która do niego strzela, a oba mury zostają nietknięte.',
     },
     'tower-garrison': {
       title: 'Załoga wieży',

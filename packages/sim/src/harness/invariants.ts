@@ -25,7 +25,7 @@ import { ONE } from '../core/fixed.js';
 import type { Component, World } from '../ecs/world.js';
 import { NEED_OVERFILL_FLOOR } from '../systems/lifecycle/needs/index.js';
 import { isAnimalTribe } from '../systems/readviews/index.js';
-import { isPostedCarrier } from '../systems/vehicles/hauling-cart.js';
+import { worksWithHaulingCart } from '../systems/vehicles/hauling-cart.js';
 import { playerPlacementRulesValid } from './player-placement-invariant.js';
 
 /**
@@ -162,14 +162,14 @@ const vehicleRoutesOwned: Invariant = (world) => {
   return out;
 };
 
-/** A hauling cart and its carrier name each other, a taken cart stands nowhere and rides no ship, and a
+/** A hauling cart and its puller name each other, a taken cart stands nowhere and rides no ship, and a
  *  cart nobody pulls names no hauler, so no exit path leaves a one-sided link behind. */
 const haulingCartsLinked: Invariant = (world, content) => {
   const out: string[] = [];
   for (const e of world.query(HaulingCart)) {
     const held = world.get(e, HaulingCart);
-    if (!isPostedCarrier(world, content, e)) {
-      out.push(`entity ${e}: holds hauling cart ${held.vehicle} without being a posted carrier`);
+    if (!worksWithHaulingCart(world, content, e)) {
+      out.push(`entity ${e}: holds hauling cart ${held.vehicle} without being a posted carrier or a trader`);
     }
     const state = world.tryGet(held.vehicle, Vehicle);
     if (state === undefined || state.hauler !== e) {

@@ -8,6 +8,7 @@ import {
   type ComponentSection,
   type EntitiesSection,
   type FogSection,
+  MAX_PRESENTATION_TEXT,
   type NamesSection,
   type RngSection,
   SAVE_FORMAT_VERSION,
@@ -37,8 +38,17 @@ function parseWorld(value: unknown, depth: number): SaveGame {
   return {
     header,
     sections: parsedSections(raw.sections, header),
+    presentation: parsedPresentation(raw.presentation),
     ...(raw.parent !== undefined ? { parent: parseWorld(raw.parent, depth + 1) } : {}),
   };
+}
+
+/** The caller-owned presentation text: a string within {@link MAX_PRESENTATION_TEXT}, or null. */
+export function parsedPresentation(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string') throw new Error('save.presentation: expected a string or null');
+  if (value.length > MAX_PRESENTATION_TEXT) throw new Error('save.presentation exceeds its text budget');
+  return value;
 }
 
 function parsedHeader(value: unknown): SaveGameHeader {

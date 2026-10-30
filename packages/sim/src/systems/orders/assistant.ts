@@ -1,6 +1,8 @@
 import {
+  ASSISTANT_ARMING_INTENTS,
   ASSISTANT_COUNTER_MAX,
   ASSISTANT_COUNTER_MIN,
+  AssistantArmorOrders,
   AssistantCivilianOnlyGrants,
   type AssistantCounterKind,
   AssistantCounters,
@@ -9,10 +11,13 @@ import {
   AssistantPostsGraduates,
   AssistantSoldierOnlyGrants,
   type AssistantSwitch,
+  AssistantWeaponOrders,
   AssistantWeaponVetoes,
+  assistantArmorOrdersEntity,
   assistantCountersAtDefault,
   assistantCountersEntity,
   assistantSwitchEntity,
+  assistantWeaponOrdersEntity,
   defaultAssistantCounters,
   INFINITE_COUNTER_KINDS,
   type PlayerGoodList,
@@ -22,6 +27,8 @@ import type { Command } from '../../core/commands/index.js';
 import { contentIndex } from '../../core/content-index.js';
 import type { World } from '../../ecs/world.js';
 import type { SystemContext } from '../context.js';
+import { armorGoodsByProtection, weaponGoodsByStrength } from '../readviews/index.js';
+import { INTENT_WEAPON_CLASS } from '../settlers/atomics/effects/goods/weapon-class.js';
 
 /**
  * Toggle one good in `player`'s assistant grant list - see the command doc. The carrier lifecycle is
@@ -97,6 +104,58 @@ export function setAssistantWeaponVeto(
 ): void {
   if (!ctx.content.weapons.some((w) => w.goodType === command.goodType)) return; // arms no class
   setListed(world, AssistantWeaponVetoes, command.player, command.goodType, command.vetoed);
+}
+
+/** Set one weapon class's armor choice for `player` - see the command doc. A choice equal to the
+ *  default drops the class's entry, and the carrier goes with the last entry. */
+export function setAssistantArmorOrder(
+  world: World,
+  ctx: SystemContext,
+  command: Extract<Command, { kind: 'setAssistantArmorOrder' }>,
+): void {
+  const goods = armorGoodsByProtection(ctx.content);
+  const { player, intent, order, off } = command;
+  if (!isPermutationOf(order, goods) || !off.every((good) => order.includes(good))) return;
+  const offOnce = [...new Set(off)].sort((a, b) => a - b);
+  const atDefault = offOnce.length === 0 && order.every((good, i) => good === goods[i]);
+  const carrier = assistantArmorOrdersEntity(world, player);
+  if (atDefault) {
+    if (carrier === null || world.get(carrier, AssistantArmorOrders)[intent] === undefined) return;
+    const block = world.mut(carrier, AssistantArmorOrders);
+    block[intent] = undefined;
+    if (ASSISTANT_ARMING_INTENTS.every((kind) => block[kind] === undefined)) world.destroy(carrier);
+    return;
+  }
+  const choice = { order: [...order], off: offOnce };
+  if (carrier === null) world.add(world.create(), AssistantArmorOrders, { player, [intent]: choice });
+  else world.mut(carrier, AssistantArmorOrders)[intent] = choice;
+}
+
+/** Set one weapon class's weapon order for `player` - see the command doc. The default order drops the
+ *  class's entry, and the carrier goes with the last entry. */
+export function setAssistantWeaponOrder(
+  world: World,
+  ctx: SystemContext,
+  command: Extract<Command, { kind: 'setAssistantWeaponOrder' }>,
+): void {
+  const { player, intent, order } = command;
+  const goods = weaponGoodsByStrength(ctx.content, INTENT_WEAPON_CLASS[intent]);
+  if (!isPermutationOf(order, goods)) return;
+  const carrier = assistantWeaponOrdersEntity(world, player);
+  if (order.every((good, i) => good === goods[i])) {
+    if (carrier === null || world.get(carrier, AssistantWeaponOrders)[intent] === undefined) return;
+    const block = world.mut(carrier, AssistantWeaponOrders);
+    block[intent] = undefined;
+    if (ASSISTANT_ARMING_INTENTS.every((kind) => block[kind] === undefined)) world.destroy(carrier);
+    return;
+  }
+  if (carrier === null) world.add(world.create(), AssistantWeaponOrders, { player, [intent]: [...order] });
+  else world.mut(carrier, AssistantWeaponOrders)[intent] = [...order];
+}
+
+/** Whether `order` holds every one of `goods` once and nothing else. */
+function isPermutationOf(order: readonly number[], goods: readonly number[]): boolean {
+  return order.length === goods.length && goods.every((good) => order.includes(good));
 }
 
 /** Lift every recruit weapon veto of `player`: the list is back to the default, nothing vetoed. */

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isOrderHotkey } from '../../src/hud/hotkeys.js';
+import { isFieldKey, isOrderHotkey } from '../../src/hud/hotkeys.js';
 import { DEFAULT_KEY_BINDINGS, type KeyBindings } from '../../src/hud/keybindings.js';
 
 /** An order key answers with Shift held, so arming it keeps a Shift-queue going. */
@@ -37,5 +37,31 @@ describe('isOrderHotkey', () => {
     expect(isOrderHotkey(press(DEFAULT_KEY_BINDINGS.attackMove ?? '', true), bindings, 'attackMove')).toBe(
       false,
     );
+  });
+});
+
+describe('isFieldKey', () => {
+  const input = (type: string, value: string): EventTarget =>
+    Object.assign(new (globalThis.HTMLInputElement as unknown as new () => HTMLInputElement)(), {
+      type,
+      value,
+    });
+  const pressIn = (code: string, target: EventTarget): KeyboardEvent => ({ ...press(code, false), target });
+
+  it('leaves the map the arrows an empty search field has no caret for', () => {
+    for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+      expect(isFieldKey(pressIn(code, input('search', '')))).toBe(false);
+    expect(isFieldKey(pressIn('KeyW', input('search', '')))).toBe(true);
+  });
+
+  it('keeps the caret arrows of a field with text, and every arrow of a number field', () => {
+    expect(isFieldKey(pressIn('ArrowLeft', input('text', 'Olaf')))).toBe(true);
+    expect(isFieldKey(pressIn('ArrowUp', input('text', 'Olaf')))).toBe(false);
+    expect(isFieldKey(pressIn('ArrowUp', input('number', '')))).toBe(true);
+  });
+
+  it('leaves the map the arrows of a checkbox', () => {
+    expect(isFieldKey(pressIn('ArrowDown', input('checkbox', 'on')))).toBe(false);
+    expect(isFieldKey(pressIn('Space', input('checkbox', 'on')))).toBe(true);
   });
 });

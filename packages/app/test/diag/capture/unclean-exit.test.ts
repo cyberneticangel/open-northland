@@ -44,14 +44,15 @@ describe('judgeMarker', () => {
     expect(judgeMarker(marker, facts())).toEqual({ kind: 'unclean-exit' });
   });
 
-  it('keeps quiet about a page last seen hidden, in the menu, discarded, or shut down with its shell', () => {
+  it('keeps quiet about a page last seen hidden, in the menu, discarded, or ended with its system', () => {
     const verdicts = [
       judgeMarker({ ...marker, visible: false }, facts()),
       judgeMarker({ ...marker, context: { ...marker.context, inGame: false, entry: 'menu' } }, facts()),
       judgeMarker(marker, facts({ previous: { id: marker.id, discarded: true } })),
       judgeMarker(marker, facts({ shellRun: shellRun('shutdown', BEAT_AT + 1000) })),
+      judgeMarker(marker, facts({ shellRun: shellRun('asleep', BEAT_AT + 1000) })),
     ].map(kind);
-    expect(verdicts).toEqual(['quiet', 'quiet', 'quiet', 'quiet']);
+    expect(verdicts).toEqual(['quiet', 'quiet', 'quiet', 'quiet', 'quiet']);
     expect(kind(judgeMarker(marker, facts({ shellRun: shellRun('crash', BEAT_AT + 1000) })))).toBe(
       'unclean-exit',
     );

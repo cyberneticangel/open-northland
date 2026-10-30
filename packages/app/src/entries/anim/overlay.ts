@@ -1,5 +1,10 @@
 import type { GalleryDirection } from '@open-northland/render';
-import { characterLabel, VIKING_CHARACTERS, type VikingCharacter } from '../../catalog/roster.js';
+import {
+  characterLabel,
+  PLAYER_COLOR_COUNT,
+  VIKING_CHARACTERS,
+  type VikingCharacter,
+} from '../../catalog/roster.js';
 import { formatMessage, messages } from '../../i18n/index.js';
 import { BUTTON_STYLE, el, navButton, PANEL_STYLE } from '../../view/overlay.js';
 import type { GalleryView } from './cells.js';
@@ -93,7 +98,7 @@ export function mountGalleryOverlay(
     }
     viewRow.append(
       navButton(
-        `${copy.colors} (16)`,
+        `${copy.colors} (${PLAYER_COLOR_COUNT})`,
         view === 'colors',
         galleryUrl(params, { char: char.id, view: 'colors' }),
       ),

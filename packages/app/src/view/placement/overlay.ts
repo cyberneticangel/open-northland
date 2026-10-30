@@ -1,6 +1,7 @@
 import {
   type Camera,
   cameraViewport,
+  type OverlayBrush,
   type PlacementOverlayFrame,
   visibleTileRange,
 } from '@open-northland/render';
@@ -119,7 +120,7 @@ export function makeDockOverlaySource(
     const probe = probes.mooring(vehicle);
     if (probe === null || probe === undefined) return null;
     return band(
-      { keyWithin: () => `d${vehicle}:${probe.key}`, accepts: () => probe.canMoor },
+      { keyWithin: () => `d${vehicle}:${probe.key}`, accepts: () => probe.canMoor, brush: 'round' },
       camera,
       screenW,
       screenH,
@@ -135,6 +136,8 @@ interface BandProbe {
   keyWithin(band: NodeBand): string | null;
   accepts(): (x: number, y: number) => boolean;
   reserves?(): (x: number, y: number) => boolean;
+  /** How the open side's edge draws; the renderer's diamonds when absent. */
+  readonly brush?: OverlayBrush;
 }
 
 /** The probe's answer covering a node. The walk runs row by row, so the answer is looked up once per
@@ -212,7 +215,7 @@ function makeBandProber(
       }
     }
     key = nextKey;
-    frame = { ...range, blocked, reserved };
+    frame = { ...range, blocked, reserved, ...(probe.brush === undefined ? {} : { brush: probe.brush }) };
     return frame;
   };
 }

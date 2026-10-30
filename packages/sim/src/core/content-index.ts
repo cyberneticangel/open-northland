@@ -17,7 +17,7 @@ import {
   type WeaponType,
 } from '@open-northland/data';
 import type { GoodsLine } from '../components/economy/infrastructure.js';
-import { atomicAnimationTable, atomicBindingTables, harvestCapableJobs } from './content-index/atomics.js';
+import { atomicBindingTables, harvestCapableJobs } from './content-index/atomics.js';
 import { byKey, byOptionalKey, byPairKey, lastByPairKey, valueByKey } from './content-index/by-key.js';
 import { cadaverGoodCycle } from './content-index/cadaver.js';
 import { civilianJobTypes, militaryGoodTypes } from './content-index/combat.js';
@@ -92,8 +92,7 @@ export interface ContentIndex {
   readonly livestockWorkplaceTypes: ReadonlySet<number>;
   /** Species good → the breeder atomic that slaughters one of its adults. */
   readonly livestockSlayAtomicByGood: ReadonlyMap<number, number>;
-  /** Atomic animations by `name` (the `setatomic` join key), one-strike site clips paced
-   *  ({@link atomicAnimationTable}). */
+  /** Atomic animations by `name` (the `setatomic` join key), first-wins. */
   readonly atomicAnimationsByName: ReadonlyMap<string, AtomicAnimation>;
   /** Per building type: the set of job types its `workers` slots name (empty for a type with no
    *  worker slots). */
@@ -232,7 +231,7 @@ function buildIndex(content: ContentSet): ContentIndex {
     livestockTribeByGood: livestock.tribeByGood,
     livestockWorkplaceTypes: livestock.workplaceTypes,
     livestockSlayAtomicByGood: livestock.slayAtomicByGood,
-    atomicAnimationsByName: atomicAnimationTable(content, atomicBindings),
+    atomicAnimationsByName: byKey(content.atomicAnimations, (a) => a.name),
     workerJobsByBuilding: workerJobs,
     operatorJobsByBuilding: operatorJobSets(workerJobs, content),
     storedGoodsByBuilding: storedGoodSets(content),

@@ -1,6 +1,10 @@
-import { halfCellToScreenX, halfCellToScreenY, type WorldBounds } from '@open-northland/render';
-import { roadRevisionOf, roadShardOf } from '@open-northland/render/data';
-import { entitiesWith, FOG_STATE, type FogMode, type FogView, type WorldSnapshot } from '@open-northland/sim';
+import {
+  halfCellToScreenX,
+  halfCellToScreenY,
+  type SeenRoadNetwork,
+  type WorldBounds,
+} from '@open-northland/render';
+import { FOG_STATE, type FogMode, type FogView } from '@open-northland/sim';
 import { BufferImageSource, type Container, Sprite, Texture } from 'pixi.js';
 import { nodeOfId } from '../../game/node-id.js';
 import type { Rect } from '../geometry.js';
@@ -9,7 +13,7 @@ import { type DotRaster, stampMark } from './stamps.js';
 /** Laid roads are ground, drawn as a faint earth line. */
 export const ROAD_DOT_COLOUR = 0xd2bf8f;
 
-/** No revision a snapshot reports, so the first draw collects the network. */
+/** No revision a network reports, so the first draw collects it. */
 const UNCOLLECTED = -1;
 
 /** `cellOfNode`'s four-row lattice cycle: a node row's phase nudges its column before halving. */
@@ -34,15 +38,15 @@ export interface RoadLayerGeometry {
 }
 
 /**
- * The laid roads as a retained raster in the dot raster's px. A road shows wherever the ground does,
- * explored or visible, so only the road network, the viewer seat, the fog mode and the stamp size
- * redraw the whole raster. Explored ground only grows under one mode, so a fog change re-reads just the
+ * The roads the viewer has seen as a retained raster in the dot raster's px. A road shows wherever the
+ * ground does, explored or visible, so only the road network, the viewer seat, the fog mode and the stamp
+ * size redraw the whole raster. Explored ground only grows under one mode, so a fog change re-reads just the
  * nodes still hidden. Answers whether `raster` changed.
  */
 export function createRoadRaster(
   raster: DotRaster,
   geometry: RoadLayerGeometry,
-): (snapshot: WorldSnapshot, fog: FogView | null, pxPerMinimapPx: number) => boolean {
+): (roads: SeenRoadNetwork, fog: FogView | null, pxPerMinimapPx: number) => boolean {
   const { bounds, scale, nodeWidth } = geometry;
   let revision = UNCOLLECTED;
   let player: number | null = null;
@@ -59,10 +63,8 @@ export function createRoadRaster(
   let hidden = new Int32Array(0);
   let hiddenCount = 0;
 
-  const collect = (snapshot: WorldSnapshot): void => {
-    const shards = entitiesWith(snapshot, 'RoadShard');
-    let total = 0;
-    for (const carrier of shards) total += roadShardOf(carrier)?.nodes.length ?? 0;
+  const collect = (roads: SeenRoadNetwork): void => {
+    const total = roads.nodes.size;
     if (total > pxX.length) {
       pxX = new Float64Array(total);
       pxY = new Float64Array(total);
@@ -71,18 +73,13 @@ export function createRoadRaster(
       hidden = new Int32Array(total);
     }
     count = 0;
-    for (const carrier of shards) {
-      const nodes = roadShardOf(carrier)?.nodes;
-      if (nodes === undefined) continue;
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i] ?? 0;
-        const { hx, hy } = nodeOfId(node, nodeWidth);
-        pxX[count] = (halfCellToScreenX(hx, hy) - bounds.minX) * scale;
-        pxY[count] = (halfCellToScreenY(hy) - bounds.minY) * scale;
-        cellX[count] = fogCellXOfNode(hx, hy);
-        cellY[count] = hy >> 1;
-        count++;
-      }
+    for (const node of roads.nodes) {
+      const { hx, hy } = nodeOfId(node, nodeWidth);
+      pxX[count] = (halfCellToScreenX(hx, hy) - bounds.minX) * scale;
+      pxY[count] = (halfCellToScreenY(hy) - bounds.minY) * scale;
+      cellX[count] = fogCellXOfNode(hx, hy);
+      cellY[count] = hy >> 1;
+      count++;
     }
   };
   const stamp = (i: number): void =>
@@ -90,11 +87,11 @@ export function createRoadRaster(
   const unexplored = (fog: FogView, i: number): boolean =>
     fog.stateAt(cellX[i] ?? 0, cellY[i] ?? 0) === FOG_STATE.UNEXPLORED;
 
-  return (snapshot, fog, pxPerMinimapPx) => {
-    const nextRevision = roadRevisionOf(snapshot);
+  return (roads, fog, pxPerMinimapPx) => {
+    const nextRevision = roads.revision;
     const nextPlayer = fog?.player ?? null;
     const nextMode = fog?.mode ?? null;
-    if (nextRevision !== revision) collect(snapshot);
+    if (nextRevision !== revision) collect(roads);
     if (
       nextRevision !== revision ||
       nextPlayer !== player ||
@@ -130,7 +127,7 @@ export function createRoadRaster(
 
 export interface MinimapRoadLayer {
   /** Show the laid roads for `fog`'s viewer, stamped at `pxPerMinimapPx`, or hide them. */
-  draw(snapshot: WorldSnapshot, fog: FogView | null, shown: boolean, pxPerMinimapPx: number): void;
+  draw(roads: SeenRoadNetwork, fog: FogView | null, shown: boolean, pxPerMinimapPx: number): void;
   dispose(): void;
 }
 
@@ -153,9 +150,9 @@ export function createRoadLayer(
   container.addChild(sprite);
   const redraw = createRoadRaster({ rgba, width, height }, geometry);
   return {
-    draw: (snapshot, fog, shown, pxPerMinimapPx) => {
+    draw: (roads, fog, shown, pxPerMinimapPx) => {
       sprite.visible = shown;
-      if (shown && redraw(snapshot, fog, pxPerMinimapPx)) texture.source.update();
+      if (shown && redraw(roads, fog, pxPerMinimapPx)) texture.source.update();
     },
     dispose: () => {
       sprite.destroy();

@@ -18,14 +18,20 @@ import { LandscapeRollClock } from '../data/director/object-ambience.js';
 import type { MixerVolumes, SoundBus } from '../data/mixer.js';
 import {
   CALM_MOOD,
+  choosePlaylistMusic,
+  culturePools,
+  DEFAULT_MUSIC_SOURCE,
+  type MusicCulture,
   type MusicManifest,
   type MusicMoodState,
   MusicPlaylist,
   type MusicSequence,
+  type MusicSource,
   type MusicStanding,
-  mapMusicFor,
+  mapVariantsFor,
   musicIntensity,
   nextMusicMood,
+  type PlaylistMood,
 } from '../data/music/index.js';
 import type {
   AmbientLoop,
@@ -40,6 +46,7 @@ import type { WeatherSoundInput } from '../data/weather/mix.js';
 import {
   type AudioEngineOptions,
   type NarrationCue,
+  type NarrationRate,
   type NarrationState,
   type SoundPreloadReport,
   WebAudioEngine,
@@ -59,8 +66,8 @@ export interface SoundFrameInput {
   /** The local player slot - gates the life-event jingles to this player's own entities; omit → they
    *  never ring. */
   readonly localPlayer?: number;
-  /** The local seat's tribe type id - picks the attack alert's voice pools; omit (a spectator) → the
-   *  alert stays silent. */
+  /** The local seat's tribe type id - picks the attack alert's voice pools and the nation's music; omit
+   *  (a spectator) → the alert stays silent and the music is the map's. */
   readonly localTribe?: number;
   /** The viewer's fog-of-war visibility at a fractional tile - gates the settler animation cues (a
    *  settler hidden by the fog must not natter or hammer out of empty black). Omit → no fog. */
@@ -81,9 +88,9 @@ export interface SoundFrameInput {
   readonly drawnCreatures?: () => Iterable<number>;
 }
 
-/** The music a map authored: its `musictype` and what the pipeline rendered for it. */
+/** The music a map authored: its `musictype` (null when it names none) and what the pipeline rendered. */
 export interface MusicMap {
-  readonly musicType: number;
+  readonly musicType: number | null;
   readonly manifest: MusicManifest;
 }
 
@@ -114,6 +121,14 @@ export class SoundDriver {
   private readonly arbiter: OneShotArbiter;
   private playlist: MusicPlaylist | null = null;
   private mood: MusicMoodState = CALM_MOOD;
+  /** What picks the playlist: the map's music, the player's choice of source and the local nation. */
+  private musicMap: MusicMap | null = null;
+  private musicSource: MusicSource = DEFAULT_MUSIC_SOURCE;
+  private musicCulture: MusicCulture | null = null;
+  /** Names the music {@link playlist} plays, so a rebuild that would pick the same keeps it going. */
+  private playlistKey: string | null = null;
+  /** The mood the last frame handed the playlist, so a rebuilt one opens on it instead of on calm. */
+  private playlistMood: PlaylistMood | null = null;
   /** Orders given since the last frame, answered with their settlers' voices on that frame. */
   private responses: OrderAnswer[] = [];
   /** The selection taken since the last frame, acknowledged on that frame. */
@@ -155,6 +170,7 @@ export class SoundDriver {
 
   close(): void {
     this.playlist = null;
+    this.musicMap = null;
     this.engine.close();
   }
 
@@ -222,15 +238,36 @@ export class SoundDriver {
   }
 
   /** Hand over the map's music: its playlist starts once audio is live, and each frame feeds it the
-   *  mood. Null, or a code with no rendered music, stops the music. */
+   *  mood. Null stops the music. */
   setMusicMap(map: MusicMap | null): void {
-    const music = map === null ? null : mapMusicFor(map.musicType, map.manifest);
-    // The session runs on the audio clock, from the hand-over: the listener's time with this map's music.
-    const startS = this.engine.clock;
-    const sessionS = (): number => Math.max(0, this.engine.clock - startS);
-    this.playlist =
-      map === null || music === null ? null : new MusicPlaylist(music, map.manifest, this.random, sessionS);
+    this.musicMap = map;
     this.mood = CALM_MOOD;
+    this.playlistMood = null;
+    this.playlistKey = null;
+    this.refreshMusic();
+  }
+
+  /** The "music" setting: the map's own music or the local nation's, switched at once. */
+  setMusicSource(source: MusicSource): void {
+    this.musicSource = source;
+    this.refreshMusic();
+  }
+
+  /** Rebuild the playlist for the map, source and nation as they stand, unless it already plays that. */
+  private refreshMusic(): void {
+    const map = this.musicMap;
+    const culture = this.musicCulture;
+    const pools = map === null || culture === null ? null : (culturePools(map.manifest).get(culture) ?? null);
+    const music =
+      map === null
+        ? null
+        : choosePlaylistMusic(this.musicSource, mapVariantsFor(map.musicType, map.manifest), pools);
+    const key = music === null ? null : music.source === 'map' ? 'map' : `nation:${culture}`;
+    if (key === this.playlistKey && this.playlist !== null) return;
+    this.playlistKey = key;
+    this.playlist =
+      map === null || music === null ? null : new MusicPlaylist(music, map.manifest, this.random);
+    if (this.playlistMood !== null) this.playlist?.update(this.playlistMood);
     this.engine.setMusic(this.playlist);
   }
 
@@ -249,7 +286,9 @@ export class SoundDriver {
 
   /** The `?sounds` gallery's music: play `sequence` in place of any map's, or stop for null. */
   auditionMusic(sequence: MusicSequence | null): void {
+    this.musicMap = null;
     this.playlist = null;
+    this.playlistKey = null;
     this.engine.setMusic(sequence);
   }
 
@@ -320,6 +359,11 @@ export class SoundDriver {
 
   narrationState(): NarrationState {
     return this.engine.narrationState();
+  }
+
+  /** Speak the narration at `rate`, the line still speaking included. */
+  setNarrationRate(rate: NarrationRate): void {
+    this.engine.setNarrationRate(rate);
   }
 
   /** Fade out the briefing narration still speaking. */
@@ -420,8 +464,14 @@ export class SoundDriver {
     return started;
   }
 
-  /** Feed the playlist this frame's mood; only a change between calm and tense moves the player. */
+  /** Feed the playlist this frame's mood; the playlist says whether the change moves the player. */
   private updateMusic(input: SoundFrameInput): void {
+    const culture =
+      input.localTribe === undefined ? null : (this.index.musicCultureByTribe.get(input.localTribe) ?? null);
+    if (culture !== this.musicCulture) {
+      this.musicCulture = culture;
+      this.refreshMusic();
+    }
     const playlist = this.playlist;
     if (playlist === null) return;
     const standing = input.standingOf?.(input.snapshot) ?? UNKNOWN_STANDING;
@@ -431,11 +481,12 @@ export class SoundDriver {
       standing,
       ...(input.localPlayer !== undefined ? { localPlayer: input.localPlayer } : {}),
     });
-    const transition = playlist.update({
+    this.playlistMood = {
       intensity: musicIntensity(this.mood),
       stance: standing.stance,
       wealthy: this.mood.wealthy,
-    });
+    };
+    const transition = playlist.update(this.playlistMood);
     if (transition !== 'none') this.engine.transitionMusic(transition);
   }
 }

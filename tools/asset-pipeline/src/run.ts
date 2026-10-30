@@ -26,7 +26,12 @@ import { assertStaticVerbsKnown, convertMapDatTree, summarizeMapOverlays } from 
 import { createMinimapSynthesizer } from './stages/maps/synth-minimap.js';
 import { renderMusicStage } from './stages/music/index.js';
 import { composeMaskedTransitionPages, convertPcxTree } from './stages/pcx.js';
-import { convertGuidepostPlayerAtlases, convertIndexedCharacterAtlases } from './stages/player-colors.js';
+import {
+  convertIndexedCharacterAtlases,
+  convertPlayerPaletteAtlases,
+  convertSignPlayerAtlases,
+  ownerPaletteBmds,
+} from './stages/player-colors.js';
 import { convertSoundTree, loopedBedClips } from './stages/sounds/index.js';
 import { indexSourceAssets } from './stages/source-files.js';
 import { convertVehiclePaletteFamilies } from './stages/vehicle-colors.js';
@@ -83,7 +88,13 @@ export async function runPipeline(args: Args): Promise<void> {
   await rm(join(args.out, BOBS_DIR), { recursive: true, force: true });
   const bobAtlases = new BobAtlasCatalog(args.out);
   // The IR rows name the stems the app's DOM shows, which keep RGB sheets.
-  const atlases = await convertBmdTree(graphics, bobAtlases, assets, domPictureStems(ir, graphics.bindings));
+  const atlases = await convertBmdTree(
+    graphics,
+    bobAtlases,
+    assets,
+    domPictureStems(ir, graphics.bindings),
+    ir.bobSequences,
+  );
   const { bindings, palettes } = graphics;
   const distinct = new Set(atlases.map((a) => a.image)).size;
   const distinctBmd = new Set(atlases.map((a) => a.bmd)).size;
@@ -98,9 +109,15 @@ export async function runPipeline(args: Args): Promise<void> {
     `[pipeline] shadow bmd -> atlas: ${shadowAtlases.length} shadow atlas file(s) into ${args.out}`,
   );
 
-  const indexed = await convertIndexedCharacterAtlases(bindings, bobAtlases, assets);
-  const guideAtlases = await convertGuidepostPlayerAtlases(bobAtlases, assets).catch((err: unknown) => {
-    console.warn(`[pipeline] guidepost player atlases skipped: ${errorMessage(err)}`);
+  const indexed = await convertIndexedCharacterAtlases(bindings, bobAtlases, assets, ir.bobSequences);
+  const ownerAtlases = await convertPlayerPaletteAtlases(ownerPaletteBmds(ir), bobAtlases, assets).catch(
+    (err: unknown) => {
+      console.warn(`[pipeline] player palette atlases skipped: ${errorMessage(err)}`);
+      return 0;
+    },
+  );
+  const signAtlases = await convertSignPlayerAtlases(bobAtlases, assets).catch((err: unknown) => {
+    console.warn(`[pipeline] sign player atlases skipped: ${errorMessage(err)}`);
     return 0;
   });
   const vehicleColors = await convertVehiclePaletteFamilies(
@@ -111,7 +128,8 @@ export async function runPipeline(args: Args): Promise<void> {
   );
   console.log(
     `[pipeline] player colours: ${indexed.length} indexed character atlas(es)` +
-      `, ${guideAtlases} guidepost player atlas(es)` +
+      `, ${ownerAtlases} owner palette atlas(es)` +
+      `, ${signAtlases} synthetic sign atlas(es)` +
       `, ${vehicleColors.indexed.length} indexed vehicle atlas(es) over ${vehicleColors.luts.length} palette family LUT(s)`,
   );
 

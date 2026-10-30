@@ -1,6 +1,11 @@
 import { EQUIP_CATEGORIES, HomeQualityEffect, MAP_GOAL_GOODS_MAX } from '@open-northland/data';
 import { COMPUTER_DIFFICULTIES, COMPUTER_MODULE_IDS } from '../../components/ai/control.js';
-import { ASSISTANT_COUNTER_KINDS, ASSISTANT_GRANT_AUDIENCES } from '../../components/assistant.js';
+import {
+  ASSISTANT_ARMING_INTENTS,
+  ASSISTANT_COUNTER_KINDS,
+  ASSISTANT_GRANT_AUDIENCES,
+} from '../../components/assistant.js';
+import { HOUSE_RECORD_NAME_MAX_CHARS } from '../../components/economy/infrastructure.js';
 import { MISC_EQUIP_SLOTS } from '../../components/equipment.js';
 import { MAX_MATCH_GOALS, type MatchGoal } from '../../components/match.js';
 import {
@@ -313,7 +318,10 @@ const COMMAND_PAYLOAD: { readonly [K in Command['kind']]: PayloadSpec<Extract<Co
   marry: { required: { entity: 'integer' } },
   moveUnit: { required: { entity: 'integer', ...NODE }, optional: QUEUED },
   moveVehicle: { required: { vehicle: 'integer', ...NODE }, optional: { attackMove: 'boolean', ...QUEUED } },
-  dockVehicle: { required: { vehicle: 'integer', ...NODE }, optional: QUEUED },
+  dockVehicle: {
+    required: { vehicle: 'integer', ...NODE },
+    optional: { ...QUEUED, dock: { fields: { required: NODE } } },
+  },
   renameSettler: { required: { entity: 'integer', name: { string: SETTLER_NAME_MAX_CHARS } } },
   openChest: { required: { entity: 'integer', chest: 'integer' }, optional: QUEUED },
   claimAnimal: { required: { entity: 'integer', animal: 'integer' }, optional: QUEUED },
@@ -328,6 +336,7 @@ const COMMAND_PAYLOAD: { readonly [K in Command['kind']]: PayloadSpec<Extract<Co
       fillStock: 'boolean',
       initialGoods: { arrayOf: { fields: { required: { good: 'integer', amount: 'integer' } } } },
       level: 'integer',
+      record: { string: HOUSE_RECORD_NAME_MAX_CHARS },
       paper: PAPER,
     },
   },
@@ -340,6 +349,7 @@ const COMMAND_PAYLOAD: { readonly [K in Command['kind']]: PayloadSpec<Extract<Co
       landscapeId: 'integer',
       force: 'boolean',
       overUpgradeGround: 'boolean',
+      waivedGround: { arrayOf: { fields: { required: { ...NODE, obstacle: 'count', walls: 'count' } } } },
     },
   },
   convertPalisadeGate: { required: { palisade: 'integer', gfxIndex: 'integer' } },
@@ -371,6 +381,21 @@ const COMMAND_PAYLOAD: { readonly [K in Command['kind']]: PayloadSpec<Extract<Co
     required: { player: 'integer', goodType: 'integer', audience: { oneOf: ASSISTANT_GRANT_AUDIENCES } },
   },
   setAssistantWeaponVeto: { required: { player: 'integer', goodType: 'integer', vetoed: 'boolean' } },
+  setAssistantWeaponOrder: {
+    required: {
+      player: 'integer',
+      intent: { oneOf: ASSISTANT_ARMING_INTENTS },
+      order: { arrayOf: 'integer', maxLength: GOOD_TYPE_SPACE },
+    },
+  },
+  setAssistantArmorOrder: {
+    required: {
+      player: 'integer',
+      intent: { oneOf: ASSISTANT_ARMING_INTENTS },
+      order: { arrayOf: 'integer', maxLength: GOOD_TYPE_SPACE },
+      off: { arrayOf: 'integer', maxLength: GOOD_TYPE_SPACE },
+    },
+  },
   setAssistantPostGraduates: { required: { player: 'integer', enabled: 'boolean' } },
   setAssistantMoveFlags: { required: { player: 'integer', enabled: 'boolean' } },
   setProductionGoods: {
@@ -460,7 +485,10 @@ const COMMAND_PAYLOAD: { readonly [K in Command['kind']]: PayloadSpec<Extract<Co
   clearVehicleWanted: { required: { vehicle: 'integer' } },
   trainSoldier: { required: { entity: 'integer', house: 'integer' }, optional: QUEUED },
   unassignHouse: { required: { entity: 'integer' } },
-  unloadPeople: { required: { vehicle: 'integer' } },
+  unloadPeople: {
+    required: { vehicle: 'integer' },
+    optional: { ...QUEUED, mooring: { fields: { required: NODE } } },
+  },
   unassignWorker: { required: { entity: 'integer' } },
   unequipGood: {
     required: { entity: 'integer', group: { oneOf: EQUIP_CATEGORIES }, slot: 'integer' },

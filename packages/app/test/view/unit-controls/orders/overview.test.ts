@@ -17,6 +17,7 @@ import {
 } from '../../../../src/view/unit-controls/pick-mode.js';
 import { createUnitSelection } from '../../../../src/view/unit-controls/selection.js';
 import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
+import { withPointHits } from '../../../support/point-hits.js';
 import { type Ent, snapshotOf } from '../../../support/snapshot.js';
 
 /**
@@ -95,7 +96,7 @@ function harness(
   const orders = createUnitOrderController({
     answered: createAnsweredOrders(),
     selected: selection.ids,
-    targets: { ...targets, wildlife },
+    targets: withPointHits({ ...targets, wildlife }),
     snapshot: () => WORLD,
     content: sandboxContent(),
     mapSize: MAP_SIZE,
@@ -109,7 +110,7 @@ function harness(
     cue: (cue) => cues.push(cue),
     answered: createAnsweredOrders(),
     snapshot: () => WORLD,
-    targets: { ...targets, wildlife },
+    targets: withPointHits({ ...targets, wildlife }),
     content: sandboxContent(),
     mapSize: MAP_SIZE,
     toWorld: (clientX, clientY) => ({ x: clientX, y: clientY }),

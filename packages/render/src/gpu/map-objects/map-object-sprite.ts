@@ -54,6 +54,8 @@ export interface MapObjectSprite {
   };
   /** Built stonework whose foot sets into the ground like a building's. */
   readonly grounded?: true;
+  /** An open fire, which lights the ground around it at night (`gpu/lighting/scene-light.ts`). */
+  readonly light?: 'fire';
   /** A clip that plays {@link frames} once instead of looping: see {@link OneShotClip}. */
   readonly once?: OneShotClip;
 }

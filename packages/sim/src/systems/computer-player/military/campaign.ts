@@ -16,7 +16,8 @@ import { manhattan } from '../../spatial/metric.js';
 import { entityNode } from '../../spatial/nodes.js';
 
 /** The objective tiers, best first. The building order is the CombatSystem's own siege priority
- *  ({@link buildingCombatClass}), so a wave marches on what a warrior in the field would pick. */
+ *  ({@link buildingCombatClass}), so a wave marches on what a warrior in the field would pick; a wall,
+ *  which no warrior picks, is no objective. */
 const SIEGE_TIERS: readonly BuildingCombatClass[] = ['hq', 'tower', 'other'];
 
 /**

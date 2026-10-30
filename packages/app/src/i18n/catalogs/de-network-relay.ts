@@ -39,6 +39,7 @@ export const deNetworkRelay = {
     seatTaken: 'Platz {seat} ist belegt: {nick}',
     seatModeUnavailable: 'Platz {seat} kann nicht auf {mode} gesetzt werden',
     seatTribeUnavailable: 'für Platz {seat} lässt sich kein Stamm auswählen',
+    colorTaken: 'Platz {wearer} trägt diese Farbe bereits',
     seatDifficultyUnavailable: 'für Platz {seat} lässt sich keine Computer-Schwierigkeitsstufe festlegen',
     seatRequired: 'belege zuerst einen Platz',
     notMember: '{nick} ist nicht im Raum',

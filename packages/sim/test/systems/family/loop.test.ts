@@ -683,7 +683,7 @@ describe('e2e: marriage → household → child (full step schedule)', () => {
     expect(findPartnerFor(sim.world, sim.content, woman(), sim.terrain, null)).toBe(man());
     // Committed to a drill the man is a soldier-to-be, even though his trade is civilian mid-walk:
     // the wedding would outlive the walk and leave the bride married to a man who never comes home.
-    sim.world.add(man(), TrainingOrder, { house: home(), drillTicksLeft: 100 });
+    sim.world.add(man(), TrainingOrder, { house: home(), drillTicksLeft: 100, enrolled: 0, seated: true });
     expect(mayMarry(sim.world, sim.content, man())).toBe(false);
     expect(findPartnerFor(sim.world, sim.content, woman(), sim.terrain, null)).toBeNull();
   });

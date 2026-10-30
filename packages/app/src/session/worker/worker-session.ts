@@ -1,5 +1,6 @@
 import type { SessionDriver } from '@open-northland/lockstep';
 import {
+  type AssistantArmorOrder,
   components,
   type EntitySnapshot,
   type ExportSaveOptions,
@@ -520,6 +521,8 @@ class WorkerClient<E> {
       assistantWeaponVetoes: (player) => assistantFacts(facts(), player).weaponVetoes,
       assistantSoldierOnlyGrants: (player) => assistantFacts(facts(), player).soldierOnlyGrants,
       assistantCivilianOnlyGrants: (player) => assistantFacts(facts(), player).civilianOnlyGrants,
+      assistantArmorOrder: (player, intent) => assistantFacts(facts(), player).armorOrders[intent],
+      assistantWeaponOrder: (player, intent) => assistantFacts(facts(), player).weaponOrders[intent],
       assistantPostsGraduates: (player) => assistantFacts(facts(), player).postsGraduates,
       assistantMovesFlags: (player) => assistantFacts(facts(), player).movesFlags,
       needsEnabled: () => facts().needsEnabled,
@@ -639,6 +642,9 @@ function relayWorkerLog(entries: readonly DiagEntry[]): void {
   for (const entry of entries) diag.log(entry.channel, entry.level, `worker: ${entry.message}`, entry.data);
 }
 
+/** Before the first facts land the weapon and armor goods are unknown: no gear line to show. */
+const NO_ARMOR: AssistantArmorOrder = { order: [], off: [] };
+
 function assistantFacts(facts: WorldFacts, player: number): AssistantFacts {
   return (
     facts.assistants[player] ?? {
@@ -647,6 +653,8 @@ function assistantFacts(facts: WorldFacts, player: number): AssistantFacts {
       weaponVetoes: [],
       soldierOnlyGrants: [],
       civilianOnlyGrants: [],
+      weaponOrders: { trainSword: [], trainSpear: [], trainBow: [] },
+      armorOrders: { trainSword: NO_ARMOR, trainSpear: NO_ARMOR, trainBow: NO_ARMOR },
       postsGraduates: false,
       movesFlags: false,
     }

@@ -94,7 +94,14 @@ function defenceContent(houseBowRange = HOUSE_BOW_RANGE): ContentSet {
       { typeId: SCOUT, id: 'scout' },
     ],
     buildings: [
-      { typeId: TOWER, id: 'tower_00', kind: 'tower', hitpoints: 100_000, shelterCapacity: TOWER_CAPACITY },
+      {
+        typeId: TOWER,
+        id: 'tower_00',
+        kind: 'tower',
+        hitpoints: 100_000,
+        shelterCapacity: TOWER_CAPACITY,
+        workers: [{ jobType: SOLDIER, count: 1 }],
+      },
       { typeId: HUT, id: 'hut', kind: 'home', hitpoints: 1000 },
       {
         typeId: HALL,
@@ -116,6 +123,7 @@ function defenceContent(houseBowRange = HOUSE_BOW_RANGE): ContentSet {
         kind: 'tower',
         hitpoints: 100_000,
         shelterCapacity: TOWER_CAPACITY,
+        workers: [{ jobType: SOLDIER, count: 1 }],
         footprint: { blocked: keepWalls() },
       },
     ],
@@ -709,12 +717,14 @@ describe('shelterFireRadius', () => {
   const NO_BOW_TRIBE = VIKING + 1;
 
   it('reaches the house bow all around a building drawn to a point', () => {
-    expect(shelterFireRadius(defenceContent(), TOWER, VIKING, HX, HY)).toBe(HOUSE_BOW_RANGE);
+    expect(shelterFireRadius(defenceContent(), { buildingType: TOWER, tribe: VIKING }, HX, HY)).toBe(
+      HOUSE_BOW_RANGE,
+    );
   });
 
   it('reaches past the bow around a long building only as far as its walls hold on every side', () => {
     const content = defenceContent();
-    const radius = shelterFireRadius(content, HALL, VIKING, HX, HY) ?? 0;
+    const radius = shelterFireRadius(content, { buildingType: HALL, tribe: VIKING }, HX, HY) ?? 0;
     // A one-row hall reaches no further north or south than its bow; along its length it reaches more.
     expect(radius).toBe(HOUSE_BOW_RANGE);
     const nodeInReachOfAWall = (x: number, y: number): boolean =>
@@ -727,7 +737,7 @@ describe('shelterFireRadius', () => {
 
   it('reaches past the bow around a building whose walls ring its anchor, the same on any anchor of a parity', () => {
     const content = defenceContent();
-    const radius = shelterFireRadius(content, KEEP, VIKING, HX, HY) ?? 0;
+    const radius = shelterFireRadius(content, { buildingType: KEEP, tribe: VIKING }, HX, HY) ?? 0;
     expect(radius).toBeGreaterThan(HOUSE_BOW_RANGE);
     const walls = keepWalls().map((w) => ({ x: HX + w.dx, y: HY + w.dy }));
     const inReach = (x: number, y: number): boolean =>
@@ -742,16 +752,18 @@ describe('shelterFireRadius', () => {
     };
     expect(ringInReach(radius)).toBe(true);
     expect(ringInReach(radius + 1)).toBe(false);
-    expect(shelterFireRadius(content, KEEP, VIKING, HX + 7, HY + 2)).toBe(radius);
+    expect(shelterFireRadius(content, { buildingType: KEEP, tribe: VIKING }, HX + 7, HY + 2)).toBe(radius);
     // An odd anchor row shifts the footprint's odd rows, so it keeps its own, equally stable answer.
-    const odd = shelterFireRadius(content, KEEP, VIKING, HX, HY + 1);
+    const odd = shelterFireRadius(content, { buildingType: KEEP, tribe: VIKING }, HX, HY + 1);
     expect(odd).toBeGreaterThan(HOUSE_BOW_RANGE);
-    expect(shelterFireRadius(content, KEEP, VIKING, HX + 5, HY + 3)).toBe(odd);
+    expect(shelterFireRadius(content, { buildingType: KEEP, tribe: VIKING }, HX + 5, HY + 3)).toBe(odd);
   });
 
   it('is undefined for a type with no defence mode and for a tribe that fires no house bow', () => {
-    expect(shelterFireRadius(defenceContent(), HUT, VIKING, HX, HY)).toBeUndefined();
-    expect(shelterFireRadius(defenceContent(), TOWER, NO_BOW_TRIBE, HX, HY)).toBeUndefined();
+    expect(shelterFireRadius(defenceContent(), { buildingType: HUT, tribe: VIKING }, HX, HY)).toBeUndefined();
+    expect(
+      shelterFireRadius(defenceContent(), { buildingType: TOWER, tribe: NO_BOW_TRIBE }, HX, HY),
+    ).toBeUndefined();
   });
 });
 

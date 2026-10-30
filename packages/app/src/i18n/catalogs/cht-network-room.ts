@@ -40,7 +40,7 @@ export const chtNetworkRoom = {
   rejoin: '重新加入遊戲',
   reconnecting: '連線中斷。正在重新連線…',
   settings: '房間設定',
-  creatorSettings: '只有房間建立者可以變更席位與設定。',
+  creatorSettings: '只有房間建立者可以變更設定與席位；你自己席位的顏色與民族由你選擇。',
   savedSettings: '這個已儲存的遊戲會保留其原本的規則與顏色。',
   progression: '職業發展',
   progressionDetail: '新職業與生產所需的經驗條件。',

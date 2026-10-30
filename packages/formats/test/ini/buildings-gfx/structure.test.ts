@@ -3,8 +3,10 @@ import {
   extractBuildingFootprints,
   extractConstructionCosts,
   extractHouseHitpoints,
+  extractRecordFootprints,
   extractUpgradeTargets,
   parseIniSections,
+  widenRecordFootprints,
 } from '../../../src/ini.js';
 import { HOUSES_INI } from '../../fixtures/ini-sources.js';
 
@@ -350,3 +352,25 @@ LogicType 0 40
 
 // Mirrors the real construction-layer grammar: `GfxBobConstructionLayer <sizeIdx> <upgrade> <bobId>
 // <shadowBobId|-1> <fromPct> <toPct>`, joined to typeIds via `LogicType` and fanned out per palette.
+
+describe('widenRecordFootprints', () => {
+  it("widens a named record over its type's upgrade chain with the tribe's defaults", () => {
+    const hall = `[GfxHouse]
+EditName "viking hall"
+LogicTribeType 1
+LogicType 0 2
+LogicWalkBlockArea 0 7 7 1
+`;
+    const sections = parseIniSections(`${GFXHOUSE_FOOTPRINT_INI}\n${hall}`);
+    const records = widenRecordFootprints(
+      extractRecordFootprints(sections),
+      extractBuildingFootprints(sections),
+      extractUpgradeTargets(sections),
+    );
+    const widened = records.get(2)?.find((r) => r.editName === 'viking hall')?.footprint;
+    expect(widened?.blocked).toEqual([{ dx: 7, dy: 7 }]);
+    // Level 1's growth cell, which the hall's type upgrades into, is kept clear.
+    expect(widened?.familyBody).toContainEqual({ dx: 0, dy: 1 });
+    expect(widened?.familyBody).toContainEqual({ dx: 7, dy: 7 });
+  });
+});

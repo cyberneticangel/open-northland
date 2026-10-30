@@ -38,6 +38,7 @@ export const ruNetworkRelay = {
     seatTaken: 'место {seat} занято: {nick}',
     seatModeUnavailable: 'для места {seat} нельзя установить режим: {mode}',
     seatTribeUnavailable: 'для места {seat} выбор цивилизации недоступен',
+    colorTaken: 'этот цвет уже у места {wearer}',
     seatDifficultyUnavailable: 'для места {seat} нельзя задать уровень сложности компьютера',
     seatRequired: 'сначала займите место',
     notMember: '{nick} нет в комнате',

@@ -1,5 +1,21 @@
 import { type FogView, type SimEvent, TICKS_PER_SECOND, type WorldSnapshot } from '@open-northland/sim';
 import { type Application, Container, type ICanvas } from 'pixi.js';
+import {
+  type FogGhostMemory,
+  type RememberedMarkers,
+  type SeenRoadNetwork,
+  SeenRoads,
+  type Sight,
+} from '../../data/fog/index.js';
+import { LightSiteList } from '../../data/lighting/light-sites.js';
+
+/** The viewer's fog memory as plain data: the remembered statics of the seat last viewed (null before
+ *  any fog view) and the road nodes it believes laid. */
+export interface ViewerFogMemory {
+  readonly statics: FogGhostMemory | null;
+  readonly roads: readonly number[];
+}
+
 import type { LightGrade } from '../../data/lighting/types.js';
 import { cameraViewport, snapCameraToDevicePixels } from '../../data/projection/index.js';
 import {
@@ -8,7 +24,12 @@ import {
   RoadShardTracker,
   type SceneTerrain,
 } from '../../data/scene/index.js';
-import { type BrightnessField, type ElevationField, makeElevationField } from '../../data/terrain/index.js';
+import {
+  type BrightnessField,
+  type ElevationField,
+  makeElevationField,
+  WaterClock,
+} from '../../data/terrain/index.js';
 import {
   CALM_WIND_SWAY,
   sameWindSway,
@@ -38,7 +59,7 @@ import { type ConstructionPlotFrame, ConstructionPlotLayer } from '../placement/
 import { type PlacementGhost, PlacementGhostLayer } from '../placement/ghost.js';
 import { type PlacementOverlayFrame, PlacementOverlayLayer } from '../placement/overlay.js';
 import { PLOT_BOUNDS } from '../placement/plan-road.js';
-import { DEFAULT_SELECTION_STYLE, type SelectionStyle } from '../selection/style.js';
+import { DEFAULT_SELECTION_STYLE, type SelectionStyle, type TargetTone } from '../selection/style.js';
 import { worldShaderSettings } from '../shaders/warmup.js';
 import { type EntityBounds, SpritePool } from '../sprite-pool/index.js';
 import { StillSpriteMesh } from '../still-mesh/still-mesh.js';
@@ -54,9 +75,7 @@ import { type PortraitInsetFrame, PortraitInsetLayer } from '../world-views/port
 import { DepthSortedLayer } from './depth-sorted-layer.js';
 import {
   BASELINE_ENHANCEMENTS,
-  type BuildingHighlightItem,
   type CombatBonesGfx,
-  EMPTY_HIGHLIGHT,
   NO_BADGES,
   NO_BUBBLES,
   NO_GROUP_NUMBERS,
@@ -68,19 +87,20 @@ import {
   NO_SIGNS,
   NO_STARS,
   SPRITE_CULL_MARGIN,
+  type TargetMark,
   type WorldEnhancements,
   type WorldFrame,
   type WorldRendererOptions,
 } from './frame.js';
+import { OffscreenWorld } from './offscreen-world.js';
 import { mountPainterOrder } from './painter-order.js';
 import { WorldChrome } from './world-chrome.js';
 import { WorldFog } from './world-fog.js';
 import { WorldMarks } from './world-marks.js';
-import { WorldUpscale } from './world-upscale.js';
 
 export class WorldRenderer {
   private readonly app: Application;
-  /** The world layer, the weather sky, the scene light and the screen chrome: what a world upscale draws
+  /** The world layer, the weather sky, the scene light and the screen chrome: what the offscreen world draws
    *  at its own resolution and a save picture shows. */
   private readonly scene = new Container();
   private readonly worldLayer = new Container();
@@ -89,8 +109,12 @@ export class WorldRenderer {
   private readonly spriteLayer = new DepthSortedLayer();
   private readonly textureCache = new TextureCache();
   private readonly terrain = new TerrainLayer();
+  private readonly waterClock = new WaterClock();
+  private paused = false;
   private readonly weatherSky: WeatherSky;
   private readonly sceneLight = new SceneLight();
+  /** This frame's night lights, refilled only while the scene light burns them. */
+  private readonly lights = new LightSiteList();
   private climate = new WeatherClimate();
   private weatherField: WeatherField | null = null;
   private weatherEnabled = true;
@@ -108,9 +132,9 @@ export class WorldRenderer {
   private readonly constructionPlots = new ConstructionPlotLayer();
   private readonly placementGhost: PlacementGhostLayer;
   private readonly marks: WorldMarks;
-  private highlight: ReadonlyMap<number, boolean> = EMPTY_HIGHLIGHT;
+  private targetMarks: ReadonlyMap<number, TargetTone> | undefined;
   private readonly flagErasures = new FlagErasures();
-  private highlightItems: readonly BuildingHighlightItem[] | null = null;
+  private markItems: readonly TargetMark[] | null = null;
   private readonly hud = new HudLayer();
   private readonly chrome: WorldChrome;
   /** The current map's height field; flat until `setTerrain` loads a map carrying an elevation lane. */
@@ -120,12 +144,14 @@ export class WorldRenderer {
   private readonly insetBands: Container[] = [];
   private readonly mapViews: MapViewLayer;
   private readonly prescaler: PagePrescaler;
-  /** The world drawn at fewer texels than a dense canvas and upscaled, when the window asked for it. */
-  private readonly upscale: WorldUpscale | null;
+  /** The world drawn into a texture: at fewer texels than a dense canvas when the window asked for it,
+   *  and through the night composite. */
+  private readonly offscreen: OffscreenWorld;
 
   private readonly viewSmoothing: boolean;
-  /** What the ground last drew of the road network. */
+  /** The live road network's changes, and what the viewer has seen of it, which the ground draws. */
   private readonly roadShards = new RoadShardTracker();
+  private seenRoads = new SeenRoads(0);
   private readonly playerColourOf: ((player: number) => number) | undefined;
   private enhancements: WorldEnhancements = BASELINE_ENHANCEMENTS;
   private selectionStyle: SelectionStyle = DEFAULT_SELECTION_STYLE;
@@ -156,6 +182,7 @@ export class WorldRenderer {
     for (const art of [opts?.planStakes, opts?.planRoads]) {
       if (art !== undefined) for (const texture of Object.values(art)) this.textureCache.adopt(texture);
     }
+    if (opts?.berthPost !== undefined) this.textureCache.adopt(opts.berthPost);
     this.mapObjects = new MapObjectLayer(this.spriteLayer, this.textureCache);
     this.weatherGround = new WeatherGround([this.terrain, this.mapObjects]);
     this.groundWaves = new GroundWaveLayer(app.renderer, this.terrain.container);
@@ -185,6 +212,7 @@ export class WorldRenderer {
       this.textureCache,
       opts?.planStakes,
       opts?.planRoads,
+      opts?.berthPost,
     );
     this.spriteLayer.addChild(this.placementGhost.container);
     mountPainterOrder(this.worldLayer, {
@@ -213,8 +241,14 @@ export class WorldRenderer {
     app.stage.addChild(this.hud.container);
     this.scene.label = 'world-scene';
     const upscale = worldUpscaleOf(app);
-    this.upscale =
-      upscale === null ? null : new WorldUpscale(app, this.scene, upscale.filter, upscale.resolution);
+    this.offscreen = new OffscreenWorld(
+      app,
+      this.scene,
+      this.worldLayer,
+      this.spriteLayer,
+      upscale?.filter ?? 'sharp',
+      upscale?.resolution ?? Number.POSITIVE_INFINITY,
+    );
     // Always routed, never only assigned: the magnification mode and shadow style are page globals a
     // previous renderer may have left set, so the baseline has to claim them back.
     this.setGraphicsEnhancements(opts?.enhancements ?? BASELINE_ENHANCEMENTS);
@@ -227,6 +261,7 @@ export class WorldRenderer {
   worldPicture(resolution: number): ICanvas {
     const covering = this.chrome.quads().filter((quad) => quad.visible);
     for (const child of covering) child.visible = false;
+    this.sceneLight.shadeForPicture(true);
     try {
       return this.app.renderer.extract.canvas({
         target: this.scene,
@@ -237,6 +272,7 @@ export class WorldRenderer {
       });
     } finally {
       for (const child of covering) child.visible = true;
+      this.sceneLight.shadeForPicture(false);
     }
   }
 
@@ -268,6 +304,7 @@ export class WorldRenderer {
   }
 
   setPaused(paused: boolean): void {
+    this.paused = paused;
     this.chrome.setPaused(paused);
   }
 
@@ -278,6 +315,8 @@ export class WorldRenderer {
 
   /** Call once per map, and again after a terrain edit. */
   setTerrain(terrain: SceneTerrain, textures?: TerrainTextureSet): void {
+    // A terrain edit keeps the memory; only another map's lattice starts it over.
+    if (this.seenRoads.nodeWidth !== 2 * terrain.width) this.seenRoads = new SeenRoads(2 * terrain.width);
     this.elevation = makeElevationField(terrain.elevation, terrain.width, terrain.height);
     this.terrain.set(terrain, textures, this.elevation);
     this.weatherGround.setTerrain({
@@ -318,10 +357,16 @@ export class WorldRenderer {
     return this.weather;
   }
 
-  /** Hand the terrain the roads laid since the last frame: one compare per frame, a diff per changed shard. */
+  /** Hand the terrain the roads the viewer saw change since the last frame: one compare per frame, a
+   *  diff per changed shard, and a recheck of the unseen changes when the sight moves. */
   private syncRoads(snapshot: WorldSnapshot): void {
-    const changes = this.roadShards.update(snapshot);
+    const changes = this.seenRoads.update(this.roadShards.update(snapshot), this.fog);
     if (changes !== null) this.terrain.updateRoads(changes);
+  }
+
+  /** The road network as the viewer last saw it, which the minimap draws. */
+  get seenRoadNetwork(): SeenRoadNetwork {
+    return this.seenRoads;
   }
 
   /** The script's local ground tints: RGB multipliers per half-cell node id, 3 per node. */
@@ -411,14 +456,34 @@ export class WorldRenderer {
     this.mapObjects.remove(obj);
   }
 
-  /** The other half of the `removeMapObject` handover: keep drawing `ref` as a remembered static once it
-   *  leaves the retained layer. */
-  adoptFogGhost(ref: number): void {
-    this.fog.adoptGhost(ref);
-  }
-
   setStaticallyDrawnRefs(refs: ReadonlySet<number>): void {
     this.fog.setStaticallyDrawnRefs(refs);
+  }
+
+  /** The viewer's sight under the last {@link updateFog}. */
+  get fogSight(): Sight {
+    return this.fog;
+  }
+
+  savedFogMemory(): ViewerFogMemory {
+    return { statics: this.fog.savedMemory(), roads: [...this.seenRoads.nodes] };
+  }
+
+  /** Start from a saved fog memory; call after {@link setTerrain} and before the game's first frame. */
+  restoreFogMemory(memory: ViewerFogMemory): void {
+    if (memory.statics !== null) this.fog.restoreMemory(memory.statics);
+    this.seenRoads.restore(memory.roads);
+  }
+
+  /** Show a multiplayer map's start buildings on known terrain; call before the game's first frame. */
+  knowStartFogBuildings(): void {
+    this.fog.knowStartBuildings();
+  }
+
+  /** The remembered buildings and vehicles drawn on explored ground, for the minimap to show what the
+   *  world shows. */
+  get fogMemory(): RememberedMarkers {
+    return this.fog.markers;
   }
 
   /** Entities the sprite pool does not draw: those waiting for a presentation over them to end (a felled
@@ -457,9 +522,7 @@ export class WorldRenderer {
     // Filtered sprites can move continuously; pixel snapping would reintroduce one-pixel pan/feet
     // jumps. Keep the old alignment only for the baseline nearest-sampled presentation.
     const snapResolution =
-      this.viewSmoothing && !this.enhancements.enhancedSampling
-        ? (this.upscale?.drawResolution() ?? this.app.renderer.resolution)
-        : undefined;
+      this.viewSmoothing && !this.enhancements.enhancedSampling ? this.offscreen.drawResolution() : undefined;
     const camera =
       snapResolution === undefined ? frame.camera : snapCameraToDevicePixels(frame.camera, snapResolution);
     this.chrome.applyWorldSampling(
@@ -478,9 +541,10 @@ export class WorldRenderer {
     );
     this.syncRoads(snapshot);
     this.terrain.cull(vp);
-    this.terrain.animate(tick + alpha);
     // Game seconds, so a pause freezes the weather with the world.
     const gameSeconds = (tick + alpha) / TICKS_PER_SECOND;
+    const waterSeconds = this.waterClock.advance(gameSeconds, frame.selectionTime, this.paused);
+    this.terrain.animate(waterSeconds);
     const screenW = this.app.screen.width;
     const screenH = this.app.screen.height;
     const weatherView = { camera, screenW, screenH, viewport: cameraViewport(camera, screenW, screenH) };
@@ -496,7 +560,6 @@ export class WorldRenderer {
     // The fog first: the sky reads the band it just drew.
     const fogFrame = this.fog.update(snapshot, vp, this.elevation);
     this.weatherSky.update(this.weather, weatherView, gameSeconds);
-    this.sceneLight.update({ screenW, screenH, gameSeconds });
     this.mapObjects.update(vp, tick, this.fog.cellStateAt, fogFrame.fogEpoch, tick + alpha, this.wind);
     const portrait = this.portrait.subjects();
     const erased = this.flagErasures.update(doorBadges);
@@ -510,6 +573,7 @@ export class WorldRenderer {
       ...(targetFlashes !== undefined && targetFlashes.size > 0 ? { flashes: targetFlashes } : {}),
       viewport: vp,
       tick,
+      seaClock: waterSeconds * TICKS_PER_SECOND,
       camera,
       screenW: this.app.screen.width,
       screenH: this.app.screen.height,
@@ -523,11 +587,25 @@ export class WorldRenderer {
       shadowStyle: this.enhancements.softShadows ? DEFAULT_SHADOW_STYLE : undefined,
       ...fogFrame,
       ...(this.withheldRefs !== undefined ? { withheldRefs: this.withheldRefs } : {}),
-      ...(this.highlight.size > 0 ? { highlight: this.highlight } : {}),
+      ...(this.targetMarks !== undefined ? { marks: this.targetMarks } : {}),
       ...(erased.size > 0 ? { erased } : {}),
       ...(portrait.ref !== null ? { portraitRef: portrait.ref } : {}),
       ...(portrait.house !== null ? { portraitHouse: portrait.house } : {}),
       ...(portrait.others.length > 0 ? { insetRefs: portrait.others } : {}),
+    });
+    this.lights.clear();
+    // The level the last frame drew: the grade fades within the light's own update below.
+    const nightLevel = this.enhancements.nightLights ? this.sceneLight.nightLevel() : 0;
+    this.pool.lightNight(nightLevel, this.lights);
+    if (nightLevel > 0) this.mapObjects.collectLights(vp, this.lights, this.fog.exploredGate);
+    this.sceneLight.update({
+      screenW,
+      screenH,
+      gameSeconds,
+      camera,
+      lights: this.lights.sites,
+      renderer: this.app.renderer,
+      nightLights: this.enhancements.nightLights,
     });
     this.marks.draw({
       snapshot,
@@ -565,12 +643,12 @@ export class WorldRenderer {
       camera,
       this.app.screen.width,
       this.app.screen.height,
-      tick,
+      // The shore waves keep the water's pace: one frame per sim tick at the base rate, whatever the speed.
+      Math.floor(waterSeconds * TICKS_PER_SECOND),
       this.enhancements.environmentMotion,
-      this.upscale?.drawResolution() ?? this.app.renderer.resolution,
+      this.offscreen.drawResolution(),
     );
-    if (this.upscale === null) this.app.render();
-    else this.upscale.render();
+    this.offscreen.render(this.sceneLight.composite());
     this.groundWaves.suspend(true);
     this.portrait.draw(camera, {
       toInset: (cam, iw, ih) => {
@@ -684,12 +762,12 @@ export class WorldRenderer {
     this.marks.setGeometryDebug(items, this.elevation);
   }
 
-  /** The tint rides the building sprite from the next update on. */
-  setBuildingHighlight(items: readonly BuildingHighlightItem[] | null): void {
+  /** An armed pick's verdicts, drawn from the next update on; null while no pick is armed. */
+  setTargetMarks(items: readonly TargetMark[] | null): void {
     // Callers hand over a memoized list, so an unchanged one rebuilds nothing.
-    if (items === this.highlightItems) return;
-    this.highlightItems = items;
-    this.highlight = items === null ? EMPTY_HIGHLIGHT : new Map(items.map((i) => [i.id, i.ok]));
+    if (items === this.markItems) return;
+    this.markItems = items;
+    this.targetMarks = items === null ? undefined : new Map(items.map((i) => [i.id, i.tone]));
   }
 
   /** Every sub-layer is destroyed explicitly so its retained pool or Map is cleared, not just its
@@ -709,7 +787,7 @@ export class WorldRenderer {
     this.placementGhost.destroy();
     this.hud.destroy();
     this.chrome.destroy();
-    this.upscale?.destroy();
+    this.offscreen.destroy();
     this.scene.destroy({ children: true });
     this.prescaler.destroy();
     this.textureCache.clear();

@@ -18,6 +18,12 @@ export interface SoundingAtomic {
   readonly effect?: { readonly kind: AtomicEffect['kind'] };
 }
 
+/** A lift into or out of a hold, whose length the cart's kind sets: its clip plays once over the
+ *  whole atomic, shortened or stretched by the cart, and its cues ride that scaled clock. */
+function scalesClip(kind: AtomicEffect['kind'] | undefined): boolean {
+  return kind === 'haulLoad' || kind === 'haulUnload' || kind === 'tradeLoad' || kind === 'tradeUnload';
+}
+
 /**
  * The clip whose sounds `settler` plays for this atomic, or `undefined` when nothing placeable resolves.
  *
@@ -54,7 +60,8 @@ function soundingClipOf(
     const name = boundAnimalAtomicAnimation(ctx.content, s, atomic.atomicId);
     anim = name === undefined ? undefined : atomicAnimationByName(ctx.content, name);
   }
-  return anim === undefined || atomic.duration < anim.length ? undefined : anim;
+  if (anim === undefined) return undefined;
+  return atomic.duration < anim.length && !scalesClip(atomic.effect?.kind) ? undefined : anim;
 }
 
 /** Whether this atomic's clip sounds itself, so no engine-chosen sound is wanted for it. */
@@ -83,8 +90,11 @@ export function emitAtomicSoundCues(
 ): void {
   const anim = soundingClipOf(world, ctx, settler, atomic, clip);
   if (anim === undefined) return;
+  const scaled = scalesClip(atomic.effect?.kind) && atomic.duration > 0;
+  const now = scaled ? Math.floor((elapsed * anim.length) / atomic.duration) : elapsed;
+  const before = scaled ? Math.floor(((elapsed - 1) * anim.length) / atomic.duration) : elapsed - 1;
   for (const cue of clipEventFactsOf(anim).soundCues) {
-    if (cue.tick === elapsed)
+    if (cue.tick > before && cue.tick <= now)
       ctx.events.emit({ kind: 'atomicSound', entity: settler, soundType: cue.soundType });
   }
 }

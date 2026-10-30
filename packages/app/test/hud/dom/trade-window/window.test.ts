@@ -27,7 +27,9 @@ import {
   type TradeGood,
 } from '../../../../src/hud/dom/trade-window/route.js';
 import {
+  BREAD,
   FOOD,
+  FOOD_AT_A,
   FOOD_TAB,
   HOUSE_A,
   HOUSE_B,
@@ -35,6 +37,7 @@ import {
   ownRoute,
   SWORD,
   SWORDS_AT_A,
+  stockRow,
   transfer,
 } from '../../../support/trade-route.js';
 
@@ -42,6 +45,8 @@ const CEILING = 10;
 const CATEGORIES = 8;
 const RESERVE = 2;
 const TRADER = 5;
+/** Food the home of the bread route holds already. */
+const HOME_FOOD = 3;
 
 /** The house's rows its browser lists under `category`. */
 function tabRows(trade: TradePanelModel, slot: number, category: number) {
@@ -147,6 +152,21 @@ describe('trade window model', () => {
     expect(tabRows(trade, TRADE_SLOT_A, FOOD_TAB)[0]?.action?.enabled).toBe(false);
     expect(tabRows(trade, TRADE_SLOT_B, MILITARY_TAB)[0]?.action?.glyph).toBe(GLYPH.arrowLeft);
     expect(tabRows(trade, TRADE_SLOT_B, FOOD_TAB)).toEqual([]);
+  });
+
+  it('carries a dish into a house that stores the food it travels as, never back into its bakery', () => {
+    const bread = { ...stockRow(BREAD, FOOD_TAB, FOOD_AT_A), carriedAs: FOOD };
+    const route = ownRoute();
+    const trade = { ...route, stock: { a: [bread], b: [stockRow(FOOD, FOOD_TAB, HOME_FOOD)] } };
+    const [row] = tabRows(trade, TRADE_SLOT_A, FOOD_TAB);
+    expect(row?.action?.enabled).toBe(true);
+    // The home's count is of the food the bread travels as.
+    expect(row?.tooltip).toContain(`B ${HOME_FOOD}`);
+    const line = transferLine(trade, transfer(BREAD, 'toB', { carriedAs: FOOD }));
+    expect(DIRECTIONS.filter((direction) => line.directions[direction].enabled === false)).toEqual([
+      'both',
+      'toA',
+    ]);
   });
 
   it('lights the arrow of a good in a transfer on both sides, pointing the way it goes', () => {

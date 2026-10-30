@@ -119,6 +119,7 @@ export function renderNetworkGame(
     if (view !== null) {
       const state = view.viewState();
       if (state !== null) kept?.set(state);
+      kept?.setMemory(view.presentation());
       view.destroy();
       view = null;
     }
@@ -171,6 +172,7 @@ export function renderNetworkGame(
     () => {
       const state = view?.viewState() ?? null;
       if (state !== null) kept?.set(state);
+      if (view !== null) kept?.setMemory(view.presentation());
     },
     { signal: scope.signal },
   );
@@ -242,10 +244,14 @@ export function renderNetworkGame(
         throw new Error('The session and verified map differ');
       clearWorld();
       canvasUsed = true;
-      // A snapshot's view is its donor's: this client's own groups, kept as the last world went, win.
-      const ownView = save !== null && start === null ? (kept?.get() ?? null) : null;
-      const stagedSave =
+      // A snapshot's view is its donor's: this client's own groups and fog memory, kept as the last world
+      // went, win.
+      const resync = save !== null && start === null;
+      const ownView = resync ? (kept?.get() ?? null) : null;
+      const withView =
         ownView === null || save === null ? save : { ...save, header: { ...save.header, view: ownView } };
+      const stagedSave =
+        withView === null || !resync ? withView : { ...withView, presentation: kept?.memory() ?? null };
       const world = await assembleMapWorld(activeCanvas, params, {
         hostWorld: (inputs) => hostRelayedWorld(host, inputs, params, start),
         multiplayer: true,
@@ -323,7 +329,7 @@ export function renderNetworkGame(
       startWait.release();
       if (resyncing !== null)
         showPlaque(formatMessage(copy.resyncing, { nick: resyncing.reference, tick: resyncing.tick }));
-      await build(session, { header }, null, host, mine);
+      await build(session, { header, presentation: null }, null, host, mine);
     },
   };
   connection.bindWorld(port, ({ worldId, session }) => {

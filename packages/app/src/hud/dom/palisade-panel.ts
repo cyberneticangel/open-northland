@@ -1,14 +1,29 @@
 import { formatMessage, messages } from '../../i18n/index.js';
 import type { PalisadePanelModel, UnitPanelModel } from '../details-panel/model/index.js';
 import { GLYPH } from './icons.js';
-import { button, element, setAttribute, setHidden, setTip, write } from './parts/dom.js';
+import {
+  button,
+  element,
+  isDisabled,
+  setAttribute,
+  setDisabled,
+  setHidden,
+  setTip,
+  write,
+} from './parts/dom.js';
 import { createMeterRow } from './parts/meter-row.js';
 import { createSection } from './parts/section.js';
-import { createSegmented } from './parts/segmented.js';
+import { createSwitch } from './parts/switch.js';
 import type { TipChip } from './parts/tip-layer.js';
 import { createSelectionPanel } from './selection-panel.js';
 
 type GateMode = 'open' | 'closed' | 'automatic';
+
+/** The order the toggle names: the opposite of a manual mode, or of the passage under automatic. */
+function gateToggleTarget(mode: GateMode, passageOpen: boolean): 'open' | 'closed' {
+  const open = mode === 'automatic' ? passageOpen : mode === 'open';
+  return open ? 'closed' : 'open';
+}
 
 /** A wall segment, a gate or a road site: its state, health and the one order that removes it. Only a
  *  gate has a passage and a mode to set. */
@@ -38,10 +53,24 @@ export function createPalisadePanel(deps: {
   const state = element('strong', 'on-palisade-panel__state');
   state.setAttribute('role', 'status');
   const health = createMeterRow();
-  const section = createSection();
-  const modes = createSegmented<GateMode>(['open', 'closed', 'automatic'], '', (mode) => {
-    if (shown !== null && !shown.foreign && !shown.underConstruction) deps.mode(shown.entityId, mode);
+  const order = (pick: (mode: GateMode, passageOpen: boolean) => GateMode): void => {
+    if (shown === null || shown.foreign || shown.underConstruction || shown.gateMode === null) return;
+    deps.mode(shown.entityId, pick(shown.gateMode, shown.gateOpen === true));
+  };
+  const controls = element('div', 'on-palisade-panel__controls');
+  const toggle = button('on-button on-button--rounded on-palisade-panel__toggle');
+  toggle.addEventListener('click', () => {
+    if (!isDisabled(toggle)) order(gateToggleTarget);
   });
+  // Leaving automatic keeps the passage as it stands, so the switch alone never moves the gate.
+  const automatic = createSwitch('', '', (on) =>
+    order((_, passageOpen) => (on ? 'automatic' : passageOpen ? 'open' : 'closed')),
+  );
+  const automaticLabel = element('span', 'on-palisade-panel__auto-label');
+  const automaticRow = element('label', 'on-palisade-panel__auto');
+  automaticRow.append(automaticLabel, automatic.element);
+  const section = createSection(automaticRow);
+  controls.append(toggle);
   const hint = element('p', 'on-palisade-panel__hint');
   const remove = button('on-medallion on-palisade-panel__remove', GLYPH.demolish);
   remove.addEventListener('click', () => {
@@ -50,7 +79,7 @@ export function createPalisadePanel(deps: {
     else deps.demolish(shown.entityId);
   });
   summary.append(art, state, remove);
-  frame.body.append(summary, health.element, section.element, modes.element, hint);
+  frame.body.append(summary, health.element, section.element, controls, hint);
   let glyph = '';
   const showGlyph = (next: string): void => {
     if (next === glyph) return;
@@ -95,19 +124,19 @@ export function createPalisadePanel(deps: {
       setHidden(health.element, model.health === null);
       if (model.health !== null) health.update({ ...model.health, tooltip: model.health.hover });
       setHidden(section.element, !gate);
-      setHidden(modes.element, !gate);
-      if (gate) {
+      setHidden(controls, !gate);
+      if (gate && model.gateMode !== null) {
         section.update(copy.mode);
         const enabled = !model.foreign && !model.underConstruction;
-        modes.update(
-          {
-            open: { label: copy.open, enabled },
-            closed: { label: copy.closed, enabled },
-            automatic: { label: copy.automatic, enabled },
-          },
-          model.gateMode,
-          copy.mode,
-        );
+        const auto = model.gateMode === 'automatic';
+        const target = gateToggleTarget(model.gateMode, model.gateOpen === true);
+        write(toggle, target === 'open' ? copy.open : copy.close);
+        setDisabled(toggle, !enabled || auto);
+        setTip(toggle, auto ? copy.manualLocked : '');
+        write(automaticLabel, copy.automatic);
+        setAttribute(automatic.element, 'aria-label', copy.automatic);
+        setTip(automatic.element, copy.automaticTip);
+        automatic.update(auto, enabled);
       }
       const status =
         gate && model.underConstruction

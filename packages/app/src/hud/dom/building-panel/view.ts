@@ -5,6 +5,7 @@ import type { ClientRect } from '../portrait-hole.js';
 import { createSelectionPanel } from '../selection-panel.js';
 import { NO_PEERS, peerAt, type TradePeers } from '../settler-panel/peers.js';
 import type { BuildingPanelDeps } from './actions.js';
+import { createAlarmSection } from './alarm.js';
 import { createConstructionSection } from './construction.js';
 import { buildingHead } from './head.js';
 import { createHomeSection } from './home.js';
@@ -27,6 +28,8 @@ export interface BuildingPanel {
   browse(step: 1 | -1): boolean;
   /** The upgrade key: press the shown building's Upgrade tile; false when none is shown or it refuses. */
   upgrade(): boolean;
+  /** The alarm key: toggle the shown building's alarm; false when none is shown or it has none. */
+  alarm(): boolean;
   /** The HUD scale changed: the portrait's box is measured again. */
   invalidate(): void;
   /** Once a frame, after the paint: the stock list fits again after the plane changed size, and a shown
@@ -72,6 +75,7 @@ export function createBuildingPanel(deps: BuildingPanelDeps): BuildingPanel {
   );
 
   const portrait = createPortraitSection(deps, current);
+  const alarm = createAlarmSection(deps, current);
   const construction = createConstructionSection(deps);
   const crew = createStaffSection(deps, (model) => model.crew);
   const staff = createStaffSection(deps, (model) => model.staff);
@@ -81,6 +85,7 @@ export function createBuildingPanel(deps: BuildingPanelDeps): BuildingPanel {
   const offers = createOffersSection(deps);
   frame.body.append(
     portrait.element,
+    alarm.element,
     construction.element,
     crew.element,
     staff.element,
@@ -106,6 +111,7 @@ export function createBuildingPanel(deps: BuildingPanelDeps): BuildingPanel {
   for (const node of [
     frame.body,
     portrait.element,
+    alarm.element,
     construction.element,
     crew.element,
     staff.element,
@@ -118,6 +124,7 @@ export function createBuildingPanel(deps: BuildingPanelDeps): BuildingPanel {
 
   const sections = (model: BuildingPanelModel, fresh: boolean): void => {
     portrait.update(model);
+    alarm.update(model);
     construction.update(model);
     crew.update(model);
     staff.update(model);
@@ -189,6 +196,7 @@ export function createBuildingPanel(deps: BuildingPanelDeps): BuildingPanel {
     claims: (clientX, clientY) => frame.claims(clientX, clientY),
     browse,
     upgrade: () => portrait.press('upgrade'),
+    alarm: () => alarm.press(),
     invalidate: () => frame.invalidate(),
     dispose(): void {
       resizes.disconnect();

@@ -45,7 +45,7 @@ function fixture() {
             [3, frame(40)],
           ]),
         },
-        times: { width: 60, height: 20, values: new Uint8Array(60 * 20) },
+        times: { width: 60, height: 20, values: new Uint8Array(60 * 20).fill(1) },
       },
     },
   };

@@ -7,7 +7,7 @@ const WARM_STOCK_LINES = OVERVIEW_LINES + 1;
 
 /**
  * A made-up building that lights every part of the panel at once: the wear bar low, live and refused
- * orders, the lit alarm bell, a site's bill with a line nobody holds, wells of every look with free
+ * orders, the lit alarm, a site's bill with a line nobody holds, wells of every look with free
  * seats, production lines with short and met ingredients, a tabbed store with both alerts,
  * household wares and an agreement. The panel paints it once at map start (`BuildingPanel.warm`), so the
  * browser's first raster of these styles happens behind the loading screen, not on the first click.

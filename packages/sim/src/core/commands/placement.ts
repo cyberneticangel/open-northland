@@ -54,6 +54,17 @@ export interface PlacePalisadeCommand {
   readonly force?: boolean;
   /** Stand where a building only keeps room for its upgrade; that upgrade razes the segment. */
   readonly overUpgradeGround?: boolean;
+  /** Map AI only: the blocker and wall stamps the site may stand over, node by node, where the map
+   *  stood the seat's wall. */
+  readonly waivedGround?: readonly PalisadeGroundWaiver[];
+}
+
+/** On one body node of a wall site, how many blocker and other wall stamps the site may stand over. */
+export interface PalisadeGroundWaiver {
+  readonly x: number;
+  readonly y: number;
+  readonly obstacle: number;
+  readonly walls: number;
 }
 
 /** Order a road on one half-cell node: a site a builder lays with the road's stone. Seat envelopes own
@@ -151,6 +162,9 @@ interface AuthoredPlaceBuildingFields {
   /** A decoded map's `sethouse` level. It stands only on a type whose `[GfxHouse]` record draws it above
    *  the type's own rung (a wonder's stage); any other type keeps its rung. */
   readonly level?: number;
+  /** A decoded map's `sethouse` record name. It stands only where the record carries a footprint of its
+   *  own for the type and tribe; otherwise the type's default footprint applies. */
+  readonly record?: string;
 }
 
 /** A `placeBuilding` a seat issues: the authored-setup options are unrepresentable. */

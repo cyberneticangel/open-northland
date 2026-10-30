@@ -2,7 +2,9 @@ import {
   type Camera,
   cameraViewport,
   type MinimapFeature,
+  type RememberedMarkers,
   type SceneTerrain,
+  type SeenRoadNetwork,
   terrainWorldBounds,
 } from '@open-northland/render';
 import type { DiplomacyState, FogView, HalfCellNode, WorldSnapshot } from '@open-northland/sim';
@@ -63,6 +65,10 @@ export interface MinimapOptions {
   readonly onFiltersChange?: ((filters: MinimapFilters) => void) | undefined;
   readonly isFighterJob: (jobType: number) => boolean;
   readonly isHeroJob: (jobType: number) => boolean;
+  /** The world view's remembered buildings and vehicles on explored ground. */
+  readonly fogMemory?: RememberedMarkers | undefined;
+  /** The road network as the world view draws it. */
+  readonly roads: SeenRoadNetwork;
   /** The seat the view shows, null on a whole-map view. */
   readonly viewer: () => number | null;
   /** The viewer seat's stance toward `owner`. */
@@ -313,6 +319,7 @@ export async function mountMinimap(opts: MinimapOptions): Promise<MinimapHandle>
         plotted.fill(0);
         plot.start({
           fog,
+          memory: opts.fogMemory,
           bounds,
           scale: rasterScale,
           filters,
@@ -325,7 +332,7 @@ export async function mountMinimap(opts: MinimapOptions): Promise<MinimapHandle>
         dirtyDots = false;
       }
       if (plot.pending() && plot.step(snapshot, stamp, performance.now() + DOT_PLOT_MS_PER_FRAME)) {
-        roads.draw(snapshot, fog, filters.layers.roads, stampScale());
+        roads.draw(opts.roads, fog, filters.layers.roads, stampScale());
         pixels.set(plotted);
         texture.source.update();
       }

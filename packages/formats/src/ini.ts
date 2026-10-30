@@ -41,8 +41,11 @@ export {
   extractConstructionLayers,
   extractHouseDrawnBobs,
   extractHouseHitpoints,
+  extractRecordFootprints,
   extractUpgradeTargets,
   gfxHouseRecords,
+  type RecordFootprint,
+  widenRecordFootprints,
 } from './ini/buildings-gfx/index.js';
 export type { RuleSection } from './ini/grammar.js';
 export {

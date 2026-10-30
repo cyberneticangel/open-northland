@@ -2,7 +2,7 @@ import type { Command } from '@open-northland/sim';
 import { describe, expect, it } from 'vitest';
 import { assistantGrantsSeam, grantAssistantDefaults } from '../../../src/view/assistant/grants.js';
 
-/** The seam translating the assistant window switches to `setAssistantGrant`, `setAssistantWeaponVeto` and
+/** The seam translating the assistant window switches to `setAssistantGrant` and
  *  `setAssistantGrantAudience` commands and back - good ids resolved from the live content by slug, so the
  *  fixture uses arbitrary ids. */
 
@@ -15,31 +15,25 @@ const CONTENT = {
     { typeId: 48, id: 'potion_heal_small' },
     { typeId: 49, id: 'potion_heal_big' },
     { typeId: 53, id: 'amulet_defense' },
-    { typeId: 41, id: 'sword_shord' },
-    { typeId: 39, id: 'spear_wooden' },
-    { typeId: 37, id: 'bow_short' },
   ],
 };
 
-/** A sim face granting `granted`, vetoing `vetoed`, posting graduates when `posts`, moving flags when
+/** A sim face granting `granted`, posting graduates when `posts`, moving flags when
  *  `movesFlags`, keeping `soldiersOnly` for soldiers and `civiliansOnly` for civilians. */
 const simGranting = (
   granted: readonly number[],
-  vetoed: readonly number[] = [],
   posts = false,
   movesFlags = false,
   soldiersOnly: readonly number[] = [],
   civiliansOnly: readonly number[] = [],
 ): {
   assistantGrants: () => readonly number[];
-  assistantWeaponVetoes: () => readonly number[];
   assistantSoldierOnlyGrants: () => readonly number[];
   assistantCivilianOnlyGrants: () => readonly number[];
   assistantPostsGraduates: () => boolean;
   assistantMovesFlags: () => boolean;
 } => ({
   assistantGrants: () => granted,
-  assistantWeaponVetoes: () => vetoed,
   assistantSoldierOnlyGrants: () => soldiersOnly,
   assistantCivilianOnlyGrants: () => civiliansOnly,
   assistantPostsGraduates: () => posts,
@@ -53,8 +47,6 @@ const MEAD = 43;
 const HEAL_SMALL = 48;
 const HEAL_BIG = 49;
 const DEFENSE_AMULET = 53;
-const SWORD_SHORT = 41;
-const SPEAR_WOODEN = 39;
 
 describe('assistantGrantsSeam', () => {
   it('reads every switch OFF and writes nothing while no seat is watched', () => {
@@ -91,9 +83,6 @@ describe('assistantGrantsSeam', () => {
       giveDefenseAmulet: true,
       giveCriticalHitAmulet: false,
       giveSpeedAmulet: false,
-      allowShortSwords: true,
-      allowWoodenSpears: true,
-      allowShortBows: true,
       postGraduates: false,
       moveFlags: false,
     });
@@ -125,7 +114,7 @@ describe('assistantGrantsSeam', () => {
   it("reads a switch as one group's when every good it grants is limited to it, and writes one audience per good", () => {
     const sent: Command[] = [];
     const seam = assistantGrantsSeam(
-      simGranting([], [], false, false, [DEFENSE_AMULET, HEAL_BIG], [MEAD]),
+      simGranting([], false, false, [DEFENSE_AMULET, HEAL_BIG], [MEAD]),
       CONTENT,
       () => 2,
       (c) => sent.push(c),
@@ -148,7 +137,7 @@ describe('assistantGrantsSeam', () => {
   it('reads and writes the graduate switch through its own command', () => {
     const sent: Command[] = [];
     const seam = assistantGrantsSeam(
-      simGranting([], [], true),
+      simGranting([], true),
       CONTENT,
       () => 1,
       (c) => sent.push(c),
@@ -156,24 +145,6 @@ describe('assistantGrantsSeam', () => {
     expect(seam.read().postGraduates).toBe(true);
     expect(seam.set('postGraduates', false)).toBe(true);
     expect(sent).toEqual([{ kind: 'setAssistantPostGraduates', player: 1, enabled: false }]);
-  });
-
-  it('reads a weapon switch as OFF while its good is vetoed, and writes the veto on a flip', () => {
-    const sent: Command[] = [];
-    const seam = assistantGrantsSeam(
-      simGranting([], [SPEAR_WOODEN]),
-      CONTENT,
-      () => 3,
-      (c) => sent.push(c),
-    );
-    expect(seam.read().allowWoodenSpears).toBe(false);
-    expect(seam.read().allowShortSwords).toBe(true);
-    expect(seam.set('allowShortSwords', false)).toBe(true);
-    expect(seam.set('allowWoodenSpears', true)).toBe(true);
-    expect(sent).toEqual([
-      { kind: 'setAssistantWeaponVeto', player: 3, goodType: SWORD_SHORT, vetoed: true },
-      { kind: 'setAssistantWeaponVeto', player: 3, goodType: SPEAR_WOODEN, vetoed: false },
-    ]);
   });
 
   it('a switch whose slug the content lacks reads OFF and rejects writes', () => {
@@ -206,10 +177,12 @@ describe('assistantGrantsSeam', () => {
 });
 
 describe('grantAssistantDefaults', () => {
-  it('switches the four default grants ON for the seat at world start, no potion, amulet or veto', () => {
+  it('switches the four default grants and the flag follow ON for the seat at world start, no potion, amulet or veto', () => {
     const sent: Command[] = [];
     grantAssistantDefaults({ enqueueSetup: (c) => sent.push(c) }, CONTENT, [1]);
-    expect(sent.every((c) => c.kind === 'setAssistantGrant')).toBe(true);
+    expect(sent.filter((c) => c.kind !== 'setAssistantGrant')).toEqual([
+      { kind: 'setAssistantMoveFlags', player: 1, enabled: true },
+    ]);
     const grants = sent.filter((c) => c.kind === 'setAssistantGrant');
     expect(grants.map((c) => c.goodType).sort((a, b) => a - b)).toEqual([
       SHOES,

@@ -1,14 +1,20 @@
 import type { ContentSet } from '@open-northland/data';
 import type { ChestKind, Paper, PaperKind } from '../../components/index.js';
 import { contentIndex } from '../../core/content-index.js';
+import type { HexDirection } from '../../nav/halfcell.js';
 
 /**
  * What a chest type hands out when opened. `count` for goods is per chest kind, a magical chest holding
- * more of the same. Content is named by catalog slug, resolved against the running content set so the
+ * more of the same; `spillFrom` is the chest's neighbour the heap starts on. Content is named by catalog slug, resolved against the running content set so the
  * sandbox catalog and real content both work; a slug the content lacks hands out nothing.
  */
 export type ChestReward =
-  | { readonly kind: 'goods'; readonly good: string; readonly count: Readonly<Record<ChestKind, number>> }
+  | {
+      readonly kind: 'goods';
+      readonly good: string;
+      readonly count: Readonly<Record<ChestKind, number>>;
+      readonly spillFrom: HexDirection;
+    }
   | { readonly kind: 'paper'; readonly paper: PaperKind; readonly house?: string }
   /** A stocked-house paper, its worker, and the production permanently enabled with it. */
   | {
@@ -27,8 +33,12 @@ const POTIONS = { wooden: 12, magical: 18 } as const;
 const WEAR = { wooden: 6, magical: 9 } as const;
 const SPAWNED_SETTLERS = 3;
 
+// Original behavior: single items start their heap south-east of the chest, bulk rows south-west.
 function goods(good: string, count: Readonly<Record<ChestKind, number>>): ChestReward {
-  return { kind: 'goods', good, count };
+  return { kind: 'goods', good, count, spillFrom: 'southEast' };
+}
+function bulk(good: string, count: Readonly<Record<ChestKind, number>>): ChestReward {
+  return { kind: 'goods', good, count, spillFrom: 'southWest' };
 }
 function house(house: string): ChestReward {
   return { kind: 'paper', paper: 'placeHouse', house };
@@ -59,13 +69,13 @@ export const CHEST_CONTENTS: ReadonlyMap<number, ChestReward> = new Map<number, 
   [10, goods('amulet_defense', SINGLE)],
   [11, goods('amulet_crithit', SINGLE)],
   [12, goods('amulet_speed', SINGLE)],
-  [20, goods('food_simple', { wooden: 30, magical: 48 })],
-  [21, goods('potion_food_big', POTIONS)],
-  [22, goods('potion_stamina_big', POTIONS)],
-  [23, goods('potion_heal_big', POTIONS)],
-  [24, goods('armor_chain', WEAR)],
-  [25, goods('armor_plate', WEAR)],
-  [26, goods('shoes', WEAR)],
+  [20, bulk('food_simple', { wooden: 30, magical: 48 })],
+  [21, bulk('potion_food_big', POTIONS)],
+  [22, bulk('potion_stamina_big', POTIONS)],
+  [23, bulk('potion_heal_big', POTIONS)],
+  [24, bulk('armor_chain', WEAR)],
+  [25, bulk('armor_plate', WEAR)],
+  [26, bulk('shoes', WEAR)],
   // The `chesttypes` string table names row 50 an indulgence; the original hands out a place-any paper.
   [50, { kind: 'paper', paper: 'placeAny' }],
   [51, { kind: 'paper', paper: 'placeAny' }],
@@ -105,7 +115,12 @@ export const CHEST_CONTENTS: ReadonlyMap<number, ChestReward> = new Map<number, 
 
 /** A chest reward with its slugs resolved to the running content's type ids. */
 export type ResolvedChestReward =
-  | { readonly kind: 'goods'; readonly goodType: number; readonly amount: number }
+  | {
+      readonly kind: 'goods';
+      readonly goodType: number;
+      readonly amount: number;
+      readonly spillFrom: HexDirection;
+    }
   | { readonly kind: 'paper'; readonly paper: Paper }
   | {
       readonly kind: 'workshop';
@@ -132,7 +147,9 @@ export function resolveChestReward(
   switch (reward.kind) {
     case 'goods': {
       const goodType = index.goodTypeBySlug.get(reward.good);
-      return goodType === undefined ? NOTHING : { kind: 'goods', goodType, amount: reward.count[kind] };
+      return goodType === undefined
+        ? NOTHING
+        : { kind: 'goods', goodType, amount: reward.count[kind], spillFrom: reward.spillFrom };
     }
     case 'paper': {
       if (reward.house === undefined) return { kind: 'paper', paper: { kind: reward.paper, param: 0 } };

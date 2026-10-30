@@ -153,6 +153,11 @@ export function graphicsSettingsRows(
   });
   hoverOutline.setAttribute('aria-label', text.hoverOutline);
   hoverOutline.dataset.settingsFocus = 'hoverOutline';
+  const cursorHints = togglePill(settings.cursorHints, (enabled) => {
+    void store.update({ cursorHints: enabled });
+  });
+  cursorHints.setAttribute('aria-label', text.cursorHints);
+  cursorHints.dataset.settingsFocus = 'cursorHints';
   const minimapFrame = dropdownControl<MinimapFrame>({
     label: text.minimapFrame,
     className: 'main-menu__dropdown',
@@ -185,6 +190,7 @@ export function graphicsSettingsRows(
       'environmentMotion',
       'groundedBuildings',
       'buildingDamage',
+      'nightLights',
       'weather',
       'blood',
       'bonesFade',
@@ -210,6 +216,7 @@ export function graphicsSettingsRows(
     settingsHeading(text.interfaceHeading),
     settingRow(text.selectionStyle, selectionStyle.root, { tip: text.selectionStyleTip }),
     settingRow(text.hoverOutline, hoverOutline, { tip: liveTip(text.hoverOutlineTip) }),
+    settingRow(text.cursorHints, cursorHints, { tip: liveTip(text.cursorHintsTip) }),
     settingRow(text.groupNumbers, groupNumbers, { tip: liveTip(text.groupNumbersTip) }),
     settingRow(text.minimapFrame, minimapFrame.root, { tip: text.minimapFrameTip }),
     settingRow(text.fpsCounter, fpsCounter, { tip: liveTip(text.fpsCounterTip) }),

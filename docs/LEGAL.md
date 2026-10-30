@@ -21,6 +21,10 @@ The app bundles third-party typefaces in `packages/app/public/fonts/`: Alegreya 
 Cinzel and Noto Sans SC, under the SIL Open Font License 1.1. Their licence texts sit beside them as
 `LICENSE-*.txt`.
 
+The multiplayer menu shows each player's chosen flag from the `flag-icons` npm package, Copyright (c)
+2013 Panayiotis Lipiridis, under the MIT license; its notice is in
+`packages/app/public/licenses/THIRD-PARTY-NOTICES.txt`.
+
 Text imported from game or mod tables is also generated content, including UI labels. Keep table/id
 bindings in code and load the wording through the pipeline. Project-authored UI text, intentional
 label overrides and independently written fallbacks may stay in the repository; a fallback must not

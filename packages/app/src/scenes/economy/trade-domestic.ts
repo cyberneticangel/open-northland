@@ -33,7 +33,7 @@ export const TRADE_DOMESTIC_B_AT = { x: 17, y: 5 } as const;
 /** A warehouse of the settlement off the route, nearer A than B. */
 export const TRADE_DOMESTIC_C_AT = { x: 9, y: 9 } as const;
 const TRADER_AT = { x: 6, y: 8 } as const;
-/** The handcart the trader commands, a cell beside the trader. */
+/** The handcart the trader pulls, a cell beside the trader. */
 const CART_AT = { x: 7, y: 8 } as const;
 
 /** The two stocks by good id, different enough that stocked and empty chips show side by side. Keyed
@@ -128,7 +128,7 @@ export const tradeDomesticScene: SceneDefinition = {
   initialZoom: 0.8,
   checks: [
     {
-      label: 'the trader rides the handcart between two own warehouses with no good marked',
+      label: 'the trader with the handcart has two own warehouses on its route and no good marked',
       predicate: (sim) => {
         const trader = sceneTrader(sim);
         const view = trader === undefined ? undefined : sim.traderView(trader);

@@ -14,7 +14,7 @@ import {
   parseTribe,
   VACANT_SEAT_MODES,
 } from './room.js';
-import { assertNever, asTimestamp, parseLine, parseNick, parseToken } from './text.js';
+import { assertNever, asTimestamp, parseFlag, parseLine, parseNick, parseToken } from './text.js';
 import { BLOB_TYPES, parseBlobBytes, parseDigest, parseStateHash, parseWireEnvelope } from './wire.js';
 
 export const CLIENT_KINDS = keysOf<ClientMessageKind>({
@@ -64,6 +64,8 @@ export function parseClientMessage(value: unknown): ClientMessage {
         protocol: asCount(raw.protocol, 'hello.protocol'),
         token: parseToken(raw.token, 'hello.token'),
         nick: parseNick(raw.nick, 'hello.nick'),
+        // A flag this version cannot read is left out: hello must parse for any version.
+        ...readableFlag(raw),
       };
     case 'requestInitialSave':
     case 'requestMap':
@@ -184,5 +186,13 @@ export function parseClientMessage(value: unknown): ClientMessage {
       return { kind, t: asTimestamp(raw.t, 'pong.t') };
     default:
       return assertNever(kind);
+  }
+}
+
+function readableFlag(raw: Readonly<Record<string, unknown>>): ReturnType<typeof parseFlag> {
+  try {
+    return parseFlag(raw, 'hello.flag');
+  } catch {
+    return {};
   }
 }

@@ -6,8 +6,6 @@ import {
   AUDIENCE_SWITCH_IDS,
   GIVE_SWITCH_GOODS,
   type GiveSwitchId,
-  WEAPON_SWITCH_GOOD,
-  type WeaponSwitchId,
 } from '../../../game/assistant-grant-ids.js';
 import { bcp47Tag, formatMessage, messages, pluralForm } from '../../../i18n/index.js';
 import {
@@ -24,6 +22,7 @@ import { createSection } from '../parts/section.js';
 import { createSwitch } from '../parts/switch.js';
 import { attachTipLayer, type TipChip } from '../parts/tip-layer.js';
 import { centralWindowPlacer, createHudWindow } from '../window.js';
+import { createGearStrip } from './gear-strip.js';
 import {
   ASSISTANT_WINDOW_WIDE_W,
   type AssistantBookings,
@@ -35,6 +34,7 @@ import {
   counterFace,
   counterFromFace,
   counterRange,
+  type GearLine,
   groupReceives,
   NO_BOOKINGS,
   NOTE_TONE,
@@ -43,6 +43,7 @@ import {
   type StatusNote,
   type StatusNoteKey,
   sameCounter,
+  sameGear,
   trainingNotes,
   weaponStocked,
 } from './model.js';
@@ -51,9 +52,9 @@ type CounterKind = components.AssistantCounterKind;
 type CounterState = components.AssistantCounterState;
 type ClassIntent = Exclude<components.AssistantRecruitIntent, 'trainSoldiers'>;
 type GrantAudience = components.AssistantGrantAudience;
+type GearKind = 'weapons' | 'armor';
 
 const ROW_ICON_PX = 24;
-const SUB_ICON_PX = 18;
 
 /** The sim's counter block for the watched seat, and the command that sets one counter. */
 export interface AssistantCountersSeam {
@@ -62,15 +63,22 @@ export interface AssistantCountersSeam {
   set(kind: CounterKind, state: CounterState): boolean;
 }
 
-/** The sim's switches for the watched seat: a give switch is on when its goods are granted, a weapon
- *  switch when its good is not vetoed, and a give switch's audience says which group its goods are kept
- *  for, if any. */
+/** The sim's switches for the watched seat: a give switch is on when its goods are granted, and its
+ *  audience says which group its goods are kept for, if any. */
 export interface AssistantSwitchesSeam {
   read(): Readonly<Record<AssistantGrantId, boolean>>;
   /** False when the write was rejected, which the window must not echo. */
   set(id: AssistantGrantId, enabled: boolean): boolean;
   readAudiences(): Readonly<Record<GiveSwitchId, GrantAudience>>;
   setAudience(id: GiveSwitchId, audience: GrantAudience): boolean;
+}
+
+/** One gear line of each weapon class for the watched seat (its weapons or its armor), and the
+ *  commands that set it. */
+export interface AssistantGearSeam {
+  read(intent: ClassIntent): GearLine;
+  /** False when the write was rejected, which the window must not echo. */
+  set(intent: ClassIntent, choice: GearLine): boolean;
 }
 
 /** Whose assistant the window shows: a seat the player commands, a watched seat's (read only), or nobody's. */
@@ -80,6 +88,8 @@ export type AssistantAccess = 'control' | 'watching' | 'noSeat';
 export interface AssistantSource {
   readonly counters: AssistantCountersSeam;
   readonly switches: AssistantSwitchesSeam;
+  readonly weapons: AssistantGearSeam;
+  readonly armor: AssistantGearSeam;
   readonly bookings: () => AssistantBookings;
   /** How many men each give switch would still dress, beside the stock it draws on. */
   readonly shortages: () => AssistantShortages;
@@ -94,6 +104,8 @@ export interface AssistantWindowDeps extends AssistantSource {
   /** The title art, the beam entry's painted icon. */
   readonly art: string;
   readonly goodTypeOf: (goodId: string) => number | undefined;
+  readonly goodIdOf: (goodType: number) => string | undefined;
+  readonly goodLabel: (goodType: number) => string;
   readonly cue: (cue: UiCue) => void;
 }
 
@@ -108,19 +120,18 @@ export interface AssistantWindow extends ToolWindow {
   dispose(): void;
 }
 
-/** One weapon class: the weapon it is drawn with, and the switch that lets it settle for a weaker one.
- *  Approximation: the sim arms a class from any weapon of its main type, and these pairs are the two
- *  each class has in the current content; a third weapon would not show in the stock tag. */
+/** One weapon class and the weapon its row is drawn with. */
 interface ClassSpec {
   readonly kind: ClassIntent;
   readonly weapon: string;
-  readonly weaker: WeaponSwitchId;
 }
 const CLASS_SPECS: readonly ClassSpec[] = [
-  { kind: 'trainSword', weapon: 'sword_long', weaker: 'allowShortSwords' },
-  { kind: 'trainSpear', weapon: 'spear_iron', weaker: 'allowWoodenSpears' },
-  { kind: 'trainBow', weapon: 'bow_long', weaker: 'allowShortBows' },
+  { kind: 'trainSword', weapon: 'sword_long' },
+  { kind: 'trainSpear', weapon: 'spear_iron' },
+  { kind: 'trainBow', weapon: 'bow_long' },
 ];
+/** The gear lines under a class row, weapons first. */
+const GEAR_KINDS: readonly GearKind[] = ['weapons', 'armor'];
 /** The glyph each status mark carries. */
 const NOTE_GLYPH: Readonly<Record<StatusNoteKey, string>> = {
   expected: GLYPH.cradle,
@@ -167,11 +178,13 @@ export function createAssistantWindow(deps: AssistantWindowDeps): AssistantWindo
   // Indexed only when an open window asks: the model lands every frame, the window is mostly shut.
   let stockLines: HudModel['stocks'] = [];
   let stocks: ReadonlyMap<number, number> | null = null;
-  const stockOf = (goodId: string): number => {
-    const goodType = deps.goodTypeOf(goodId);
-    if (goodType === undefined) return 0;
+  const stockOfType = (goodType: number): number => {
     stocks ??= new Map(stockLines.map((line) => [line.goodType, line.amount]));
     return stocks.get(goodType) ?? 0;
+  };
+  const stockOf = (goodId: string): number => {
+    const goodType = deps.goodTypeOf(goodId);
+    return goodType === undefined ? 0 : stockOfType(goodType);
   };
   /** A give switch's stock: every bottle size of a potion counts. */
   const stockOfAll = (goodIds: readonly string[]): number =>
@@ -185,11 +198,26 @@ export function createAssistantWindow(deps: AssistantWindowDeps): AssistantWindo
   const pendingCounters = new PressHold<CounterKind, CounterState>(sameCounter);
   const pendingSwitches = new PressHold<AssistantGrantId, boolean>((a, b) => a === b);
   const pendingAudiences = new PressHold<GiveSwitchId, GrantAudience>((a, b) => a === b);
+  const pendingGear = new PressHold<`${GearKind}:${ClassIntent}`, GearLine>(sameGear);
   const counterNow = (kind: CounterKind): CounterState =>
     pendingCounters.shown(kind, liveCounters[kind], tick);
   const switchNow = (id: AssistantGrantId): boolean => pendingSwitches.shown(id, liveSwitches[id], tick);
   const audienceNow = (id: GiveSwitchId): RowAudience =>
     !switchNow(id) ? 'none' : pendingAudiences.shown(id, liveAudiences[id], tick);
+
+  const gearNow = (kind: GearKind, intent: ClassIntent): GearLine =>
+    pendingGear.shown(`${kind}:${intent}`, deps[kind].read(intent), tick);
+
+  const pressGear = (kind: GearKind, intent: ClassIntent, next: GearLine): boolean => {
+    const live = deps[kind].read(intent);
+    if (!deps[kind].set(intent, next)) {
+      deps.cue('fail');
+      return false;
+    }
+    deps.cue('confirm');
+    pendingGear.hold(`${kind}:${intent}`, next, live, tick);
+    return true;
+  };
 
   const pressCounter = (kind: CounterKind, face: number): void => {
     const next = counterFromFace(counterNow(kind), face);
@@ -362,25 +390,6 @@ export function createAssistantWindow(deps: AssistantWindowDeps): AssistantWindo
     return { row, on: () => switchNow(id) };
   };
 
-  /** The weaker-weapon switch under a class row, with that weapon's own stock. */
-  const weakerSub = (id: WeaponSwitchId): { element: HTMLElement; allowed: () => boolean } => {
-    const sub = element('div', 'on-asst-sub');
-    const good = WEAPON_SWITCH_GOOD[id];
-    const { art, count } = goodArt(good, SUB_ICON_PX);
-    const text = copy.switches[id];
-    const caption = element('span', 'on-asst-sub__text');
-    caption.textContent = text.label;
-    setTip(caption, text.tip);
-    const control = createSwitch(text.label, text.tip, (next) => pressSwitch(id, next), true);
-    sub.append(art, caption, control.element);
-    updates.push(() => {
-      const on = switchNow(id);
-      control.update(on, writable);
-      showStock(count, stockOf(good), false);
-    });
-    return { element: sub, allowed: () => switchNow(id) };
-  };
-
   const access = element('div', 'on-asst__access');
   const columns = element('div', 'on-asst__cols');
   const orders = element('div', 'on-asst__col');
@@ -416,9 +425,7 @@ export function createAssistantWindow(deps: AssistantWindowDeps): AssistantWindo
   );
   for (const spec of CLASS_SPECS) {
     const { art, count } = goodArt(spec.weapon, ROW_ICON_PX);
-    const weaker = weakerSub(spec.weaker);
-    const stocked = (): boolean =>
-      weaponStocked(stockOf(spec.weapon), stockOf(WEAPON_SWITCH_GOOD[spec.weaker]), weaker.allowed());
+    const stocked = (): boolean => weaponStocked(gearNow('weapons', spec.kind), stockOfType);
     const row = counterRow(spec.kind, art, () =>
       trainingNotes(counterNow(spec.kind), {
         drilling: bookings.drilling[spec.kind],
@@ -426,10 +433,27 @@ export function createAssistantWindow(deps: AssistantWindowDeps): AssistantWindo
         weaponStocked: stocked(),
       }),
     );
-    row.append(weaker.element);
+    for (const kind of GEAR_KINDS) {
+      const strip = createGearStrip({
+        label: copy[kind].label,
+        tip: copy[kind].tip,
+        chips: copy.gearChip,
+        paintGood: deps.paintGood,
+        goodIdOf: deps.goodIdOf,
+        goodLabel: deps.goodLabel,
+        change: (choice) => pressGear(kind, spec.kind, choice),
+      });
+      row.append(strip.element);
+      updates.push(() => strip.update(gearNow(kind, spec.kind), writable, stockOf));
+    }
+    // The row's tag counts every weapon the class may still take.
     updates.push(() => {
-      const wanted = counterFace(counterNow(spec.kind)) > 0 && !stocked();
-      showStock(count, stockOf(spec.weapon), wanted);
+      const line = gearNow('weapons', spec.kind);
+      const amount = line.order.reduce(
+        (sum, good) => sum + (line.off.includes(good) ? 0 : stockOfType(good)),
+        0,
+      );
+      showStock(count, amount, counterFace(counterNow(spec.kind)) > 0 && amount === 0);
     });
     orders.append(row);
   }

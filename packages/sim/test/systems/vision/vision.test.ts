@@ -16,7 +16,7 @@ import {
   PlayerContacts,
   Position,
   RoadSite,
-  SettlerProgress,
+  Settler,
   Stance,
   UnderConstruction,
   Upgrading,
@@ -25,7 +25,6 @@ import { fx, ONE } from '../../../src/core/fixed.js';
 import type { Entity } from '../../../src/ecs/world.js';
 import { cellAnchorNode, fogViewOfMask, Simulation, scanChangedBytes } from '../../../src/index.js';
 import { SIGHT_RADIUS_NODES } from '../../../src/systems/conflict/targeting.js';
-import { SCOUT_EXPERIENCE_TYPE } from '../../../src/systems/progression/index.js';
 import { MILITARY_MODE, type MilitaryMode } from '../../../src/systems/readviews/index.js';
 import { looseProjectile } from '../../../src/systems/settlers/atomics/effects/combat/index.js';
 import { createVehicle } from '../../../src/systems/vehicles/index.js';
@@ -39,7 +38,6 @@ import {
   FogState,
   HEADQUARTERS_VISION_NODES,
   HERO_VISION_NODES,
-  HUNTER_VISION_NODES,
   SCOUT_VISION_NODES,
   SHIP_VISION_NODES,
   SIEGE_VISION_NODES,
@@ -130,7 +128,7 @@ describe('vision radii - the per-job classification', () => {
     expect(visionRadiusForJob(content, SCOUT_JOB)).toBe(SCOUT_VISION_NODES);
     expect(visionRadiusForJob(content, HERO_JOB)).toBe(HERO_VISION_NODES);
     expect(visionRadiusForJob(content, SOLDIER_JOB)).toBe(SOLDIER_VISION_NODES);
-    expect(visionRadiusForJob(content, HUNTER_JOB)).toBe(HUNTER_VISION_NODES);
+    expect(visionRadiusForJob(content, HUNTER_JOB)).toBe(CIVILIAN_VISION_NODES);
     expect(visionRadiusForJob(content, CIVILIST)).toBe(CIVILIAN_VISION_NODES);
     expect(visionRadiusForJob(content, null)).toBe(CIVILIAN_VISION_NODES); // jobless adult or beast
     expect(visionRadiusForJob(content, CHILD_MALE)).toBe(CHILD_VISION_NODES);
@@ -260,20 +258,6 @@ describe('exploreAround - one look at a point, with no eye behind it', () => {
   });
 });
 
-describe('scout experience - the signpost craft widens the eye', () => {
-  it('a mastered scout sees cells a fresh scout cannot (the visionRadiusOf wiring)', () => {
-    const sim = simOn(FOG_MODE.RECON_FOG_OF_WAR, 48, 8);
-    const scout = unit(sim, 4, 4, P0, { jobType: SCOUT_JOB });
-    for (let t = 0; t <= VISION_CADENCE_TICKS + 1; t++) sim.step();
-    // 15 cells (30 nodes) east: beyond the base 26-node eye, inside mastery's +6.
-    expect(rawState(sim, P0, 19, 4)).not.toBe(FOG_STATE.VISIBLE);
-
-    sim.world.mut(scout, SettlerProgress).experience.set(SCOUT_EXPERIENCE_TYPE, 100); // mastery: the full cap
-    for (let t = 0; t <= VISION_CADENCE_TICKS + 1; t++) sim.step();
-    expect(rawState(sim, P0, 19, 4)).toBe(FOG_STATE.VISIBLE);
-  });
-});
-
 describe('stampVision - the world-metric ellipse', () => {
   it('reaches radius·34 px: 4 cells sideways at radius 8, 7 rows down, and no further', () => {
     const w = 16;
@@ -327,16 +311,6 @@ describe('stamp memo - a still eye stamps only what changed', () => {
       return e;
     });
   }
-
-  it('CLASSIC: a still scout whose eye widens stamps its new reach', () => {
-    const sim = simOn(FOG_MODE.CLASSIC, 48, 8);
-    const scout = unit(sim, 4, 4, P0, { jobType: SCOUT_JOB });
-    sim.run(VISION_CADENCE_TICKS + 1);
-    expect(rawState(sim, P0, 19, 4)).toBe(FOG_STATE.UNEXPLORED);
-    sim.world.mut(scout, SettlerProgress).experience.set(SCOUT_EXPERIENCE_TYPE, 100);
-    sim.run(VISION_CADENCE_TICKS);
-    expect(rawState(sim, P0, 19, 4)).toBe(FOG_STATE.VISIBLE);
-  });
 
   it('CLASSIC: a still eye re-explores masks a switch OFF dropped', () => {
     const sim = simOn(FOG_MODE.CLASSIC);
@@ -407,17 +381,17 @@ describe('stamp memo - a still eye stamps only what changed', () => {
     expect(sim.world.verifyCaches()).toEqual([]);
   });
 
-  it('CLASSIC: a partial rebuild widens a still scout that gained experience', () => {
+  it('CLASSIC: a partial rebuild widens a still settler that became a scout', () => {
     const sim = simOn(FOG_MODE.CLASSIC, 48, 8);
-    const scout = unit(sim, 4, 4, P0, { jobType: SCOUT_JOB });
+    const settler = unit(sim, 4, 4, P0);
     sim.run(1 + VISION_CADENCE_TICKS);
-    // A bare experience write skips the progress note the technology verifier wants; only fog is checked.
-    const fogViolations = (): string[] => sim.world.verifyCaches().filter((v) => v.startsWith('fog:'));
-    sim.world.mut(scout, SettlerProgress).experience.set(SCOUT_EXPERIENCE_TYPE, 100);
-    expect(fogViolations()).toEqual([]); // pending in the feed, so not yet a stale memo
+    // 15 cells (30 nodes) east: beyond a civilian's eye, on a scout's rim.
+    expect(rawState(sim, P0, 19, 4)).toBe(FOG_STATE.UNEXPLORED);
+    sim.world.add(settler, Settler, { ...sim.world.get(settler, Settler), jobType: SCOUT_JOB });
+    expect(sim.world.verifyCaches()).toEqual([]); // pending in the feed, so not yet a stale memo
     sim.run(VISION_CADENCE_TICKS);
     expect(rawState(sim, P0, 19, 4)).toBe(FOG_STATE.VISIBLE);
-    expect(fogViolations()).toEqual([]);
+    expect(sim.world.verifyCaches()).toEqual([]);
   });
 
   it('CLASSIC: a partial rebuild forgets a destroyed eye', () => {
@@ -946,12 +920,12 @@ describe('first contact - the vision-driven discovery of other players', () => {
 });
 
 describe('fog gates - flee reacts only to SEEN enemies, combat auto-acquire to any', () => {
-  // Geometry shared by the gate tests: attacker at cell (2,2) (node (4,4)), enemy 7 cells east at
-  // (9,2) (node (18,4)) - Manhattan node distance 14, INSIDE the 16-node combat sight radius but
-  // 476 px east, OUTSIDE the attacker's eye: job 1 is an age class to the engine (5 nodes), and even a
-  // civilian's 408 px (12-node) ellipse falls short. Under classic fog the enemy is unseen.
+  // Geometry shared by the gate tests: attacker at cell (2,2) (node (4,4)), enemy 8 cells east at
+  // (10,2) (node (20,4)) - Manhattan node distance 16, INSIDE the 18-node combat sight radius but
+  // 544 px east, OUTSIDE the attacker's eye: job 1 is an age class to the engine (10 nodes), and even a
+  // civilian's 510 px (15-node) ellipse falls short. Under classic fog the enemy is unseen.
   const ATTACKER = { x: 2, y: 2 } as const;
-  const ENEMY = { x: 9, y: 2 } as const;
+  const ENEMY = { x: 10, y: 2 } as const;
 
   it('ATTACK auto-acquire engages an enemy in the fog as with fog off (original: no sight check)', () => {
     // The premise, against the real constants: the enemy stands within combat sight but outside the

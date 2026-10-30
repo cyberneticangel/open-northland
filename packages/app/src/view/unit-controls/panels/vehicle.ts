@@ -18,7 +18,7 @@ export function orderPick(vehicle: number, order: VehicleOrder): PickMode | null
     case 'goTo':
       return { kind: 'vehicle-destination', vehicle };
     case 'dock':
-      return { kind: 'vehicle-dock', vehicle };
+      return { kind: 'vehicle-dock', vehicles: [vehicle] };
     case 'boardShip':
       return { kind: 'vehicle-carrier', vehicle };
     case 'attackSettler':
@@ -41,12 +41,11 @@ export function orderPick(vehicle: number, order: VehicleOrder): PickMode | null
 
 /** The panel control whose pick `mode` is, while it is armed for `vehicle`; null for any other. */
 export function armedVehiclePick(mode: PickMode | null, vehicle: number): VehiclePick | null {
+  if (mode?.kind === 'vehicle-dock') return mode.vehicles.includes(vehicle) ? 'dock' : null;
   if (mode === null || !('vehicle' in mode) || mode.vehicle !== vehicle) return null;
   switch (mode.kind) {
     case 'vehicle-destination':
       return 'goTo';
-    case 'vehicle-dock':
-      return 'dock';
     case 'vehicle-carrier':
       return 'boardShip';
     case 'vehicle-attack-settler':

@@ -164,6 +164,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     expect(done).toHaveLength(1);
@@ -208,6 +209,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     expect(done).toHaveLength(2);
@@ -257,6 +259,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       new Set(['ls_goods.bear01', 'ls_goods.wolf01']),
+      [],
     );
 
     expect(new Set(done.map((c) => c.image)).size).toBe(2);
@@ -278,6 +281,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     expect(done.map((c) => c.stem)).toEqual(['body.bear01']);
@@ -307,6 +311,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     // The app asks for the stem `f_bakery.house` - the source's `nowe/` subdirectory must not
@@ -330,6 +335,7 @@ describe('convertBmdTree', () => {
         atlases,
         await indexSourceAssets({ data: out }),
         NO_DOM_PICTURES,
+        [],
       ),
     ).rejects.toThrow(/basename collision.*nowe\/body\.bmd/s);
   });
@@ -356,6 +362,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     expect(done.map((c) => c.stem)).toEqual(['body.bear01']);
@@ -373,6 +380,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     ); // empty palette index
 
     expect(done).toEqual([]);
@@ -392,6 +400,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     expect(done).toEqual([]);
@@ -412,6 +421,7 @@ describe('convertBmdTree', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     expect(done).toEqual([]);
@@ -570,6 +580,7 @@ describe('convertBmdTree build-time bake', () => {
       atlases,
       await indexSourceAssets({ data: out }),
       NO_DOM_PICTURES,
+      [],
     );
 
     const alphaOf = async (stem: string): Promise<number> => {

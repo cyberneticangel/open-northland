@@ -5,7 +5,7 @@ import { contentIndex } from '../../core/content-index.js';
 import { ONE } from '../../core/fixed.js';
 import type { Entity, World } from '../../ecs/world.js';
 import type { ContentContext, SystemContext } from '../context.js';
-import { exportedGoodForm } from '../readviews/food.js';
+import { exportedGoodForm, isFoodKeptAtHome } from '../readviews/food.js';
 import { livestockTribeOfGood } from '../readviews/tribes/livestock.js';
 
 // What a building type declares: its products, job slots, and stored goods. Which slots run the craft
@@ -23,8 +23,9 @@ export function mergedRecipeOf(world: World, ctx: ContentContext, building: Enti
 
 /**
  * Whether a fetch may lift `goodType` out of `store`: a workshop's stock of a good its own recipe
- * consumes is the reserve it needs to run, so nobody else may take it. Authored rule, keyed on recipe
- * inputs alone, so a slot no recipe consumes stays strippable and a recipe-less building is untouched.
+ * consumes is the reserve it needs to run, so nobody else may take it, and a home's food is its family's
+ * ({@link isFoodKeptAtHome}). Authored rule, keyed on recipe inputs, so a slot no recipe consumes stays
+ * strippable.
  */
 export function mayFetchGoodFrom(
   world: World,
@@ -32,7 +33,10 @@ export function mayFetchGoodFrom(
   store: Entity,
   goodType: number,
 ): boolean {
-  return !recipeConsumes(mergedRecipeOf(world, ctx, store)?.inputs, goodType);
+  return (
+    !recipeConsumes(mergedRecipeOf(world, ctx, store)?.inputs, goodType) &&
+    !isFoodKeptAtHome(world, ctx, store, goodType)
+  );
 }
 
 /** {@link mayFetchGoodFrom}'s test with the recipe already in hand; undefined inputs mean no recipe. */

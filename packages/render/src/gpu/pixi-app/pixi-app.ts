@@ -64,7 +64,7 @@ export function backingResolutionFor(dpr: number): number {
  * so does any render scale but 1, which no whole divisor turns into squares.
  * `sharp` and `xbr` keep the backing store native and draw only the world at one texel per CSS pixel
  * (times the render scale), which one pass then upscales with that magnifier; the rest of the stage
- * draws natively over it (see `WorldUpscale`).
+ * draws natively over it (see `OffscreenWorld`).
  */
 export type BackingDensity = 'native' | 'whole' | 'sharp' | 'xbr';
 

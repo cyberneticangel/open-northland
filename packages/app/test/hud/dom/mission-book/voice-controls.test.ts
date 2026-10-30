@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { NarrationRate } from '@open-northland/audio';
 import type { BriefingVoice } from '@open-northland/data';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -26,7 +27,7 @@ function fakePlayer() {
     positionS: POSITION_S,
     durationS: DURATION_S,
   };
-  const control = { available: true };
+  const control: { available: boolean; rate: NarrationRate } = { available: true, rate: 1 };
   const reset = (): void => {
     state = { ...state, positionS: POSITION_S };
   };
@@ -41,6 +42,10 @@ function fakePlayer() {
     seek: vi.fn((_voice: BriefingVoice, atS: number) => {
       state = { ...state, positionS: Math.min(DURATION_S, Math.max(0, atS)) };
     }),
+    rate: () => control.rate,
+    setRate: vi.fn((rate: NarrationRate) => {
+      control.rate = rate;
+    }),
     state: () => state,
   } satisfies BriefingVoicePlayer;
   return { player, control, reset };
@@ -50,7 +55,7 @@ interface Mounted {
   readonly rows: VoiceRows;
   readonly scene: HTMLElement;
   readonly player: ReturnType<typeof fakePlayer>['player'];
-  readonly control: { available: boolean };
+  readonly control: { available: boolean; rate: NarrationRate };
   /** Put the line back at its starting position. */
   readonly reset: () => void;
   readonly cues: string[];
@@ -147,6 +152,25 @@ describe('the narration player row', () => {
     expect(space.defaultPrevented).toBe(true);
     expect(player.toggle).toHaveBeenCalledTimes(2);
     expect(cues).toEqual(['confirm', 'confirm']);
+  });
+
+  it('steps the tempo on a click and on Space, back to the recorded one past the fastest', () => {
+    const { player, cues, row, rows, scene } = mount();
+    const rate = (): HTMLButtonElement => {
+      const button = row().querySelector<HTMLButtonElement>('[data-voice-rate]');
+      if (button === null) throw new Error('no tempo button');
+      return button;
+    };
+    expect(rate().textContent).toBe('1×');
+    rate().click();
+    rows.refresh(scene);
+    expect(rate().dataset.rate).toBe('1.25');
+    expect(key(rate(), ' ').defaultPrevented).toBe(true);
+    rate().click();
+    rate().click();
+    expect(player.setRate.mock.calls.map(([to]) => to)).toEqual([1.25, 1.5, 2, 1]);
+    expect(player.toggle).not.toHaveBeenCalled();
+    expect(cues).toEqual(['confirm', 'confirm', 'confirm', 'confirm']);
   });
 
   it('moves the line by the arrows and the page keys, and to either end by Home and End', () => {

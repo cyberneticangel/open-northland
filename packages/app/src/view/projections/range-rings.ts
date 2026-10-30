@@ -2,6 +2,7 @@ import { type ContentSet, PRAYER_SITE } from '@open-northland/data';
 import type { RangeRing } from '@open-northland/render';
 import { components, entityById, nodeOfPosition, systems, type WorldSnapshot } from '@open-northland/sim';
 import {
+  buildingRecordOf,
   buildingTribeOf,
   buildingTypeOf,
   isBuilding,
@@ -100,11 +101,11 @@ function employedFisherRing(
   const type = building === undefined ? undefined : buildingTypeOf(building);
   const tribe = building === undefined ? undefined : buildingTribeOf(building);
   const pos = building === undefined ? undefined : positionOf(building);
-  if (type === undefined || tribe === undefined || pos === undefined) return undefined;
+  if (building === undefined || type === undefined || tribe === undefined || pos === undefined)
+    return undefined;
   const radiusNodes = systems.workplaceShoreSearchRadius(
     content,
-    type,
-    tribe,
+    { buildingType: type, tribe, record: buildingRecordOf(building) },
     nodeOfPosition(pos.x, pos.y).hy,
   );
   return { entity: workplace, radiusNodes, metric: 'manhattan', kind: 'work' };
@@ -116,21 +117,25 @@ function defenceRing(content: ContentSet, e: SnapshotEntity): RangeRing | undefi
   const pos = positionOf(e);
   if (type === undefined || tribe === undefined || pos === undefined) return undefined;
   const { hx, hy } = nodeOfPosition(pos.x, pos.y);
-  const radiusNodes = defenceRadiusAt(content, type, tribe, hx, hy);
+  const radiusNodes = defenceRadiusAt(
+    content,
+    { buildingType: type, tribe, record: buildingRecordOf(e) },
+    hx,
+    hy,
+  );
   return radiusNodes === undefined
     ? undefined
     : { entity: e.id, radiusNodes, metric: 'hex', kind: 'defence' };
 }
 
-/** Each content's defence radii by type, tribe and anchor row parity, the only part of the anchor the
- *  reach depends on. Working one out walks rings around the walls, and a held tower asks every frame. */
+/** Each content's defence radii by type, tribe, house record and anchor row parity, the only part of the
+ *  anchor the reach depends on. Working one out walks rings around the walls, and a held tower asks every frame. */
 const defenceRadii = new WeakMap<ContentSet, Map<string, number | undefined>>();
 
 /** {@link systems.shelterFireRadius}, remembered per content. */
 export function defenceRadiusAt(
   content: ContentSet,
-  buildingType: number,
-  tribe: number,
+  house: systems.HouseKey,
   hx: number,
   hy: number,
 ): number | undefined {
@@ -139,9 +144,9 @@ export function defenceRadiusAt(
     radii = new Map();
     defenceRadii.set(content, radii);
   }
-  const key = `${buildingType}:${tribe}:${hy & 1}`;
+  const key = `${house.buildingType}:${house.tribe}:${house.record ?? ''}:${hy & 1}`;
   if (radii.has(key)) return radii.get(key);
-  const radius = systems.shelterFireRadius(content, buildingType, tribe, hx, hy);
+  const radius = systems.shelterFireRadius(content, house, hx, hy);
   radii.set(key, radius);
   return radius;
 }

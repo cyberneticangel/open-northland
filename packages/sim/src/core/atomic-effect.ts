@@ -30,11 +30,11 @@ export type AtomicEffect =
       readonly from: Entity | null;
     }
   | { readonly kind: 'pileup'; readonly store: Entity }
-  /** A trader lifts one unit of `goodType` off `from`'s shelf into its cart. */
-  | { readonly kind: 'cartLoad'; readonly from: Entity; readonly goodType: number }
-  /** A trader sets one unit of `goodType` out of its cart onto `store`'s shelf, or onto the ground at
+  /** A trader lifts one unit of `goodType` off `from`'s shelf into its hold: its hauling cart or hands. */
+  | { readonly kind: 'tradeLoad'; readonly from: Entity; readonly goodType: number }
+  /** A trader sets one unit of `goodType` out of its hold onto `store`'s shelf, or onto the ground at
    *  its feet with `store` null. */
-  | { readonly kind: 'cartUnload'; readonly store: Entity | null; readonly goodType: number }
+  | { readonly kind: 'tradeUnload'; readonly store: Entity | null; readonly goodType: number }
   /** A posted carrier lifts one unit of `goodType` off `from` into the hauling cart standing beside it. */
   | { readonly kind: 'haulLoad'; readonly from: Entity; readonly goodType: number }
   /** A posted carrier sets one unit out of the hauling cart standing beside it into `store`. */

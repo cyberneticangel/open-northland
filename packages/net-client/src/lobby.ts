@@ -6,12 +6,14 @@ import {
   type LobbyCompatibility,
   type LobbySettings,
   type OnlinePlayer,
+  type PlayerFlag,
   PROTOCOL_VERSION,
   type RecentPlayer,
   type RoomSeatSetup,
   type RoomSettings,
   type RoomSummary,
   type RoomView,
+  withFlag,
 } from '@open-northland/net-protocol';
 import { RelayState } from './relay-state.js';
 
@@ -19,13 +21,16 @@ type SeatChange = Omit<Extract<ClientMessage, { kind: 'setSeat' }>, 'kind' | 'pl
 
 export class RelayLobby {
   readonly token: string;
+  /** The flag this client says `hello` with; none when absent. */
+  readonly flag: PlayerFlag | undefined;
   protected readonly state: RelayState;
   protected send: (message: ClientMessage) => void = () => {
     throw new Error(`${this.nick} is not attached to a network`);
   };
 
-  constructor(token: string, nick: string) {
+  constructor(token: string, nick: string, flag?: PlayerFlag) {
     this.token = token;
+    this.flag = flag;
     this.state = new RelayState(nick);
   }
 
@@ -74,7 +79,13 @@ export class RelayLobby {
   }
 
   hello(): void {
-    this.send({ kind: 'hello', protocol: PROTOCOL_VERSION, token: this.token, nick: this.nick });
+    this.send({
+      kind: 'hello',
+      protocol: PROTOCOL_VERSION,
+      token: this.token,
+      nick: this.nick,
+      ...withFlag(this.flag),
+    });
   }
 
   listRooms(): void {

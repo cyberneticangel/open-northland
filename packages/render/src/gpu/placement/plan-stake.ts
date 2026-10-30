@@ -40,6 +40,8 @@ export const STAKE_BOUNDS = {
 /** The string between stakes: hemp where the line runs, red into a refused node. */
 export const STRING_OPEN = 0xd8c089;
 export const STRING_BLOCKED = 0xd23a2e;
+/** The gold ring on the ground that marks where a plan starts or is tied. */
+export const ANCHOR_RING = 0xf2c14e;
 
 /** Without the art (a bare render test, the `?shot` entry) a flat post of the same size stands in. */
 const FALLBACK_WOOD = 0x8a5a2b;

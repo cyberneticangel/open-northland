@@ -40,7 +40,8 @@ export const enNetworkRoom = {
   rejoin: 'Rejoin game',
   reconnecting: 'Connection lost. Reconnecting…',
   settings: 'Room settings',
-  creatorSettings: 'Only the room creator can change seats and settings.',
+  creatorSettings:
+    "Only the room creator changes settings and seats; you choose your own seat's colour and tribe.",
   savedSettings: 'This saved game keeps its original rules and colours.',
   progression: 'Profession progression',
   progressionDetail: 'Experience requirements for new professions and production.',

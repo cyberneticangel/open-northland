@@ -5,12 +5,11 @@ import { reportErrorOf } from './report-error.js';
 
 /** What the recorder inline in `index.html` keeps until the app takes over. */
 interface BootFaultRecorder {
-  /** Faults earlier pages kept and never handed over: their app did not come up. */
-  readonly stored: unknown;
   /** This page's faults before the app's capture installed. */
   readonly faults: unknown;
-  /** Stop recording and forget the stored faults. */
-  stop(): void;
+  /** Stop recording and forget the stored faults; returns the ones other pages kept and never handed
+   *  over, as their app did not come up. */
+  stop(): unknown;
 }
 
 declare global {
@@ -53,9 +52,9 @@ function parseFaults(value: unknown): BootFault[] {
 export function takeBootFaults(): void {
   const recorder = window.__onBootFaults;
   if (recorder === undefined) return;
-  recorder.stop();
+  const stored = recorder.stop();
   delete window.__onBootFaults;
-  for (const fault of parseFaults(recorder.stored)) {
+  for (const fault of parseFaults(stored)) {
     reportProblem({
       trigger: 'error',
       error: reportErrorOf('main', fault, fault.source),

@@ -416,3 +416,51 @@
     flex: none;
   }
 }
+
+/* A player's flag before their nick (flags/catalog.ts), at the 4:3 of the flag set. */
+.network-flag {
+  display: inline-block;
+  width: 1.2em;
+  height: 0.9em;
+  margin-inline-end: 0.35em;
+  vertical-align: -0.1em;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px #0007;
+  object-fit: cover;
+}
+.network-menu__flag .main-menu__dropdown-btn-image,
+.network-menu__flag .main-menu__dropdown-option-image {
+  width: 24px;
+  height: 18px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px #0007;
+  background-size: cover;
+}
+.network-menu__flag .main-menu__dropdown-option {
+  gap: 8px;
+}
+/* The flag field on the nick's line: the flag and the caret alone; its list shows the names. */
+.network-menu__nick-line {
+  display: flex;
+  gap: calc(var(--u) * 8);
+}
+.network-menu__nick-line > .network-menu__flag {
+  flex: none;
+}
+.network-menu .network-menu__flag .main-menu__dropdown-btn {
+  width: auto;
+  min-width: 0;
+  height: 100%;
+  padding-right: calc(var(--u) * 36);
+}
+.network-menu__flag .main-menu__dropdown-btn-image + .main-menu__dropdown-btn-label {
+  display: none;
+}
+/* No flag: a dash as wide as a flag, so the nick keeps its place. */
+.network-menu__flag .main-menu__dropdown-btn-label {
+  min-width: 24px;
+  text-align: center;
+}
+.network-menu__flag .main-menu__dropdown-list {
+  width: calc(var(--u) * 320);
+}

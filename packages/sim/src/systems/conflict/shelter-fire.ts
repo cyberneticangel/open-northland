@@ -5,7 +5,7 @@ import { hexDistanceBetween, positionOfNode } from '../../nav/halfcell.js';
 import type { TerrainGraph } from '../../nav/terrain/index.js';
 import type { SystemContext } from '../context.js';
 import { shelterOccupancy, shelterStillHolds } from '../defence/index.js';
-import { buildingFootprintOf } from '../footprint/geometry.js';
+import { type HouseKey, houseFootprintOf } from '../footprint/geometry.js';
 import { houseBow, isAreaWeapon, isFighterJob, shelterCapacityOf } from '../readviews/index.js';
 import { type LooseShot, looseProjectile } from '../settlers/atomics/effects/combat/index.js';
 import { hexNodeDistance, nearestHexCell } from '../spatial/metric.js';
@@ -78,7 +78,7 @@ function fires(bow: WeaponType | undefined): bow is FiringBow {
 }
 
 /**
- * How far in map points from its anchor node (`hx`, `hy`) a building of `buildingType` reaches all around in
+ * How far in map points from its anchor node (`hx`, `hy`) a `house` reaches all around in
  * defence mode: the widest ring every node of which stands within the house bow's reach of some wall cell,
  * the way the fire measures. A long building reaches further along its length. Undefined for a type with no
  * defence mode and when `tribe` fires no house bow. Walks only the rings between the reach its nearest wall
@@ -87,14 +87,13 @@ function fires(bow: WeaponType | undefined): bow is FiringBow {
  */
 export function shelterFireRadius(
   content: ContentSet,
-  buildingType: number,
-  tribe: number,
+  house: HouseKey,
   hx: number,
   hy: number,
 ): number | undefined {
-  const bow = houseBow(content, tribe);
-  if (shelterCapacityOf(content, buildingType) === 0 || !fires(bow)) return undefined;
-  const cells = buildingFootprintOf(content, buildingType, tribe)?.blocked ?? [];
+  const bow = houseBow(content, house.tribe);
+  if (shelterCapacityOf(content, house.buildingType) === 0 || !fires(bow)) return undefined;
+  const cells = houseFootprintOf(content, house)?.blocked ?? [];
   const walls = cells.map((cell) => ({ x: hx + footprintCellDx(hy, cell), y: hy + cell.dy }));
   if (walls.length === 0) walls.push({ x: hx, y: hy });
   const fromAnchor = walls.map((w) => hexDistanceBetween(hx, hy, w.x, w.y));

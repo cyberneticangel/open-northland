@@ -1,8 +1,13 @@
 import {
   clampVolume,
+  DEFAULT_MUSIC_SOURCE,
   DEFAULT_UNIT_RESPONSES,
   DEFAULT_VOLUMES,
+  isNarrationRate,
   type MixerVolumes,
+  type MusicSource,
+  type NarrationRate,
+  parseMusicSource,
   parseUnitResponses,
   type UnitResponses,
 } from '@open-northland/audio';
@@ -92,6 +97,7 @@ export interface MenuSettings {
   readonly environmentMotion: boolean;
   readonly groundedBuildings: boolean;
   readonly buildingDamage: boolean;
+  readonly nightLights: boolean;
   /** Rain, snow and sandstorms: their sky, ground and sound. Presentation only, the sim never reads it. */
   readonly weather: boolean;
   /** Hit sprays and ground stains; local presentation only. */
@@ -106,6 +112,8 @@ export interface MenuSettings {
   readonly selectionStyle: SelectionStyle;
   /** The outline a hovered unit or building draws, as the original shows one; off draws none. */
   readonly hoverOutline: boolean;
+  /** The label beside the cursor naming what a click would do and the thing it rests on. */
+  readonly cursorHints: boolean;
   /** A small label of its control groups' numbers by each unit bound to one. */
   readonly groupNumbers: boolean;
   readonly minimapFrame: MinimapFrame;
@@ -123,6 +131,10 @@ export interface MenuSettings {
   readonly jinglesEnabled: boolean;
   /** Which of an order and a selection a settler's voice answers. */
   readonly unitResponses: UnitResponses;
+  /** Whether a game plays the map's own music or the local nation's. */
+  readonly musicSource: MusicSource;
+  /** The tempo a briefing's narrator reads at, set from the briefing's player. */
+  readonly narrationRate: NarrationRate;
   /** Which sound banks a starting game loads: FLAC or the smaller Opus encoding. */
   readonly soundQuality: SoundQuality;
   readonly language: Locale;
@@ -139,6 +151,9 @@ export interface MenuSettings {
   readonly keyBindings: KeyBindings;
   /** The display name shown to other players over a relay; null until one was chosen. */
   readonly netNick: string | null;
+  /** The flag shown beside the nick over a relay: a flag code, or `none` for a choice of none; null
+   *  until one was chosen. */
+  readonly netFlag: string | null;
   /** A relay address the player typed in; null while they play on one of the official regions. */
   readonly netCustomRelayUrl: string | null;
   readonly debugToolsEnabled: boolean;
@@ -182,6 +197,7 @@ export function defaultSettings(): MenuSettings {
     environmentMotion: true,
     groundedBuildings: true,
     buildingDamage: true,
+    nightLights: true,
     weather: true,
     blood: true,
     bonesFade: true,
@@ -191,6 +207,7 @@ export function defaultSettings(): MenuSettings {
     cursorSize: DEFAULT_CURSOR_SIZE,
     selectionStyle: DEFAULT_SELECTION_STYLE,
     hoverOutline: true,
+    cursorHints: true,
     groupNumbers: false,
     minimapFrame: DEFAULT_MINIMAP_FRAME,
     minimapFilters: DEFAULT_MINIMAP_FILTERS,
@@ -200,6 +217,8 @@ export function defaultSettings(): MenuSettings {
     monoSound: false,
     jinglesEnabled: true,
     unitResponses: DEFAULT_UNIT_RESPONSES,
+    musicSource: DEFAULT_MUSIC_SOURCE,
+    narrationRate: 1,
     soundQuality: defaultSoundQuality(),
     language: defaultLocale(),
     keyboardScrollSpeed: DEFAULT_SCROLL_SPEED,
@@ -210,6 +229,7 @@ export function defaultSettings(): MenuSettings {
     integerScaling: false,
     keyBindings: DEFAULT_KEY_BINDINGS,
     netNick: null,
+    netFlag: null,
     netCustomRelayUrl: null,
     debugToolsEnabled: import.meta.env?.DEV === true,
     autoErrorReports: true,
@@ -353,6 +373,7 @@ export function parseStoredSettings(raw: string | null): MenuSettings {
       typeof record.groundedBuildings === 'boolean' ? record.groundedBuildings : defaults.groundedBuildings,
     buildingDamage:
       typeof record.buildingDamage === 'boolean' ? record.buildingDamage : defaults.buildingDamage,
+    nightLights: typeof record.nightLights === 'boolean' ? record.nightLights : defaults.nightLights,
     weather: typeof record.weather === 'boolean' ? record.weather : defaults.weather,
     blood: typeof record.blood === 'boolean' ? record.blood : defaults.blood,
     bonesFade: typeof record.bonesFade === 'boolean' ? record.bonesFade : defaults.bonesFade,
@@ -362,6 +383,7 @@ export function parseStoredSettings(raw: string | null): MenuSettings {
     cursorSize: parseCursorSize(record.cursorSize),
     selectionStyle: parseSelectionStyle(record.selectionStyle),
     hoverOutline: typeof record.hoverOutline === 'boolean' ? record.hoverOutline : defaults.hoverOutline,
+    cursorHints: typeof record.cursorHints === 'boolean' ? record.cursorHints : defaults.cursorHints,
     groupNumbers: typeof record.groupNumbers === 'boolean' ? record.groupNumbers : defaults.groupNumbers,
     minimapFrame: parseMinimapFrame(record.minimapFrame),
     minimapFilters: parseMinimapFilters(record.minimapFilters),
@@ -373,6 +395,8 @@ export function parseStoredSettings(raw: string | null): MenuSettings {
     jinglesEnabled:
       typeof record.jinglesEnabled === 'boolean' ? record.jinglesEnabled : defaults.jinglesEnabled,
     unitResponses: parseUnitResponses(record.unitResponses),
+    musicSource: parseMusicSource(record.musicSource),
+    narrationRate: isNarrationRate(record.narrationRate) ? record.narrationRate : defaults.narrationRate,
     soundQuality: SOUND_QUALITIES.find((quality) => quality === record.soundQuality) ?? defaults.soundQuality,
     language: isLocale(record.language) ? record.language : defaults.language,
     keyboardScrollSpeed: clampScrollSpeed(record.keyboardScrollSpeed),
@@ -386,6 +410,7 @@ export function parseStoredSettings(raw: string | null): MenuSettings {
       typeof record.integerScaling === 'boolean' ? record.integerScaling : defaults.integerScaling,
     keyBindings: parseKeyBindings(record.changedKeyBindings),
     netNick: optionalText(record.netNick),
+    netFlag: optionalText(record.netFlag),
     netCustomRelayUrl: optionalText(record.netCustomRelayUrl),
     debugToolsEnabled:
       typeof record.debugToolsEnabled === 'boolean' ? record.debugToolsEnabled : defaults.debugToolsEnabled,

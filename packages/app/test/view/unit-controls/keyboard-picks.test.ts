@@ -74,6 +74,14 @@ const people = snapshotOf([
   person(12, JOB_WOMAN, { ...FEMALE, Marriage: { spouse: 2, child: null } }),
   person(13, JOB_CHILD_MALE, { Age: { ticks: 0 } }),
   person(14, JOB_CIVILIST, { TrainingOrder: { house: 1, drillTicksLeft: 10 } }),
+  person(15, JOB_CIVILIST, {
+    TrainingOrder: { house: 1, drillTicksLeft: 10 },
+    AssistantRecruit: { intent: 'trainSoldiers', armed: false, barracks: 1 },
+  }),
+  person(16, JOB_CIVILIST, {
+    TrainingOrder: { house: 20, drillTicksLeft: 10 },
+    AssistantRecruit: { intent: 'trainSoldiers', armed: false, barracks: 1 },
+  }),
 ]);
 
 const effect = (action: Parameters<typeof selectionKeyEffect>[0], selected: readonly number[] = []) =>
@@ -83,13 +91,17 @@ describe('selection keys', () => {
   it('step to the next own civilian after the selected one, wrapping', () => {
     expect(effect('nextCivilian')).toEqual({ ids: [2], add: false });
     expect(effect('nextCivilian', [2])).toEqual({ ids: [5], add: false });
-    expect(effect('nextCivilian', [5])).toEqual({ ids: [2], add: false });
+    expect(effect('nextCivilian', [15])).toEqual({ ids: [2], add: false });
     expect(effect('nextScout', [3])?.ids).toEqual([8]);
   });
 
-  it('skip a civilian already sent to a school or barracks', () => {
-    expect(effect('nextCivilian', [5])?.ids).toEqual([2]);
-    expect(effect('nextCivilian', [14])?.ids).toEqual([2]);
+  it('skip a civilian the player sent to a school or barracks', () => {
+    expect(effect('nextCivilian', [14])?.ids).toEqual([15]);
+    expect(effect('nextCivilian', [15])?.ids).toEqual([2]);
+  });
+
+  it('keep a civilian the assistant sent to drill until he enlists', () => {
+    expect(effect('nextCivilian', [5])?.ids).toEqual([15]);
   });
 
   it('take the unmarried woman without a home for the single-woman key', () => {

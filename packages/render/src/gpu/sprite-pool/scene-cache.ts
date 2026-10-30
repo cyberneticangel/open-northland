@@ -4,7 +4,7 @@ import type { Viewport } from '../../data/projection/index.js';
 import type { SpriteScene } from '../../data/scene/index.js';
 import type { ElevationField } from '../../data/terrain/index.js';
 
-/** The frame fields the scene build is a pure function of; alpha, camera and highlight act after the
+/** The frame fields the scene build is a pure function of; alpha, camera and marks act after the
  *  build, so they are not key material. */
 export interface SceneFrameKey {
   readonly snapshot: WorldSnapshot;

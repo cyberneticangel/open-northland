@@ -13,7 +13,7 @@ import {
   stampOwner,
   UnderConstruction,
 } from '../../components/index.js';
-import type { Command } from '../../core/commands/index.js';
+import type { Command, PalisadeGroundWaiver } from '../../core/commands/index.js';
 import { fx, ONE } from '../../core/fixed.js';
 import type { ChangeFeed, Entity, World } from '../../ecs/world.js';
 import type { BlockOverlay } from '../../nav/block-overlay.js';
@@ -61,7 +61,8 @@ export function palisadeType(terrain: TerrainGraph, gfxIndex: number): ScriptLan
   return type?.wall === undefined ? undefined : type;
 }
 
-function placementWalkOf(terrain: TerrainGraph, type: ScriptLandscapeType): readonly FootprintCell[] {
+/** The body a wall row stamps as placement ground: an open gate keeps its shut row's. */
+export function placementWalkOf(terrain: TerrainGraph, type: ScriptLandscapeType): readonly FootprintCell[] {
   const gate = type.wall?.gate;
   if (gate?.open !== true) return type.walk;
   const closed = palisadeType(terrain, gate.counterpartGfxIndex);
@@ -69,21 +70,24 @@ function placementWalkOf(terrain: TerrainGraph, type: ScriptLandscapeType): read
 }
 
 /** A reusable placement query shared by the UI ghost and command application: the blocker grid, then the
- *  ground rule a road shares on every body cell. */
+ *  ground rule a road shares on every body cell. `waivedGround` names stamps the site may stand over. */
 export function palisadePlacementProbe(
   world: World,
   content: SystemContext['content'],
   terrain: TerrainGraph,
   gfxIndex: number,
   overUpgradeGround = false,
+  waivedGround: readonly PalisadeGroundWaiver[] = [],
 ): PlacementProbe | null {
   const type = palisadeType(terrain, gfxIndex);
   if (type === undefined) return null;
   const body = placementWalkOf(terrain, type);
   const grid = placementBlockerGrid(world, content, terrain);
+  const allowances = new Map(waivedGround.map((w) => [w.y * terrain.width + w.x, w]));
+  const allowance = allowances.size === 0 ? undefined : (slot: number) => allowances.get(slot);
   return {
     canPlace: (x, y) =>
-      canPlacePalisadeAnchor(grid, body, x, y, overUpgradeGround) &&
+      canPlacePalisadeAnchor(grid, body, x, y, overUpgradeGround, allowance) &&
       body.every((c) => lineGroundOpen(world, content, x + footprintCellDx(y, c), y + c.dy)),
   };
 }
@@ -626,6 +630,7 @@ export function placePalisade(
       terrain,
       command.gfxIndex,
       command.overUpgradeGround === true,
+      command.waivedGround,
     );
     if (probe === null || !probe.canPlace(command.x, command.y)) return;
   }

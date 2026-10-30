@@ -319,6 +319,8 @@ export function unloadPeople(
   const vehicle = command.vehicle;
   const state = world.tryGet(vehicle, Vehicle);
   if (state === undefined) return;
+  const at = command.mooring;
+  if (at !== undefined && (!state.moored || state.mooring?.hx !== at.x || state.mooring.hy !== at.y)) return;
   const landing = landingOf(world, ctx, vehicle);
   if (landing === null) return;
   for (const seat of vehiclePassengers(state)) {

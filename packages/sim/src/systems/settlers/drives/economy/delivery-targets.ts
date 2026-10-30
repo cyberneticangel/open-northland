@@ -1,4 +1,4 @@
-import { Settler } from '../../../../components/index.js';
+import { JobAssignment, Settler } from '../../../../components/index.js';
 import type { Entity, World } from '../../../../ecs/world.js';
 import type { SystemContext } from '../../../context.js';
 import { jobCanHarvestGood } from '../../../economy/work-flag.js';
@@ -47,6 +47,14 @@ export function deliverySinkProbe(plan: PlannerContext): (goodType: number) => E
     }
     return known;
   };
+}
+
+/** Whether this settler's `good` would be delivered into its own workplace right now: what a store's
+ *  porter, which works for its store alone (owner ruling), may lift. */
+export function homeBoundGoodProbe(plan: PlannerContext): (goodType: number) => boolean {
+  const sink = deliverySinkProbe(plan);
+  const home = plan.world.tryGet(plan.entity, JobAssignment)?.workplace;
+  return (goodType) => home !== undefined && sink(goodType) === home;
 }
 
 /** Whether this settler's `good` could be delivered anywhere right now, so a pickup rung cannot lift a

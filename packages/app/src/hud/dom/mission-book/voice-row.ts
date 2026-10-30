@@ -1,6 +1,6 @@
-import type { NarrationState, UiCue } from '@open-northland/audio';
+import { NARRATION_RATES, type NarrationRate, type NarrationState, type UiCue } from '@open-northland/audio';
 import { type BriefingVoice, callbackVoice } from '@open-northland/data';
-import { messages } from '../../../i18n/index.js';
+import { bcp47Tag, formatMessage, messages } from '../../../i18n/index.js';
 import { createTooltip } from '../../../view/tooltip.js';
 import { escapeHtml, setAttribute, setStyleVar, setTip } from '../parts/dom.js';
 import { attachTipLayer } from '../parts/tip-layer.js';
@@ -24,6 +24,9 @@ export interface BriefingVoicePlayer {
   toggle(voice: BriefingVoice): void;
   /** Move `voice` to `atS` when it is the current line. */
   seek(voice: BriefingVoice, atS: number): void;
+  /** The tempo every line speaks at. */
+  rate(): NarrationRate;
+  setRate(rate: NarrationRate): void;
   state(): BriefingVoiceState;
 }
 
@@ -101,6 +104,14 @@ function barStep(key: string, view: VoiceRowView): number | null {
   return null;
 }
 
+/** The tempo after `rate`, back to the recorded one past the fastest. */
+export function nextRate(rate: NarrationRate): NarrationRate {
+  const at = NARRATION_RATES.indexOf(rate);
+  return NARRATION_RATES[(at + 1) % NARRATION_RATES.length] ?? rate;
+}
+
+const rateText = (rate: NarrationRate): string => `${new Intl.NumberFormat(bcp47Tag()).format(rate)}×`;
+
 const timeText = (view: VoiceRowView): string =>
   `${clockText(view.positionS)} / ${clockText(view.durationS > 0 ? view.durationS : null)}`;
 
@@ -126,8 +137,9 @@ export interface VoiceRowsDeps {
   readonly cue: (cue: UiCue) => void;
 }
 
-/** The briefing chapter's narration player: a play/pause toggle, a seek bar and the elapsed and total
- *  time, in the book's foot, so it stays in reach while the reader turns the chapter's pages. */
+/** The briefing chapter's narration player: a play/pause toggle, a seek bar, the elapsed and total
+ *  time and the tempo a click steps through, in the book's foot, so it stays in reach while the reader
+ *  turns the chapter's pages. */
 export function createVoiceRows(deps: VoiceRowsDeps): VoiceRows {
   const copy = messages().hud.missionBook;
   const chip = createTooltip();
@@ -168,6 +180,17 @@ export function createVoiceRows(deps: VoiceRowsDeps): VoiceRows {
     }
     const time = row.querySelector('.on-voice__time');
     if (time !== null && time.textContent !== text) time.textContent = text;
+    const rate = row.querySelector<HTMLButtonElement>('[data-voice-rate]');
+    if (rate !== null && deps.player !== null) paintRate(rate, deps.player.rate());
+  };
+
+  const paintRate = (button: HTMLButtonElement, rate: NarrationRate): void => {
+    const shown = rateText(rate);
+    const label = formatMessage(copy.voiceRate, { rate: shown });
+    if (button.textContent !== shown) button.textContent = shown;
+    button.dataset.rate = String(rate);
+    setAttribute(button, 'aria-label', label);
+    setTip(button, label);
   };
 
   const rowsIn = (spread: HTMLElement): NodeListOf<HTMLElement> =>
@@ -191,9 +214,17 @@ export function createVoiceRows(deps: VoiceRowsDeps): VoiceRows {
     shownKey = '';
   };
 
+  const stepRate = (): void => {
+    if (deps.player === null) return;
+    deps.cue('confirm');
+    deps.player.setRate(nextRate(deps.player.rate()));
+    shownKey = '';
+  };
+
   const onClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('[data-voice-toggle]') != null) toggle();
+    else if (target?.closest('[data-voice-rate]') != null) stepRate();
   };
   const onPointerDown = (event: PointerEvent): void => {
     const bar = event.target instanceof Element ? event.target.closest<HTMLElement>('.on-voice__bar') : null;
@@ -239,7 +270,8 @@ export function createVoiceRows(deps: VoiceRowsDeps): VoiceRows {
     if (shown === null || shown.view.unavailable) return;
     const onBar = target.closest('.on-voice__bar') !== null;
     const step = onBar ? barStep(event.key, shown.view) : null;
-    if (event.key === ' ') toggle();
+    if (event.key === ' ' && target.closest('[data-voice-rate]') !== null) stepRate();
+    else if (event.key === ' ') toggle();
     else if (step === null) return;
     else seekTo(shown.voice, step);
     // The map's own keys (camera arrows, pause on Space) stay with the player while it has focus.
@@ -263,6 +295,7 @@ export function createVoiceRows(deps: VoiceRowsDeps): VoiceRows {
       <button type="button" class="on-voice__toggle" data-voice-toggle aria-label="${escapeHtml(copy.voicePlay)}">${GLYPHS}</button>
       <div class="on-voice__bar" role="slider" tabindex="0" aria-label="${escapeHtml(copy.voiceSeek)}" data-tip="${escapeHtml(copy.voiceSeek)}" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span class="on-voice__track"><span class="on-voice__fill"></span></span><span class="on-voice__handle"></span></div>
       <span class="on-voice__time">${escapeHtml(clockText(0))} / ${escapeHtml(clockText(null))}</span>
+      <button type="button" class="on-voice__rate" data-voice-rate></button>
     </div>`;
     },
     refresh(spread): void {
@@ -270,7 +303,7 @@ export function createVoiceRows(deps: VoiceRowsDeps): VoiceRows {
       const shown = current();
       if (shown === null || drag !== null) return;
       const { view } = shown;
-      const key = `${view.unavailable}:${view.playing}:${view.at.toFixed(4)}:${Math.floor(view.positionS)}:${view.durationS}`;
+      const key = `${deps.player?.rate()}:${view.unavailable}:${view.playing}:${view.at.toFixed(4)}:${Math.floor(view.positionS)}:${view.durationS}`;
       if (key === shownKey) return;
       shownKey = key;
       for (const row of rowsIn(spread)) paint(row, view);

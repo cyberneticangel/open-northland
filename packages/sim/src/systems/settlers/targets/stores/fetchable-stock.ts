@@ -13,6 +13,7 @@ import { ChangeFeed } from '../../../../ecs/change-feed.js';
 import { JournaledCaptures } from '../../../../ecs/journaled-captures.js';
 import type { Entity, World } from '../../../../ecs/world.js';
 import type { ContentContext } from '../../../context.js';
+import { isFoodKeptAtHome } from '../../../readviews/food.js';
 import {
   accessibleStockAmounts,
   isStorehouseType,
@@ -274,7 +275,7 @@ function contributionOf(
   c.refilled = refilled;
   // keys() plus get: destructured entries would allocate a pair per slot of every store written.
   for (const good of amounts.keys()) {
-    if (recipeConsumes(reserved, good)) continue;
+    if (recipeConsumes(reserved, good) || isFoodKeptAtHome(world, ctx, e, good)) continue;
     const amount = amounts.get(good) ?? 0;
     c.goods[c.lent] = good;
     c.units[c.lent++] = amount;

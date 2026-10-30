@@ -1,19 +1,20 @@
 import type { GameSession } from '@open-northland/lockstep';
-import type {
-  BlobUpload,
-  ClientMessage,
-  DepartedSeatMode,
-  DepartureCause,
-  LobbyCompatibility,
-  LobbySettings,
-  PlayerWireEnvelope,
-  ResponsivenessMode,
-  RoomSeatSetup,
-  RoomSettings,
-  RoomState,
-  RoomSummary,
-  RoomView,
-  ServerMessage,
+import {
+  type BlobUpload,
+  type ClientMessage,
+  type DepartedSeatMode,
+  type DepartureCause,
+  type LobbyCompatibility,
+  type LobbySettings,
+  type PlayerWireEnvelope,
+  type ResponsivenessMode,
+  type RoomSeatSetup,
+  type RoomSettings,
+  type RoomState,
+  type RoomSummary,
+  type RoomView,
+  type ServerMessage,
+  withFlag,
 } from '@open-northland/net-protocol';
 import { Game } from '../game/game.js';
 import { Lobby } from '../lobby/lobby.js';
@@ -432,6 +433,7 @@ export class Room {
     this.broadcast(
       this.chatLog.add({
         from: member.nick,
+        ...withFlag(member.flag),
         text,
         at: this.hooks.wallClock(),
         tick: this.game?.chatTick ?? null,

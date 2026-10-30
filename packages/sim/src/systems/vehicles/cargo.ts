@@ -59,7 +59,7 @@ export function abandonCargoRun(world: World, carrier: Entity): void {
 /**
  * A cargo hand riding inside a vehicle that stands still, a cart with no drive or held goal or a moored
  * ship, steps out onto the door while the hold has a trip for it, so a ship's crew unloads at the shore
- * and a trader's cart loads beside a house without a carrier (owner's choice; the original's carrier
+ * and a cart's commander loads it beside a house without a carrier (owner's choice; the original's carrier
  * works only from outside). A commander lets a request nobody can fill lapse. Before the planner, so
  * the hand is planned the tick it lands.
  */

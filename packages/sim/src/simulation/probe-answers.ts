@@ -7,7 +7,7 @@ import type { ContentSet } from '@open-northland/data';
 import { bioGroundWaived } from '../components/rules.js';
 import type { Entity, World } from '../ecs/world.js';
 import type { HalfCellNode, NodeArea } from '../nav/halfcell.js';
-import type { TerrainGraph } from '../nav/terrain/index.js';
+import type { NodeId, TerrainGraph } from '../nav/terrain/index.js';
 import { contestedGroundFor } from '../systems/conflict/contested-ground.js';
 import { buildingFootprintOf } from '../systems/footprint/geometry.js';
 import {
@@ -58,6 +58,8 @@ export interface MooringAnswer {
   /** Changes whenever the spots may have. */
   readonly key: string;
   readonly spots: NodeSetAnswer;
+  /** The water nodes the ship may lie moored at (`MooringProbe.canDock`). */
+  readonly docks: NodeSetAnswer;
 }
 
 function nodeAreaWidth(area: NodeArea): number {
@@ -328,8 +330,9 @@ export function roadSiteAnswerFor(
   return { area, accepted: held.grid.slice(), key };
 }
 
-/** The spot set stays the same object while the mooring memo's key holds, so it is packed once. */
-const packedSpots = new WeakMap<ReadonlySet<number>, NodeSetAnswer>();
+/** The spot and dock sets stay the same objects while the mooring memo's key holds, so each is packed
+ *  once. */
+const packedSets = new WeakMap<ReadonlySet<NodeId>, NodeSetAnswer>();
 
 /** The mooring probe's answer; null where the probe is. */
 export function mooringAnswerFor(
@@ -341,17 +344,20 @@ export function mooringAnswerFor(
   if (terrain === undefined) return null;
   const held = mooringSpotsOf(world, { content }, terrain, vehicle);
   if (held === null) return null;
-  let spots = packedSpots.get(held.spots);
-  if (spots === undefined) {
-    const nodes: HalfCellNode[] = [];
-    for (const node of held.spots) {
-      const { x, y } = terrain.coordsOf(node);
-      nodes.push({ hx: x, hy: y });
+  const pack = (set: ReadonlySet<NodeId>): NodeSetAnswer => {
+    let packed = packedSets.get(set);
+    if (packed === undefined) {
+      const nodes: HalfCellNode[] = [];
+      for (const node of set) {
+        const { x, y } = terrain.coordsOf(node);
+        nodes.push({ hx: x, hy: y });
+      }
+      packed = packedNodeSet(nodes);
+      packedSets.set(set, packed);
     }
-    spots = packedNodeSet(nodes);
-    packedSpots.set(held.spots, spots);
-  }
-  return { key: held.key, spots };
+    return packed;
+  };
+  return { key: held.key, spots: pack(held.spots), docks: pack(held.docks) };
 }
 
 /** The nodes `player`'s walls, gates and wall sites stand on. */

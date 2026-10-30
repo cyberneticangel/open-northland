@@ -2,6 +2,7 @@ import type { SimEvent, WorldSnapshot } from '@open-northland/sim';
 import { Container, type Sprite } from 'pixi.js';
 import { BloodCoats } from '../../data/effects/blood-coats.js';
 import type { GhostSource } from '../../data/fog/index.js';
+import { BEARER_GLOW, HOUSE_GLOW, type LightSiteList, lightOn } from '../../data/lighting/light-sites.js';
 import {
   type Camera,
   cameraScreenX,
@@ -30,7 +31,14 @@ import { BuildingDamage, type FallenBody } from '../building-damage/building-dam
 import { PalettedQuad } from '../paletted-sprite/index.js';
 import { PLOT_BOUNDS, type PlanRoadTextures } from '../placement/plan-road.js';
 import type { PlanStakeTextures } from '../placement/plan-stake.js';
-import type { SelectionStyle, TargetFlash } from '../selection/style.js';
+import {
+  type SelectionStyle,
+  TARGET_MARK_LIFT,
+  TARGET_MARK_STYLE,
+  type TargetFlash,
+  type TargetTone,
+  targetMarkBreath,
+} from '../selection/style.js';
 import type { ErasedRegion } from '../textures/erased-frame-cache.js';
 import type { SpriteSheet } from '../textures/sprite-sheet.js';
 import type { TextureCache } from '../textures/texture-cache.js';
@@ -44,6 +52,7 @@ import { cullBox, type KindReaches, kindReaches } from './cull-reach.js';
 import { GroundPileCover } from './ground-pile-cover.js';
 import { damageScaffoldLayers } from './layers/building.js';
 import { resolvesWithoutClock } from './layers/resolve.js';
+import { NightBearers } from './night-bearers.js';
 import {
   anchorOf,
   boundsOf,
@@ -72,6 +81,11 @@ import { SelectionEffects } from './selection-effects.js';
 const POOL_REAP_BUDGET = 32;
 
 const NO_REFS: ReadonlySet<number> = new Set();
+
+/** The marked entities that draw an emphasis; a refused one draws plain. */
+function* drawnMarksOf(marks: ReadonlyMap<number, TargetTone> | undefined): Iterable<number> {
+  for (const [ref, tone] of marks ?? []) if (tone !== 'refused') yield ref;
+}
 
 /** A pooled entity's container names its entity, so the sprite layer's still mesh asks about a child
  *  without a map lookup. */
@@ -108,6 +122,9 @@ export interface PoolFrame {
   readonly viewport: Viewport;
   /** The sim tick the snapshot belongs to - the animation clock for looping gaits. */
   readonly tick: number;
+  /** The water clock in base-rate sim ticks (12 Hz), which a ship's swell and sail keep at every game
+   *  speed; absent follows the sim tick. */
+  readonly seaClock?: number;
   /** The camera transform; the screen-space paletted vehicle meshes self-place from it. */
   readonly camera: Camera;
   /** Canvas size in pixels. */
@@ -133,9 +150,10 @@ export interface PoolFrame {
   readonly fogEpoch?: number;
   /** Remembered statics drawn dimmed on explored ground in place of their fog-culled or dead entities. */
   readonly ghosts?: GhostSource;
-  /** Workplace-assignment highlight: building id → assignable (green tint) or not (red). Transient view
-   *  state like the selection, never sim state. */
-  readonly highlight?: ReadonlyMap<number, boolean>;
+  /** An armed pick's verdicts by entity id, present while one is armed: the candidates and the doomed
+   *  draw their outline, and nothing else takes the hover outline meanwhile. Transient view state like
+   *  the selection, never sim state. */
+  readonly marks?: ReadonlyMap<number, TargetTone>;
   /** Building id → the part of its art a mark stands in for, such as a manned tower's roof finial under
    *  its garrison flag. Pass a new map on every change. */
   readonly erased?: ReadonlyMap<number, ErasedRegion>;
@@ -263,9 +281,12 @@ export class SpritePool {
    *  or emphasised, and their refs: what a still frame presents. */
   private readonly moving: number[] = [];
   private readonly movingRefs = new Set<number>();
+  /** Held entities the last full pass visited off the draw list for an emphasis that moves with the
+   *  frame clock, such as a pick target's breathing lift; still frames present them with {@link moving}. */
+  private readonly movingHeld: PooledEntity[] = [];
   /** What the last full pass drew under, which a still frame must match. */
   private passEpoch = -1;
-  private passHighlight: PoolFrame['highlight'];
+  private passMarks: PoolFrame['marks'];
   private passErased: PoolFrame['erased'];
   private passStyle: PoolFrame['selectionStyle'];
   private passHovered: PoolFrame['hovered'];
@@ -274,7 +295,6 @@ export class SpritePool {
   private holdGeneration = 0;
   private holdBind = -1;
   private holdMotion = -1;
-  private holdHighlight: PoolFrame['highlight'];
   private holdErased: PoolFrame['erased'];
   private holdStyle: PoolFrame['selectionStyle'];
   /** The pooled entity of each of {@link lastItems}, by index: a repeated scene build skips the lookups. */
@@ -288,6 +308,32 @@ export class SpritePool {
     const pe = this.pool.get(ref);
     return pe?.attached === true ? pe : undefined;
   };
+
+  /**
+   * Light this frame's night `level` (0 day, 1 full night) on the bearers drawn on the map: an owned
+   * settler outside a house or an owned vehicle lights its own figure, a finished house its walls and a
+   * pool round its feet, appended to `out`. Wildlife, sites, fog ghosts and settlers inside stay dark.
+   */
+  lightNight(level: number, out: LightSiteList): void {
+    this.nightBearers.begin();
+    if (level > 0) {
+      for (const pe of this.attached) {
+        const item = pe.bound.item;
+        if (item === undefined || item.ghost === true || item.portraitOnly === true) continue;
+        if (item.kind === 'settler' || item.kind === 'vehicle') {
+          if (item.player !== undefined && item.inHouse !== true)
+            this.nightBearers.mark(pe, level * BEARER_GLOW, false);
+        } else if (item.kind === 'building' && item.builtPct === undefined) {
+          const on = lightOn('building', item.ref, level);
+          if (on <= 0) continue;
+          this.nightBearers.mark(pe, on * HOUSE_GLOW, true);
+          const { x, y } = pe.container.position;
+          out.push('building', item.ref, x, y);
+        }
+      }
+    }
+    this.nightBearers.end();
+  }
 
   private drawDamage(frame: PoolFrame): void {
     this.buildingDamage.draw(
@@ -304,9 +350,10 @@ export class SpritePool {
     // gate's outline follows its holes.
     this.refreshDamageableSelection(frame.selection, frame);
     this.refreshDamageableSelection(frame.flagged, frame);
+    this.refreshDamageableSelection(drawnMarksOf(frame.marks), frame);
   }
 
-  private refreshDamageableSelection(refs: ReadonlySet<number> | undefined, frame: PoolFrame): void {
+  private refreshDamageableSelection(refs: Iterable<number> | undefined, frame: PoolFrame): void {
     for (const ref of refs ?? NO_REFS) {
       const pe = this.pool.get(ref);
       const item = pe?.bound.item;
@@ -320,6 +367,7 @@ export class SpritePool {
   private readonly portrait: PortraitSubject;
   private readonly binder: LayerBinder;
   private readonly selectionEffects: SelectionEffects;
+  private readonly nightBearers = new NightBearers();
   private readonly bloodCoats = new BloodCoats();
   private readonly epoch = new FrameEpoch();
   /** What each kind can draw around its anchor; a kind absent here is culled by the scene's box alone. */
@@ -389,6 +437,7 @@ export class SpritePool {
     if (!repeated) this.collectOverlays(scene.items);
     this.moving.length = 0;
     this.movingRefs.clear();
+    this.movingHeld.length = 0;
     this.passHasPortrait = false;
     const kept = scene.kept;
     const generation = this.holdGeneration;
@@ -414,27 +463,27 @@ export class SpritePool {
       const pe = (repeated ? this.lastPooled[i] : undefined) ?? this.pooledFor(item);
       this.visit(pe, item, i, frame);
     }
-    // A held entity a selection, flag, hover or flash now names draws its emphasis, which only a visit
-    // applies.
-    for (const refs of [frame.selection, frame.flagged, frame.flashes?.keys()]) {
+    // A held entity a selection, flag, mark, hover or flash now names draws its emphasis, which only a
+    // visit applies.
+    for (const refs of [frame.selection, frame.flagged, frame.flashes?.keys(), drawnMarksOf(frame.marks)]) {
       for (const ref of refs ?? NO_REFS) {
         const pe = this.pool.get(ref);
         const item = pe?.bound.item;
         if (pe !== undefined && pe.held === generation && pe.lastSeen !== this.frameId && item !== undefined)
-          this.visit(pe, item as SpriteDrawItem, -1, frame);
+          this.visitHeld(pe, item as SpriteDrawItem, frame);
       }
     }
     if (frame.hovered !== undefined) {
       const pe = this.pool.get(frame.hovered);
       const item = pe?.bound.item;
       if (pe !== undefined && pe.held === generation && pe.lastSeen !== this.frameId && item !== undefined)
-        this.visit(pe, item as SpriteDrawItem, -1, frame);
+        this.visitHeld(pe, item as SpriteDrawItem, frame);
     }
     this.lastItems = scene.items;
     this.drawn = drawn ?? scene.items;
     this.lastPooled.length = scene.items.length;
     this.passEpoch = this.epoch.current;
-    this.passHighlight = frame.highlight;
+    this.passMarks = frame.marks;
     this.passErased = frame.erased;
     this.passStyle = frame.selectionStyle;
     this.passHovered = frame.hovered;
@@ -541,7 +590,7 @@ export class SpritePool {
 
   /**
    * Release every hold when something a held entity draws from changed without its draw item changing
-   * (a bind input, the wind or motion setting, the highlight, the selection style, a full scene build),
+   * (a bind input, the wind or motion setting, the selection style, a full scene build),
    * and each one the scene released: touched by a delta, withheld or handed back, or out of view.
    */
   private reviseHolds(scene: SpriteScene, frame: PoolFrame): void {
@@ -549,14 +598,12 @@ export class SpritePool {
       scene.kept === undefined ||
       this.epoch.bind !== this.holdBind ||
       this.epoch.motion !== this.holdMotion ||
-      frame.highlight !== this.holdHighlight ||
       frame.erased !== this.holdErased ||
       frame.selectionStyle !== this.holdStyle
     ) {
       this.holdGeneration++;
       this.holdBind = this.epoch.bind;
       this.holdMotion = this.epoch.motion;
-      this.holdHighlight = frame.highlight;
       this.holdErased = frame.erased;
       this.holdStyle = frame.selectionStyle;
     }
@@ -580,29 +627,36 @@ export class SpritePool {
   }
 
   private applySelection(pe: PooledEntity, item: DrawItem, frame: PoolFrame): boolean {
-    const flagged = frame.flagged?.has(item.ref) === true;
-    const flash =
-      item.ghost === true || item.portraitOnly === true ? undefined : frame.flashes?.get(item.ref);
+    const ref = item.ref;
+    // Ghosts and portrait insets never take an emphasis.
+    const plain = item.ghost === true || item.portraitOnly === true;
+    const flagged = !plain && frame.flagged?.has(ref) === true;
+    const selected = !plain && frame.selection?.has(ref) === true;
+    const flash = plain ? undefined : frame.flashes?.get(ref);
+    const tone = plain || flagged || selected ? undefined : frame.marks?.get(ref);
+    const mark = tone === undefined || tone === 'refused' ? undefined : TARGET_MARK_STYLE[tone];
     // Artistic approximation of the original's hovered-target contour, like the selection outline: a
-    // flag keeps its amber, a selected entity its own style, and anything else the cursor rests over
-    // draws the ivory outline. Ghosts and portrait insets never take the hover emphasis.
-    const style =
-      item.ghost === true || item.portraitOnly === true
-        ? undefined
-        : flagged
+    // flag keeps its amber, a selected entity its own style, a pick's target its mark, and while no pick
+    // is armed anything else the cursor rests over draws the ivory outline.
+    const style = flagged
+      ? 'outline'
+      : selected
+        ? frame.selectionStyle
+        : mark !== undefined || (!plain && frame.hovered === ref && frame.marks === undefined)
           ? 'outline'
-          : frame.selection?.has(item.ref)
-            ? frame.selectionStyle
-            : frame.hovered === item.ref
-              ? 'outline'
-              : undefined;
+          : undefined;
+    // A doomed target is only ever the one aimed at.
+    const aimed = tone === 'doomed' || frame.hovered === ref;
+    const seconds = frame.selectionTime ?? 0;
     this.selectionEffects.update(
       pe,
       style,
       frame.camera.scale ?? 1,
-      frame.selectionTime ?? 0,
-      flagged ? 0xffc020 : undefined,
+      seconds,
+      flagged ? 0xffc020 : mark?.outline,
       flash,
+      mark === undefined ? undefined : aimed ? TARGET_MARK_LIFT : targetMarkBreath(seconds),
+      mark?.liftTone,
     );
     return style !== undefined || flash !== undefined;
   }
@@ -628,7 +682,7 @@ export class SpritePool {
 
   /**
    * Whether this frame differs from the last full pass only in the frame alpha: the same draw list, no
-   * tick, setting, camera or highlight change, and every selected or flagged entity already among the
+   * tick, setting, camera or mark change, and every selected or flagged entity already among the
    * moving ones. Then only {@link moving} needs a present; everything else holds still where it is.
    */
   private repeatsStill(scene: SpriteScene, frame: PoolFrame): boolean {
@@ -637,7 +691,7 @@ export class SpritePool {
       this.epoch.current !== this.passEpoch ||
       this.epoch.viewMoved ||
       this.passHasPortrait ||
-      frame.highlight !== this.passHighlight ||
+      frame.marks !== this.passMarks ||
       frame.erased !== this.passErased ||
       frame.selectionStyle !== this.passStyle ||
       frame.hovered !== this.passHovered
@@ -656,6 +710,17 @@ export class SpritePool {
       const pe = this.lastPooled[i];
       if (item !== undefined && pe !== undefined) this.presentItemAt(pe, item, frame, true);
     }
+    for (const pe of this.movingHeld) {
+      const item = pe.bound.item;
+      if (item !== undefined && pe.attached) this.presentItemAt(pe, item, frame, true);
+    }
+  }
+
+  /** Visit a held entity off the draw list for its emphasis; one the emphasis keeps from holding still
+   *  moves on with the still frames. */
+  private visitHeld(pe: PooledEntity, item: SpriteDrawItem, frame: PoolFrame): void {
+    this.visit(pe, item, -1, frame);
+    if (pe.held === -1) this.movingHeld.push(pe);
   }
 
   /** Collect the drawn damaged buildings and ships off a new draw list. */
@@ -694,14 +759,13 @@ export class SpritePool {
    */
   private presentPooled(pe: PooledEntity, item: DrawItem, frame: PoolFrame, continuous: boolean): void {
     const stamp = pe.bound;
-    const highlight = frame.highlight?.get(item.ref);
     const erased = frame.erased?.get(item.ref);
     const steady = continuous && pe.reveal === undefined;
     if (
       steady &&
       (stamp.alpha === frame.alpha ||
         repeatsInTick(pe, item, frame.tick, frame.alpha, this.sheet, frame.environmentMotion === true)) &&
-      stamp.holds(item, this.epoch.current, highlight, erased) &&
+      stamp.holds(item, this.epoch.current, erased) &&
       this.binder.paletteHolds(pe, item)
     ) {
       this.keepBound(pe);
@@ -712,7 +776,7 @@ export class SpritePool {
       resolvesWithoutClock(item) &&
       stamp.clockFree &&
       atRest(pe.motion) &&
-      stamp.bindHolds(item, this.epoch.bind, highlight, erased) &&
+      stamp.bindHolds(item, this.epoch.bind, erased) &&
       stamp.sameItem(item) &&
       this.binder.paletteHolds(pe, item)
     ) {
@@ -728,7 +792,7 @@ export class SpritePool {
       // The present may have started a construction reveal, which binds every frame.
       item.hpFrac === undefined &&
       pe.reveal === undefined &&
-      stamp.bindHolds(item, this.epoch.bind, highlight, erased) &&
+      stamp.bindHolds(item, this.epoch.bind, erased) &&
       stamp.presents(pe.motion, layers) &&
       this.binder.paletteHolds(pe, item)
     ) {
@@ -738,7 +802,7 @@ export class SpritePool {
     }
     const deferrals = this.textures.deferrals;
     this.binder.bind(pe, item, layers, frame, this.frameId);
-    stamp.record(item, this.epoch, highlight, erased, pe.motion, layers);
+    stamp.record(item, this.epoch, erased, pe.motion, layers);
     // A bake the budget turned away left a stand-in on this entity alone: it binds again next frame.
     if (this.textures.deferrals !== deferrals) stamp.retry();
     pe.container.zIndex = pooledDepth(pe, item);
@@ -1041,11 +1105,13 @@ export class SpritePool {
     }
     this.pool.clear();
     this.attached.clear();
+    this.nightBearers.clear();
     this.lastItems = [];
     this.drawn = [];
     this.lastPooled.length = 0;
     this.moving.length = 0;
     this.movingRefs.clear();
+    this.movingHeld.length = 0;
     this.passEpoch = -1;
     this.passHovered = undefined;
     this.reapCursor = undefined;

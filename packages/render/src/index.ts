@@ -2,8 +2,15 @@ export type { TextureSource } from 'pixi.js';
 export {
   FOG_EXPLORED_ALPHA,
   FOG_UNEXPLORED_ALPHA,
+  type FogGhost,
+  type FogGhostMemory,
   fogTileExplored,
   fogTileVisible,
+  type GhostSource,
+  type RememberedMarkers,
+  type SeenRoadNetwork,
+  type Sight,
+  UnseenChanges,
 } from './data/fog/index.js';
 export {
   buildHud,
@@ -58,6 +65,7 @@ export {
   type HumanPaletteColours,
   type HumanPaletteIdentity,
   headPaletteBand,
+  type LoadLayout,
   type WeaponLayout,
 } from './data/palettes/human-palettes.js';
 export {
@@ -250,8 +258,8 @@ export {
   oversampleFor,
   type SupersampledTexture,
 } from './gpu/pixi-app/supersample.js';
-export type { PlacementGhost } from './gpu/placement/ghost.js';
-export type { PlacementOverlayCell, PlacementOverlayFrame } from './gpu/placement/overlay.js';
+export type { BerthMark, PlacementGhost } from './gpu/placement/ghost.js';
+export type { OverlayBrush, PlacementOverlayCell, PlacementOverlayFrame } from './gpu/placement/overlay.js';
 export type { PlanRoadTextures } from './gpu/placement/plan-road.js';
 export type { PlanStakeTextures } from './gpu/placement/plan-stake.js';
 export type { RangeRing } from './gpu/selection/range-ring.js';
@@ -262,6 +270,7 @@ export {
   type SelectionStyle,
   type TargetFlash,
   type TargetFlashTone,
+  type TargetTone,
 } from './gpu/selection/style.js';
 export {
   forgetShaderLinks,
@@ -294,7 +303,7 @@ export {
   readable2dContext,
 } from './gpu/textures/drawable-resource.js';
 export type { AnchorRect, ErasedRegion } from './gpu/textures/erased-frame-cache.js';
-export { type HumanArmorPalettes, HumanPaletteLut } from './gpu/textures/human-palette-lut.js';
+export { type HumanArmorPalettes, HumanPaletteLut, TEAM_HUMANS } from './gpu/textures/human-palette-lut.js';
 export {
   colourRecolouredFrame,
   type DrawableFrame,
@@ -322,8 +331,8 @@ export {
 export { TextureCache } from './gpu/textures/texture-cache.js';
 export { GLOW_PALETTE_INDEX } from './gpu/world-batch/batcher.js';
 export {
-  type BuildingHighlightItem,
   SPRITE_CULL_MARGIN,
+  type TargetMark,
   type WorldEnhancements,
   type WorldFrame,
   WorldRenderer,

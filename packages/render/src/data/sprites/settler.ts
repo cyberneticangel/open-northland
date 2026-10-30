@@ -215,18 +215,19 @@ function stretchedFrame(ref: SpriteFrameRef, facing: number, clock: number, peri
 /**
  * An action clip's frame `elapsed` ticks into an atomic of `duration` ticks. A frame list plays as the
  * original plays a `gfxanimmode` list: looped one entry per tick, else stretched over its `ticks` (the whole
- * atomic when it names none), replaying while the atomic runs on and holding its last entry once it ends. A
- * strip fallback keeps its own cadence.
+ * atomic when it names none, or when `stretched`), replaying while the atomic runs on and holding its last
+ * entry once it ends. A strip fallback keeps its own cadence.
  */
 export function atomicFrame(
   ref: SpriteFrameRef,
   facing: number,
   elapsed: number,
   duration: number | undefined,
+  stretched = false,
 ): number {
   if (typeof ref === 'number' || !('frameLists' in ref) || ref.loop === true)
     return frameOf(ref, facing, elapsed);
-  const period = ref.ticks ?? duration;
+  const period = stretched ? (duration ?? ref.ticks) : (ref.ticks ?? duration);
   if (period === undefined || period <= 0) return frameOf(ref, facing, elapsed);
   const ended = duration !== undefined && elapsed >= duration;
   return stretchedFrame(ref, facing, ended ? period : elapsed % period, period);
@@ -290,12 +291,14 @@ export function resolveSettlerBobId(
       seed = Math.imul(seed, 0xc2b2ae35);
       seed = (seed ^ (seed >>> 16)) >>> 0;
       const selected = choices[seed % choices.length];
-      if (selected !== undefined) return atomicFrame(selected, facing, clock, item.atomicDuration);
+      if (selected !== undefined)
+        return atomicFrame(selected, facing, clock, item.atomicDuration, item.atomicStretched);
     }
     const byAtomic = binding.byAtomic;
     if (byAtomic !== undefined && item.atomicId !== undefined) {
       const specific = byAtomic[item.atomicId];
-      if (specific !== undefined) return atomicFrame(specific, facing, clock, item.atomicDuration);
+      if (specific !== undefined)
+        return atomicFrame(specific, facing, clock, item.atomicDuration, item.atomicStretched);
     }
     // Prayer's missing artwork must not borrow a trade's generic work gesture.
     if (item.atomicId === 12) return frameOf(binding.idle, facing, 0);

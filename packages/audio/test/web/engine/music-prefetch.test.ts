@@ -3,18 +3,20 @@ import type { MusicCue, MusicSequence } from '../../../src/index.js';
 import {
   MusicPlayer,
   type MusicScheduler,
+  STANDBY_PREFETCH_LATEST_S,
   STANDBY_PREFETCH_LEAD_S,
 } from '../../../src/web/engine/music-player.js';
 import { FakeContext, flush } from '../../support/fake-audio.js';
 import { musicTrack } from '../../support/music-manifest.js';
 
-/** The standby prefetch waits for the running cue's end instead of competing with a boot's loads. */
+/** The standby prefetch waits for the running cue's end instead of competing with a boot's loads, but
+ *  not past its latest start for a cue that loops on and on. */
 
 /** One fetched byte decodes to one second, so this serves a 120 s file. */
 const TRACK_S = 120;
-/** First pass ends at 100 s: a one-pass cue plays 100 s. */
-const LONG = musicTrack('theme_viking_neutral', { loopStartS: 100, loopEndS: TRACK_S });
-const FIGHT = musicTrack('attack_arabs', { loopStartS: 100, loopEndS: TRACK_S });
+/** First pass ends at 50 s: a one-pass cue plays 50 s, its lead opening before the latest start. */
+const LONG = musicTrack('theme_viking_neutral', { loopStartS: 50, loopEndS: TRACK_S });
+const FIGHT = musicTrack('attack_arabs', { loopStartS: 50, loopEndS: TRACK_S });
 const FADE_S = 1;
 const CUE_S = LONG.loopStartS;
 const PREFETCH_AT_S = CUE_S - FADE_S - STANDBY_PREFETCH_LEAD_S;
@@ -45,10 +47,10 @@ function manualClock(ctx: FakeContext): ManualClock {
 }
 
 /** A calm sequence on LONG whose fight cut-in opens on FIGHT, its standby. */
-function calmWithFight(dropped: string[] = []): MusicSequence & { fight: boolean } {
+function calmWithFight(dropped: string[] = [], passes = 1): MusicSequence & { fight: boolean } {
   const cue = (track: typeof LONG): MusicCue => ({
     track,
-    passes: 1,
+    passes,
     gapBeforeS: 0,
     fadeInS: 0,
     fadeS: FADE_S,
@@ -104,6 +106,58 @@ describe('standby prefetch timing', () => {
     await flush();
     clock.advanceTo(PREFETCH_AT_S);
     expect(fetched).toEqual([`/music/${LONG.file}`, `/music/${FIGHT.file}`]);
+  });
+
+  it('fetches the standby of a cue that loops on by its latest start', async () => {
+    const LOOPED_PASSES = 100;
+    const { clock, fetched, player } = harness();
+    player.play(calmWithFight([], LOOPED_PASSES));
+    await flush();
+    clock.advanceTo(STANDBY_PREFETCH_LATEST_S - 1);
+    expect(fetched).toEqual([`/music/${LONG.file}`]);
+    clock.advanceTo(STANDBY_PREFETCH_LATEST_S);
+    expect(fetched).toEqual([`/music/${LONG.file}`, `/music/${FIGHT.file}`]);
+  });
+
+  it('fetches the upcoming cue within the lead of the end fade and opens it without another fetch', async () => {
+    const { ctx, clock, fetched, player } = harness();
+    const NEXT = musicTrack('theme_viking_friendly', { loopStartS: 50, loopEndS: TRACK_S });
+    let handed = 0;
+    player.play({
+      next: () => ({
+        track: handed++ === 0 ? LONG : NEXT,
+        passes: 1,
+        gapBeforeS: 0,
+        fadeInS: 0,
+        fadeS: FADE_S,
+      }),
+      drop: () => {},
+      upcoming: () => NEXT,
+    });
+    await flush();
+    clock.advanceTo(PREFETCH_AT_S - 1);
+    expect(fetched).toEqual([`/music/${LONG.file}`]);
+    clock.advanceTo(PREFETCH_AT_S);
+    await flush();
+    expect(fetched).toEqual([`/music/${LONG.file}`, `/music/${NEXT.file}`]);
+    clock.advanceTo(CUE_S);
+    ctx.sources[0]?.onended?.();
+    await flush();
+    expect(ctx.sources).toHaveLength(2);
+    expect(fetched.filter((url) => url.endsWith(NEXT.file))).toHaveLength(1);
+  });
+
+  it('fetches the upcoming cue at once when a mood change hands over at a pass end', async () => {
+    const { fetched, player } = harness();
+    const NEXT = musicTrack('theme_viking_friendly', { loopStartS: 50, loopEndS: TRACK_S });
+    player.play({
+      next: () => ({ track: LONG, passes: 1, gapBeforeS: 0, fadeInS: 0, fadeS: FADE_S }),
+      drop: () => {},
+      upcoming: () => NEXT,
+    });
+    await flush();
+    player.endAtPassEnd();
+    expect(fetched).toEqual([`/music/${LONG.file}`, `/music/${NEXT.file}`]);
   });
 
   it('never fetches the standby of a cue stopped before the lead', async () => {

@@ -1,5 +1,5 @@
 import type { BuildingType } from '@open-northland/data';
-import type { BuildingHighlightItem } from '@open-northland/render';
+import type { TargetMark } from '@open-northland/render';
 import { entitiesWith, entityById, systems, type WorldSnapshot } from '@open-northland/sim';
 import { entitiesUnder, idsGroupedBy } from '../../../game/snapshot/id-index.js';
 import {
@@ -15,20 +15,21 @@ import {
   settlersIn,
   trainingHouseOf,
 } from '../../../game/snapshot/index.js';
+import { markOf } from './target-mark.js';
 
 /** The slice of a building type these picks read. */
 type BuildingInfo = Pick<BuildingType, 'kind' | 'workers'>;
 
 /**
- * A pick over the player's own buildings: every candidate of a selected member's owner lights up, green
- * when it accepts one member, red otherwise. The simulation command re-checks the walk on arrival.
+ * A pick over the player's own buildings: every candidate of a selected member's owner is judged, lit
+ * when it accepts one member, refused otherwise. The simulation command re-checks the walk on arrival.
  */
 export interface OwnBuildingPick {
   highlight(
     snapshot: WorldSnapshot,
     settlerIds: readonly number[],
     byType: ReadonlyMap<number, BuildingInfo>,
-  ): BuildingHighlightItem[];
+  ): TargetMark[];
   assignableAt(
     snapshot: WorldSnapshot,
     buildingId: number,
@@ -40,7 +41,7 @@ export interface OwnBuildingPick {
 interface PickRule {
   /** `owner`'s entities that may be candidates; every building, filtered by owner, when absent. */
   readonly ownedBy?: (snapshot: WorldSnapshot, owner: number) => readonly SnapshotEntity[];
-  /** Which buildings are candidates at all; the rest are skipped, never tinted. */
+  /** Which buildings are candidates at all; the rest are skipped, never marked. */
   readonly candidate: (building: SnapshotEntity, byType: ReadonlyMap<number, BuildingInfo>) => boolean;
   /** Whether a candidate takes this settler. */
   readonly accepts: (building: SnapshotEntity, settler: SnapshotEntity, snapshot: WorldSnapshot) => boolean;
@@ -50,14 +51,19 @@ function ownBuildingPick(rule: PickRule): OwnBuildingPick {
   return {
     highlight(snapshot, settlerIds, byType) {
       const settlers = settlersIn(snapshot, settlerIds);
-      const items: BuildingHighlightItem[] = [];
+      const items: TargetMark[] = [];
       if (settlers.length === 0) return items;
       if (rule.ownedBy === undefined) {
         for (const e of entitiesWith(snapshot, 'Building')) {
           if (!rule.candidate(e, byType)) continue;
           const owned = settlers.filter((settler) => ownerPlayerOf(e) === ownerPlayerOf(settler));
           if (owned.length > 0)
-            items.push({ id: e.id, ok: owned.some((settler) => rule.accepts(e, settler, snapshot)) });
+            items.push(
+              markOf(
+                e.id,
+                owned.some((settler) => rule.accepts(e, settler, snapshot)),
+              ),
+            );
         }
         return items;
       }
@@ -67,7 +73,12 @@ function ownBuildingPick(rule: PickRule): OwnBuildingPick {
         const owned = settlers.filter((settler) => ownerPlayerOf(settler) === owner);
         for (const e of rule.ownedBy(snapshot, owner)) {
           if (rule.candidate(e, byType))
-            items.push({ id: e.id, ok: owned.some((settler) => rule.accepts(e, settler, snapshot)) });
+            items.push(
+              markOf(
+                e.id,
+                owned.some((settler) => rule.accepts(e, settler, snapshot)),
+              ),
+            );
         }
       }
       return items;

@@ -2,15 +2,19 @@ import type { ContentSet, EquipCategory } from '@open-northland/data';
 import type { MapAiScript } from './components/ai/map-ai.js';
 import {
   ASSISTANT_COUNTER_KINDS,
+  type AssistantArmingIntent,
+  type AssistantArmorOrder,
   AssistantCounters,
   type AssistantCounterValues,
   AssistantWeaponVetoes,
+  assistantArmorOrder,
   assistantCivilianOnlyGoods,
   assistantCountersEntity,
   assistantGrantedGoods,
   assistantMovesFlags,
   assistantPostsGraduatesEntity,
   assistantSoldierOnlyGoods,
+  assistantWeaponOrder,
   Building,
   buildTribes,
   type DiplomacyState,
@@ -124,6 +128,7 @@ import {
   type UnlockStatus,
   unlockStatus,
 } from './systems/progression/index.js';
+import { armorGoodsByProtection, weaponGoodsByStrength } from './systems/readviews/combat.js';
 import { type ConstructionSupply, constructionSupply } from './systems/readviews/construction-supply.js';
 import {
   type EquipPickEntry,
@@ -135,6 +140,7 @@ import { type WorkStatus, workStatus } from './systems/readviews/work-status.js'
 import { syncRoadLane } from './systems/roads/index.js';
 import { roadSitePlacementVersion } from './systems/roads/sites.js';
 import { SYSTEM_ORDER } from './systems/schedule.js';
+import { INTENT_WEAPON_CLASS } from './systems/settlers/atomics/effects/goods/weapon-class.js';
 import type { SignpostProbe } from './systems/signposts/index.js';
 import { type SignpostReachView, signpostReachKey, signpostReachView } from './systems/signposts/reach.js';
 import {
@@ -640,6 +646,23 @@ export class Simulation {
   /** The weapon goods `player`'s assistant never arms a recruit with, as a detached copy. */
   assistantWeaponVetoes(player: number): readonly number[] {
     return [...playerGoodList(this.world, AssistantWeaponVetoes, player)];
+  }
+
+  /** The armor choice of `player`'s `intent` class as a detached copy: the default order, strongest
+   *  protection first with nothing off, while the seat has not set one. */
+  assistantArmorOrder(player: number, intent: AssistantArmingIntent): AssistantArmorOrder {
+    const choice = assistantArmorOrder(this.world, player, intent);
+    return {
+      order: [...(choice?.order ?? armorGoodsByProtection(this.content))],
+      off: [...(choice?.off ?? [])],
+    };
+  }
+
+  /** The weapon order of `player`'s `intent` class as a detached copy: every weapon good of the class,
+   *  strongest first while the seat has not set one. */
+  assistantWeaponOrder(player: number, intent: AssistantArmingIntent): readonly number[] {
+    const order = assistantWeaponOrder(this.world, player, intent);
+    return [...(order ?? weaponGoodsByStrength(this.content, INTENT_WEAPON_CLASS[intent]))];
   }
 
   /** Whether `player`'s assistant sends graduates straight to a free workplace. */

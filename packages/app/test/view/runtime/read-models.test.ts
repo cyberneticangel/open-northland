@@ -27,6 +27,7 @@ const building = (typeId: number, id: string): ContentBuilding => ({
   shelterCapacity: 0,
   footprint: FOOTPRINT,
   tribeVariants: [],
+  recordFootprints: [],
 });
 
 /** An IR carrying just the flag-point lanes the index reads. */

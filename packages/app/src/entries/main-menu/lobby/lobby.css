@@ -381,14 +381,26 @@
 .main-menu__lobby-swatch:disabled {
   cursor: var(--cursor-default, default);
   opacity: 0.4;
-  /* Dimming alone hides on the dark swatches (black, indigo); the slash says "taken". */
-  background-image: linear-gradient(
-    135deg,
-    transparent 44%,
-    rgba(232, 240, 238, 0.9) 44%,
-    rgba(232, 240, 238, 0.9) 56%,
-    transparent 56%
-  );
+}
+
+/* Another seat wears it: a grey frame and that seat's number, which dimming alone hides on the dark
+   swatches (black, navy). */
+.main-menu__lobby-swatch.is-taken {
+  opacity: 0.75;
+  border-color: rgba(160, 166, 170, 0.9);
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--u) * 15);
+  font-weight: 700;
+  color: #fff;
+  text-shadow:
+    0 0 3px #000,
+    0 0 2px #000;
+}
+
+/* A locked palette dims every swatch alike, taken or free. */
+.main-menu__lobby-picker.is-locked .main-menu__lobby-swatch {
+  opacity: 0.4;
 }
 
 .main-menu__lobby-footnote {

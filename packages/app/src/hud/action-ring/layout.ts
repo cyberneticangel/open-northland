@@ -47,9 +47,9 @@ const ACTION_INNER_ARM_PX = 68;
 /** First/last-in-arm corner nudge. */
 const ACTION_EDGE_NUDGE_PX = 5;
 
-/** The ring runs at 75% of the shared HUD scale so it does not crowd the selected settler: a deliberate
- *  deviation from the original's 1:1 size (approximation). */
-export const ACTION_RING_UI_FACTOR = 0.75;
+/** The ring runs at 90% of the shared HUD scale so it does not crowd the selected settler: a deliberate
+ *  deviation from the original's 1:1 size (owner choice). */
+export const ACTION_RING_UI_FACTOR = 0.9;
 
 /**
  * The ring's effective scale: the floored HUD scale shrunk by the ring factor. The icon bake and the

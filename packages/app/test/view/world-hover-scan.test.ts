@@ -46,9 +46,6 @@ describe('world hover scan', () => {
       renderer: { drawnItems: () => items, entityBounds: boxOf } as unknown as WorldRenderer,
       camera: () => ({ offsetX: 0, offsetY: 0, scale: 1 }),
       clientToScreen: (x, y) => ({ x, y }),
-      goodLabel: () => undefined,
-      chestLabel: () => '',
-      chestOrderLine: () => null,
       card,
       buildingModel: (_s, id) => ({ kind: 'building', title: `house ${id}` }) as BuildingHoverModel,
       settlerModel: () => null,
@@ -70,7 +67,7 @@ describe('world hover scan', () => {
     expect(tested).toEqual(Array.from({ length: frames }, () => POINTED_HOUSE));
   });
 
-  it('names the card target for the hover outline, and nothing behind a chip or a claim', () => {
+  it('names the card target for the hover outline, and nothing over a chest, a pile or a claim', () => {
     const HOUSE = 1;
     const SETTLER = 2;
     const CHEST = 3;
@@ -101,9 +98,6 @@ describe('world hover scan', () => {
       renderer: { drawnItems: () => items, entityBounds: bounds } as unknown as WorldRenderer,
       camera: () => ({ offsetX: 0, offsetY: 0, scale: 1 }),
       clientToScreen: (x, y) => ({ x, y }),
-      goodLabel: () => 'Wood',
-      chestLabel: () => 'Chest',
-      chestOrderLine: () => null,
       card,
       buildingModel: () => ({ kind: 'building', title: 'house' }) as BuildingHoverModel,
       settlerModel: () => null,
@@ -124,7 +118,7 @@ describe('world hover scan', () => {
 
     pointer = pointed(400);
     hover.update(snapshot, 2 * FRAME_MS);
-    expect(hover.hovered()).toBeNull(); // a chest shows the chip alone
+    expect(hover.hovered()).toBeNull(); // a chest opens no card
 
     pointer = pointed(600);
     hover.update(snapshot, 3 * FRAME_MS);

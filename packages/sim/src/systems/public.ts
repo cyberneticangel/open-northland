@@ -71,6 +71,7 @@ export { REPAIR_CREW_LIMIT } from './economy/repair.js';
 export { insideBuildingReservedZone } from './economy/reserved-decor.js';
 export { jobUsesWorkFlag } from './economy/work-flag.js';
 export { isOnMission } from './family/eligibility.js';
+export type { HouseKey } from './footprint/geometry.js';
 export { footprintCellsOf } from './footprint/resource-footprint-cells.js';
 export {
   createResourceNode,
@@ -126,13 +127,11 @@ export {
   experienceRepeats,
   rawXpForRepeats,
   requirementRepeats,
-  scoutVisionBonusNodes,
   weaponClassHits,
   withFightExperience,
 } from './progression/bonus.js';
 export {
   FIGHT_EXPERIENCE_TYPE,
-  SCOUT_EXPERIENCE_TYPE,
   SOLDIER_GENERAL_EXPERIENCE_TYPE,
   startingExperience,
   TRAINING_EXPERIENCE_TYPE,
@@ -152,7 +151,12 @@ export {
   atomicDurationForName,
   atomicEventChannelDelta,
 } from './readviews/animations.js';
-export { HEADQUARTERS_BUILDING_ID, isBarracksType, isSchoolType } from './readviews/buildings.js';
+export {
+  combatClassOfType,
+  HEADQUARTERS_BUILDING_ID,
+  isBarracksType,
+  isSchoolType,
+} from './readviews/buildings.js';
 // The weapon and armour classes the data's `mainType` carries, which the HUD groups soldiers by.
 export { ARMOR_MAIN_TYPE } from './readviews/classes/armor.js';
 export { WEAPON_MAIN_TYPE } from './readviews/combat.js';
@@ -226,4 +230,3 @@ export {
   vehicleStockGood,
 } from './vehicles/index.js';
 export { cellOfNode } from './vision/gates.js';
-export { SCOUT_VISION_NODES } from './vision/system.js';

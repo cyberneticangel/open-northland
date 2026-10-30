@@ -55,8 +55,8 @@ function foreignStopOf(
  * A trader's route: the two houses it plies between, the stop it is at, the agreement it trades on at
  * a foreign stop, and how far the current exchange has come. `given`/`received` count the units of the
  * agreement's goods handed over and taken at the foreign house since the last completed exchange
- * (reading of the merchant counters). The goods ride in the hold of the cart the trader commands
- * (`VehicleStock`), never on the route itself.
+ * (reading of the merchant counters). The goods ride in the trader's hold, the hauling cart it pulls or its
+ * hands (`systems/trade/hold.ts`), never on the route itself.
  */
 export const TradeRoute = defineComponent<{
   stops: TradeStop[];
@@ -303,7 +303,7 @@ export function addTradeAgreement(world: World, agreement: TradeAgreement): bool
 /** What each player has traded with each other player, the tally `NumberOfGoodsTraded` and the diplomacy
  *  window read. Original behavior (byte-level): one per unit of the agreement's take good a trader carries
  *  from the partner's house to its cart, keyed by the trader's player and the house's; the goods it hands
- *  over count nowhere. Approximation: counted as the unit lands in the cart, not as the carry starts. */
+ *  over count nowhere. Approximation: counted as the unit lands in the trader's hold, not as the carry starts. */
 const tradeLedger = defineWorldSingleton<{
   /** `player * MAX_PLAYERS + partner` -> units the player's traders received from the partner's houses. */
   received: Map<number, number>;

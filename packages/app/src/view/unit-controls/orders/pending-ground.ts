@@ -237,9 +237,9 @@ function orderActors(command: PlayerCommand): OrderActor[] {
     case 'dockVehicle':
     case 'attackWithVehicle':
     case 'loadIntoVehicle':
+    case 'unloadPeople':
       return [{ id: command.vehicle, queued: command.queued === true }];
     case 'stopVehicle':
-    case 'unloadPeople':
       return [{ id: command.vehicle, queued: false }];
     default:
       return [];
@@ -265,6 +265,7 @@ function currentActors(command: PlayerCommand, current: (id: number) => boolean)
     case 'dockVehicle':
     case 'attackWithVehicle':
     case 'loadIntoVehicle':
+    case 'unloadPeople':
       return current(command.vehicle) ? command : undefined;
     case 'unitActionGroup': {
       const members = command.members.filter(({ entity }) => current(entity));

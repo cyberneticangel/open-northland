@@ -46,6 +46,7 @@ import { clearSettingsRestart, settingsRestartNote } from './settings-restart.js
 import { sightingOf } from './sighting.js';
 import type { SiteSeam } from './site-shortages.js';
 import { composeMessageText, fightSummary } from './text.js';
+import { tradeRefusedNote } from './trade-refused.js';
 import type { PendingMessage, UserMessage } from './types.js';
 import type { WorkshopSeam } from './workshop-stalls.js';
 
@@ -137,6 +138,9 @@ export interface MessageCenter {
    *  the map starts again. It takes the place of an earlier such note, shown or dismissed; no labels
    *  only drops that note. */
   noteSettingsRestart(labels: readonly string[]): void;
+  /** Raise, on the next presented frame, the note that a trader's route refused a house of `player` at
+   *  `at` because the two tribes are not friends both ways. */
+  noteTradeRefused(player: number, at: HalfCellNode | null): void;
   /** The shown feed as plain data, the shape a centre takes as its `initial` feed. */
   state(): MessageFeedState;
   dispose(): void;
@@ -373,6 +377,7 @@ export function createMessageCenter(deps: MessageCenterDeps): MessageCenter {
   // Raised by the next frame, stamped with its presented tick, whether or not a tick ran since: the
   // settings are usually closed over a paused game.
   let restartLabels: readonly string[] | null = null;
+  let tradeRefusals: { readonly player: number; readonly at: HalfCellNode | null }[] = [];
   const raiseSettingsRestart = (labels: readonly string[], tick: number): void => {
     clearSettingsRestart(feeds.current, tick);
     if (labels.length > 0) take(settingsRestartNote(labels, naming), tick);
@@ -440,6 +445,9 @@ export function createMessageCenter(deps: MessageCenterDeps): MessageCenter {
         raiseSettingsRestart(restartLabels, snapshot.tick);
         restartLabels = null;
       }
+      for (const refusal of tradeRefusals)
+        take(tradeRefusedNote(refusal.player, refusal.at, naming), snapshot.tick);
+      tradeRefusals = [];
       if (
         feeds.current.version() !== renderedVersion ||
         (openKey !== null && snapshot.tick >= ageChangeTick)
@@ -463,6 +471,9 @@ export function createMessageCenter(deps: MessageCenterDeps): MessageCenter {
     },
     noteSettingsRestart: (labels): void => {
       restartLabels = labels;
+    },
+    noteTradeRefused: (player, at): void => {
+      tradeRefusals.push({ player, at });
     },
     state: () => feeds.current.state(),
     dispose: (): void => {

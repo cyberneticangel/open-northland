@@ -114,6 +114,7 @@ export const enSurfaces = {
       overseerTaken: 'You oversee',
       teamColour: 'Team colour',
       teamColourLocked: 'this map fixes its colours',
+      teamColourTaken: 'taken by player {seat}',
       tribe: 'Tribe',
       difficultyHeader: 'Level',
       difficultyTitle:
@@ -217,6 +218,9 @@ export const enSurfaces = {
       hoverOutline: 'Hover outline',
       hoverOutlineTip:
         'The contour a unit or building draws while the cursor rests over it, as the original shows one. Changes in game immediately.',
+      cursorHints: 'Cursor hints',
+      cursorHintsTip:
+        'A label by the cursor naming what a click would do and the thing under it, such as an animal, a goods heap or a chest.',
       groupNumbers: 'Group numbers',
       groupNumbersTip:
         'A tiny group number by each unit bound to a group. A unit in several groups shows up to three, such as 1,2,3.',
@@ -247,10 +251,13 @@ export const enSurfaces = {
         'Deepens and softens the shadows of buildings, trees and decorations. Settlers and animals cast a shadow of their own outline, leaning with the light the buildings use. Off keeps the original shadows.',
       enhancedWater: 'Enhanced water',
       enhancedWaterTip:
-        'Crossing swells, darker shallows and darker still deep water, a cooler and bluer colour, and a glint drifting over the deep water. Off keeps the original water.',
+        'Crossing swells with calm and rough patches, a shifting shimmer, surf washing up the beach and drawing back, darker shallows and darker still deep water, and a cooler and bluer colour. Off keeps the original water.',
       buildingDamage: 'Building damage',
       buildingDamageTip:
         'Broken roofs, exposed beams, smoke, fire and flying fragments. Disable for simpler smoke with less graphics work.',
+      nightLights: 'Night lights',
+      nightLightsTip:
+        'At night fires, houses and settlers light the map: a warm glow round each fire, and figures and houses keep part of their daylight colours. Disable for an evenly darkened night with less graphics work.',
       environmentMotion: 'Environment motion',
       environmentMotionTip:
         "Trees the original draws as one still frame sway in the wind together with their shadow, fish swim smoothly, and the breeze in the project's own vegetation is smoothed. Settlers and animals keep the original stepping, and original animations gain no extra frames. Trees stand still in a restored save.",
@@ -284,6 +291,10 @@ export const enSurfaces = {
       unitResponsesTip:
         'Whether settlers answer your orders and your selections out loud. Without an answer, the click alone confirms an order.',
       unitResponseModes: { all: 'Always', selection: 'First selection only', off: 'Never' },
+      musicSource: 'Music',
+      musicSourceTip:
+        "Map music plays the map's own score and follows the battle and your standing. Nation music shuffles your people's tracks.",
+      musicSources: { map: 'Map', nation: 'Nation' },
       soundQuality: 'Sound quality',
       soundQualityTip:
         'Lossless keeps the original recordings. Light compresses them to a few times less, which shortens loading in the browser. The difference is hard to hear.',
@@ -349,6 +360,7 @@ export const enSurfaces = {
         professionPicker: 'Settler profession list',
         equipmentPicker: 'Settler equipment window',
         attackMove: 'Attack-move',
+        dockShips: 'Dock the selected ships',
         hudToggle: 'Hide/show interface',
         speedCycle: 'Game speed ×1 / ×2 / ×3',
         loadGame: 'Load game',
@@ -360,6 +372,7 @@ export const enSurfaces = {
         upgradeBuilding: 'Upgrade the selected building',
         defenceOn: 'Defence mode on in every building',
         defenceOff: 'Defence mode off in every building',
+        buildingAlarm: 'Start or stop defence mode in the selected building',
         nextCivilian: 'Next civilian',
         nextScout: 'Next scout',
         nextSingleWoman: 'Next unmarried homeless woman',
@@ -533,6 +546,8 @@ export const enSurfaces = {
         '{shift} + click lines an order up behind the current one: walks, attacks, building sites, drills, signposts, chests, put-ons, needs, scouting, claiming animals, boarding, and vehicle drives, strikes and loads.',
       buildMany: 'Hold {shift} while placing a building to place several of it, one per click.',
       attackMove: '{key} is attack-move: units walk to the target and attack everything on the way.',
+      dockShips:
+        '{key} docks the selected ships along the shore you click, each at a berth of its own. With Ctrl/Cmd (a click after {key}, or a right-click by the shore) the crews step ashore once moored.',
       postGraduates:
         'In the assistant window ({key}), "{graduatesOption}" sends freshly trained settlers from the schools to the workshops.',
       moveFlags:
@@ -687,10 +702,18 @@ export const enSurfaces = {
       'Indigo',
       'Magenta',
       'Pink',
+      'Maroon',
+      'Navy',
+      'Olive',
+      'Brown',
+      'Forest green',
+      'Plum',
+      'White',
+      'Lavender',
     ],
     summaryAnimations: 'Every available sequence for the selected character.',
     summaryHeads: 'The same walk cycle with every available head look.',
-    summaryColors: 'The same walk cycle in all sixteen player colours.',
+    summaryColors: 'The same walk cycle in all twenty-four player colours.',
     missingAtlas:
       'Run the asset pipeline on the Open Northland data pack to load the decoded “{character}” atlas ({stem}).',
     missingFrames: 'content/ir.json has no playable frames for “{character}” ({imagelib}).',

@@ -23,6 +23,7 @@ export function pushVehicleLayers(
   item: DrawItem,
   tick: number,
   gaitClock: number,
+  seaClock: number,
   wind?: WindSway,
 ): boolean {
   const driven = cartDriveLook(sheet, item);
@@ -33,12 +34,12 @@ export function pushVehicleLayers(
   if (!pushLayeredWithShadow(VEHICLE_BODY, sheet, 'vehicle', draw)) return false;
   const still = draw.sway === 'none' || item.ghost === true;
   const underSail = draw.sway === 'sailing';
-  const sway = still ? null : shipSway(tick, item.x, item.y, underSail);
+  const sway = still ? null : shipSway(seaClock, item.x, item.y, underSail);
   const sails =
     !still && draw.indexed && draw.layer !== undefined
       ? sheet.vehiclePalette?.sailRanges?.[draw.layer]
       : undefined;
-  const cloth = sails === undefined ? undefined : sailWind(sails, tick, item.x, item.y, underSail, wind);
+  const cloth = sails === undefined ? undefined : sailWind(sails, seaClock, item.x, item.y, underSail, wind);
   for (const layer of VEHICLE_BODY.finish()) {
     out.push(
       sway === null || layer.shadow

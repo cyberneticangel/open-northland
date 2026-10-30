@@ -11,6 +11,7 @@ import { button, setHidden, setTip, write } from '../parts/dom.js';
 import { createSection } from '../parts/section.js';
 import { createSelectionPanel, type SelectionHeadModel } from '../selection-panel.js';
 import type { GroupPanelDeps } from './actions.js';
+import { createGroupFleetSection } from './fleet.js';
 import { createMemberRoster, type MemberPress } from './members.js';
 import { createGroupMilitarySection } from './military.js';
 import { createOverviewSection } from './overview.js';
@@ -79,6 +80,7 @@ function warmModel(): GroupPanelModel {
       regeneration: true,
     },
     siege: null,
+    fleet: null,
   });
   return {
     kind: 'group',
@@ -155,12 +157,20 @@ export function createGroupPanel(deps: GroupPanelDeps): GroupPanel {
   const rosterTitle = createSection(selectScope);
   const roster = createMemberRoster(onMember, deps.icons);
   const military = createGroupMilitarySection(deps, scope);
+  const fleet = createGroupFleetSection(deps, scope);
   const overview = createOverviewSection(deps, (ids, drop) => {
     if (shown === null) return;
     const matched = new Set(ids);
     actions.select(drop ? shown.members.filter((m) => !matched.has(m.id)).map((m) => m.id) : ids);
   });
-  frame.body.append(tabs.element, rosterTitle.element, roster.element, military.element, overview.element);
+  frame.body.append(
+    tabs.element,
+    rosterTitle.element,
+    roster.element,
+    military.element,
+    fleet.element,
+    overview.element,
+  );
 
   /** Fit the panel to the plane: the roster is as tall as the whole group needs, so every tab keeps the
    *  panel's height, and gives up rows until the panel fits. */
@@ -177,7 +187,7 @@ export function createGroupPanel(deps: GroupPanelDeps): GroupPanel {
   const resizes = new ResizeObserver(() => {
     refit = true;
   });
-  for (const node of [frame.body, tabs.element, military.element, overview.element]) {
+  for (const node of [frame.body, tabs.element, military.element, fleet.element, overview.element]) {
     resizes.observe(node);
   }
 
@@ -198,6 +208,7 @@ export function createGroupPanel(deps: GroupPanelDeps): GroupPanel {
       model.members,
     );
     military.update(current, model.orders);
+    fleet.update(current);
     overview.update(current);
     // Later value changes refit through the resize observer, when a section actually changed height.
     if (fresh) fit();
@@ -239,6 +250,7 @@ export function createGroupPanel(deps: GroupPanelDeps): GroupPanel {
     },
     refresh(): void {
       frame.refreshTip();
+      if (shown !== null) fleet.refresh();
       if (!refit || shown === null) return;
       refit = false;
       fit();

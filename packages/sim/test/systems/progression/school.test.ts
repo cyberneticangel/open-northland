@@ -22,10 +22,9 @@ import {
   TRAINING_EXPERIENCE_TYPE,
 } from '../../../src/systems/progression/index.js';
 import { planTraining } from '../../../src/systems/settlers/drives/training.js';
-import { IdleStands } from '../../../src/systems/settlers/planner/idle-replan.js';
-import { PlannerSpacing } from '../../../src/systems/settlers/planner/spacing.js';
 import { testContent } from '../../fixtures/content.js';
 import { ctxOf } from '../../fixtures/context.js';
+import { plannerContextAt } from '../../fixtures/planner.js';
 import { settlerAt } from '../../fixtures/settler.js';
 import { grassCellMap } from '../../fixtures/terrain.js';
 
@@ -45,17 +44,8 @@ const FOUNDATION_WAIT_TICKS = 200;
 function planLessonStep(sim: Simulation, pupil: Entity): void {
   const terrain = sim.terrain;
   if (terrain === undefined) throw new Error('missing terrain');
-  planTraining(
-    sim.world,
-    ctxOf(sim),
-    terrain,
-    pupil,
-    sim.world.get(pupil, Settler),
-    terrain.nodeAt(2, 2),
-    null,
-    PlannerSpacing.forTick(sim.world, ctxOf(sim), terrain),
-    new IdleStands(),
-  );
+  const { pass, plan } = plannerContextAt(sim, pupil, terrain.nodeAt(2, 2));
+  planTraining(plan, sim.world.get(pupil, Settler), pass.spacing, pass.idle, undefined);
 }
 
 it('refuses a school course until the profession is discovered', () => {
@@ -162,17 +152,8 @@ it('a school lesson qualifies only its chosen target and survives a saved in-pro
   });
   expect(sim.world.get(pupil, TrainingOrder).drillTicksLeft).toBe(1);
   const other = settlerAt(sim, { jobType: WOODCUTTER, tribe: TRIBE });
-  sim.world.add(other, Owner, { player: 0 });
-  learn(sim.world, ctxOf(sim), {
-    kind: 'learn',
-    entity: other,
-    house: school,
-    target: 'job',
-    typeId: CARPENTER,
-  });
-  expect(sim.world.has(other, TrainingOrder)).toBe(false);
+  sim.world.add(other, Owner, { player: 1 });
   sim.world.remove(pupil, TrainingOrder);
-  sim.world.mut(other, Owner).player = 1;
   learn(sim.world, ctxOf(sim), {
     kind: 'learn',
     entity: other,
@@ -395,6 +376,28 @@ it('takes a pupil at a school foundation and teaches the lesson once the school 
   for (let i = 0; i < FOUNDATION_WAIT_TICKS; i++) sim.step();
   expect(sim.world.get(pupil, Settler).jobType).toBe(CARPENTER);
   expect(sim.world.has(pupil, TrainingOrder)).toBe(false);
+});
+
+it('queues a pupil past the school seats by the order it was sent, and teaches it once the seat frees', () => {
+  const { sim, pupil: later, school } = carpentrySchool(WOODCUTTER);
+  // The higher id is sent first, so the seat goes by the enrolment tick, not by id.
+  const first = settlerAt(sim, { jobType: WOODCUTTER, tribe: TRIBE });
+  sim.world.add(first, Owner, { player: 0 });
+  for (const e of [later, first])
+    sim.world.add(e, Position, { x: fx.fromInt(PUPIL_START.x), y: fx.fromInt(PUPIL_START.y) });
+  learnCarpentry(sim, first, school);
+  sim.step();
+  learnCarpentry(sim, later, school);
+
+  for (let i = 0; i < FOUNDATION_WAIT_TICKS && sim.world.has(first, TrainingOrder); i++) {
+    sim.step();
+    expect(sim.world.get(later, TrainingOrder).seated).toBe(false);
+  }
+  expect(sim.world.get(first, Settler).jobType).toBe(CARPENTER);
+  expect(sim.world.get(later, Settler).jobType).toBe(WOODCUTTER);
+
+  for (let i = 0; i < FOUNDATION_WAIT_TICKS && sim.world.has(later, TrainingOrder); i++) sim.step();
+  expect(sim.world.get(later, Settler).jobType).toBe(CARPENTER);
 });
 
 it('keeps a walk Shift-queued behind the lesson through the trade it teaches', () => {

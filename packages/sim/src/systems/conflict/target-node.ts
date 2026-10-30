@@ -4,7 +4,7 @@ import type { Entity, World } from '../../ecs/world.js';
 import { nodeOfPosition } from '../../nav/halfcell.js';
 import type { NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import type { MapContext, SystemContext } from '../context.js';
-import { buildingFootprintOf, translatedCells } from '../footprint/geometry.js';
+import { houseFootprintOf, translatedCells } from '../footprint/geometry.js';
 import { interactionNode, vehicleFootprintNodes } from '../footprint/index.js';
 import { hexNodeDistance, nearestHexCell } from '../spatial/metric.js';
 import { entityNode } from '../spatial/nodes.js';
@@ -143,12 +143,7 @@ function computeBuildingBodyNodes(
   const p = world.tryGet(building, Position);
   if (b === undefined || p === undefined) return NO_BODY;
   const { hx, hy } = nodeOfPosition(p.x, p.y);
-  const body = translatedCells(
-    terrain,
-    buildingFootprintOf(ctx.content, b.buildingType, b.tribe)?.blocked ?? [],
-    hx,
-    hy,
-  );
+  const body = translatedCells(terrain, houseFootprintOf(ctx.content, b)?.blocked ?? [], hx, hy);
   if (body.length > 0) return body;
   // `terrain`, not `ctx.terrain`: the door's in-bounds fallback must read the same graph the cache is
   // keyed on and the cells above are translated against.

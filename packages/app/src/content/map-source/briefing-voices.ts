@@ -1,4 +1,9 @@
-import { NARRATION_IDLE, type NarrationState, type SoundDriver } from '@open-northland/audio';
+import {
+  NARRATION_IDLE,
+  type NarrationRate,
+  type NarrationState,
+  type SoundDriver,
+} from '@open-northland/audio';
 import type { BriefingVoice } from '@open-northland/data';
 import { diag } from '../../diag/log.js';
 import type { ContentFetch } from '../url.js';
@@ -21,6 +26,7 @@ export type NarrationSink = Pick<
   | 'seekNarration'
   | 'stopNarration'
   | 'narrationState'
+  | 'setNarrationRate'
 >;
 
 const SILENT: BriefingVoiceLoader = { has: () => false, load: async () => null };
@@ -81,9 +87,16 @@ interface Line {
   pauseOnLoad: boolean;
 }
 
-/** Speaks one clip at a time into `sink`: a clip that loads after a later play or a stop stays silent.
- *  A clip that does not load or that the sink refuses stays unavailable for the world. */
-export function briefingVoicePlayer(voices: BriefingVoiceLoader, sink: NarrationSink) {
+/** Speaks one clip at a time into `sink` at `rate`: a clip that loads after a later play or a stop stays
+ *  silent. A clip that does not load or that the sink refuses stays unavailable for the world. */
+export function briefingVoicePlayer(
+  voices: BriefingVoiceLoader,
+  sink: NarrationSink,
+  rate: NarrationRate = 1,
+  onRateChange: (rate: NarrationRate) => void = () => {},
+) {
+  let tempo = rate;
+  sink.setNarrationRate(tempo);
   let turn = 0;
   let current: Line | null = null;
   const refused = new Set<string>();
@@ -150,6 +163,13 @@ export function briefingVoicePlayer(voices: BriefingVoiceLoader, sink: Narration
     seek(voice: BriefingVoice, atS: number): void {
       if (current !== null && sameVoice(current.voice, voice) && current.wav !== null)
         sink.seekNarration(atS);
+    },
+    rate: (): NarrationRate => tempo,
+    setRate(next: NarrationRate): void {
+      if (next === tempo) return;
+      tempo = next;
+      sink.setNarrationRate(next);
+      onRateChange(next);
     },
     state(): NarrationState & { readonly voice: BriefingVoice | null } {
       if (current === null) return { voice: null, ...NARRATION_IDLE };

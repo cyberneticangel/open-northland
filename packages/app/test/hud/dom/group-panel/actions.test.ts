@@ -12,6 +12,7 @@ import { scopePress } from '../../../../src/hud/dom/group-panel/tabs.js';
 import { createSceneSim } from '../../../../src/scenes/index.js';
 import { groupPanelScene } from '../../../../src/scenes/interface/group-panel.js';
 import { groupPanelActions } from '../../../../src/view/unit-controls/panels/group.js';
+import type { PickMode } from '../../../../src/view/unit-controls/pick-mode.js';
 import { snapshotOf } from '../../../support/snapshot.js';
 
 const ENEMY_SEAT = 2;
@@ -33,6 +34,7 @@ function harness(seat = HUMAN_PLAYER, accepts = true, vehicleCount?: number) {
   const cues: UiCue[] = [];
   const rings: { order: ActionOrderId; targets: readonly number[] }[] = [];
   const sent: PlayerCommand[] = [];
+  const armed: PickMode[] = [];
   const actions = groupPanelActions(
     {
       snapshot: () => snapshot,
@@ -54,12 +56,13 @@ function harness(seat = HUMAN_PLAYER, accepts = true, vehicleCount?: number) {
         rings.push({ order, targets });
         return accepts;
       },
+      arm: (mode) => armed.push(mode),
       cue: (cue) => cues.push(cue),
     },
   );
   const settlers = snapshot.entities.filter(isSettler).map((e) => e.id);
   const vehicles = snapshot.entities.filter(isVehicle).map((e) => e.id);
-  return { actions, cues, rings, sent, settlers, vehicles, limited };
+  return { actions, cues, rings, sent, settlers, vehicles, limited, armed };
 }
 
 describe('group panel orders', () => {
@@ -67,6 +70,20 @@ describe('group panel orders', () => {
     const { actions, settlers, vehicles } = harness();
     expect(actions.reach('defenceMode', [...settlers, ...vehicles])).toBe(FIGHTERS);
     expect(actions.reach('defenceMode', vehicles)).toBe(0);
+  });
+
+  it("arms the fleet's dock pick and lands each ship's crew, for the viewer's own ships only", () => {
+    const own = harness();
+    own.actions.dockShips(own.vehicles);
+    own.actions.unloadShips(own.vehicles);
+    expect(own.armed).toEqual([{ kind: 'vehicle-dock', vehicles: own.vehicles }]);
+    expect(own.sent).toEqual(own.vehicles.map((vehicle) => ({ kind: 'unloadPeople', vehicle })));
+    expect(own.cues).toEqual(['confirm', 'confirm']);
+    const foreign = harness(ENEMY_SEAT);
+    foreign.actions.dockShips(foreign.vehicles);
+    foreign.actions.unloadShips(foreign.vehicles);
+    expect([foreign.armed, foreign.sent]).toEqual([[], []]);
+    expect(foreign.cues).toEqual(['fail', 'fail']);
   });
 
   it('sends a stance through the ring command to every member the viewer owns', () => {

@@ -36,10 +36,12 @@ export function createCategoryTabs(
     root.append(tab);
     return tab;
   });
-  // Arrow keys step to the neighbouring tab and open it, as a tab list does.
+  // Arrow keys step to the neighbouring tab and open it, as a tab list does, once the keyboard put the
+  // focus there: a tab focused by its click leaves the arrows to the camera.
   root.addEventListener('keydown', (event) => {
     const step = STEP_KEYS[event.key];
-    if (step === undefined) return;
+    if (step === undefined || !(event.target instanceof Element && event.target.matches(':focus-visible')))
+      return;
     event.preventDefault();
     let next = open;
     do next = (next + step + tabs.length) % tabs.length;

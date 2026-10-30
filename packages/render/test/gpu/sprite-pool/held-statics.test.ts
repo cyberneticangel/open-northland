@@ -9,6 +9,7 @@ import { Container, TextureSource } from 'pixi.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DrawItem } from '../../../src/data/scene/index.js';
 import type { ElevationField } from '../../../src/data/terrain/index.js';
+import type { TargetTone } from '../../../src/gpu/selection/style.js';
 import { type PoolFrame, SpritePool } from '../../../src/gpu/sprite-pool/index.js';
 import { TextureCache } from '../../../src/gpu/textures/texture-cache.js';
 import { ONE, type SpriteAtlas, type SpriteSheet, type Viewport } from '../../../src/index.js';
@@ -216,7 +217,7 @@ describe('SpritePool - what releases a held tree', () => {
   it.each<[string, Partial<PoolFrame>]>([
     ['the wind rising', { wind: { strength: 1, direction: 0, gust: 0 } }],
     ['the motion setting flipping', { environmentMotion: false }],
-    ['an assignment highlight', { highlight: new Map([[TREE, true]]) }],
+    ['a pick mark', { marks: new Map([[TREE, 'candidate']]) }],
     ['another selection style', { selectionStyle: 'pulse' }],
   ])('presents it again on %s', (_name, change) => {
     const { mirror, pool } = held({ environmentMotion: true });
@@ -287,9 +288,28 @@ describe('SpritePool - a still frame', () => {
     expect(refs()).not.toContain(POST);
   });
 
+  it('keeps still frames while a pick marks a target off the screen', () => {
+    const OFF_SCREEN = 999;
+    const marks = new Map<number, TargetTone>([[OFF_SCREEN, 'candidate']]);
+    const { pool, snapshot } = settled({ marks });
+    const refs = presentedRefs();
+    pool.reconcile(frameOf(snapshot, { alpha: 0.5, marks }));
+    expect(refs()).not.toContain(POST);
+  });
+
+  it('keeps a held candidate breathing through the still frames after a pick marks it', () => {
+    const { pool, snapshot } = settled();
+    const marks = new Map<number, TargetTone>([[TREE, 'candidate']]);
+    pool.reconcile(frameOf(snapshot, { marks }));
+    const refs = presentedRefs();
+    pool.reconcile(frameOf(snapshot, { alpha: 0.5, marks, selectionTime: 0.35 }));
+    expect(refs()).toContain(TREE);
+    expect(refs()).not.toContain(POST);
+  });
+
   // A still signpost is visited by every full pass and by no still frame.
   it.each<[string, Partial<PoolFrame>]>([
-    ['a highlight change', { highlight: new Map([[TREE, false]]) }],
+    ['a mark change', { marks: new Map([[TREE, 'refused']]) }],
     ['a camera move', { camera: { offsetX: 7, offsetY: 0 } }],
   ])('runs a full pass on %s', (_name, change) => {
     const { pool, snapshot } = settled();

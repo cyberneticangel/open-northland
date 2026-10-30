@@ -19,7 +19,6 @@ import { ATMOSPHERE_NOISE_BAKE_SOURCE } from '../../../src/gpu/weather/atmospher
 import { GROUND_REACTIONS_SOURCE } from '../../../src/gpu/weather/ground-reactions.js';
 import { precipitationSource } from '../../../src/gpu/weather/precipitation-shader.js';
 import { DEFAULT_SHADOW_STYLE } from '../../../src/gpu/world-batch/shadow-style.js';
-import { WORLD_UPSCALE_SOURCE } from '../../../src/gpu/world-renderer/world-upscale.js';
 import { useHeadlessShaderContext } from '../../support/shader-context.js';
 
 const COMPLETION_STATUS_KHR = 0x91b1;
@@ -112,7 +111,6 @@ const EVERY_EFFECT: ShaderSelection = {
   weather: true,
   blood: true,
   groundWaves: true,
-  worldUpscale: true,
 };
 const NO_EFFECT: ShaderSelection = {
   magnification: 'off',
@@ -120,7 +118,6 @@ const NO_EFFECT: ShaderSelection = {
   weather: false,
   blood: false,
   groundWaves: false,
-  worldUpscale: false,
 };
 const namesOf = (programs: readonly { readonly name: string }[]): string[] =>
   programs.map((program) => program.name);
@@ -160,7 +157,6 @@ describe('boot shader programs', () => {
         WEATHER_VEIL_SOURCE,
         GROUND_REACTIONS_SOURCE,
         ...WEATHER_KINDS.map((kind) => precipitationSource(kind)),
-        WORLD_UPSCALE_SOURCE,
       ]).sort(),
     );
     expect(nothing.every((name) => everything.includes(name))).toBe(true);
@@ -366,7 +362,6 @@ describe('starting a warm-up', () => {
     environmentMotion: true,
     weather: true,
     blood: true,
-    backingDensity: 'native',
   };
 
   interface ContextBehaviour {

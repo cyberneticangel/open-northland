@@ -85,7 +85,9 @@ export async function prepareRoomCreation(choice: CreateChoice, params: URLSearc
           alliedVision: options.alliedVision,
         }
       : await validateNetworkSave(save, handle);
-  const initial: PreparedNetworkSave | null = save === null ? null : await prepareInitialSave(save);
+  // The saving client's fog memory is its own seat's alone: every member would download it for nothing.
+  const initial: PreparedNetworkSave | null =
+    save === null ? null : await prepareInitialSave({ ...save, presentation: null });
   const origin = metadata?.provenance?.kind ?? cached?.origin;
   const catalog = playable?.catalog;
   const settings: RoomSettings = {

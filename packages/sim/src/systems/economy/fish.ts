@@ -5,7 +5,7 @@ import type { Entity, World } from '../../ecs/world.js';
 import { hexDistance, nodeOfPosition, positionOfNode } from '../../nav/halfcell.js';
 import type { FishSwarmInput, NodeId, TerrainGraph } from '../../nav/terrain/index.js';
 import type { System } from '../context.js';
-import { buildingFootprintOf } from '../footprint/geometry.js';
+import { type HouseKey, houseFootprintOf } from '../footprint/geometry.js';
 import { fishSwarmsNearNode } from '../spatial/fish.js';
 import { closer, ringOffsetCount, ringOffsetDx, ringOffsetDy } from '../spatial/metric.js';
 
@@ -16,17 +16,12 @@ export const FISH_FAILED_ATOMIC = 38;
 export const FISH_SHORE_SEARCH_RADIUS = 20;
 
 /**
- * How far around the anchor of a `buildingType` workplace, on a row of `hy`'s parity, every shore its
+ * How far around the anchor of a `workplace`, on a row of `hy`'s parity, every shore its
  * employed fisher searches lies, in Manhattan nodes. He searches from his feet, which stand at the door
  * after banking a catch, so the reach shrinks by the door's offset from the anchor.
  */
-export function workplaceShoreSearchRadius(
-  content: ContentSet,
-  buildingType: number,
-  tribe: number,
-  hy: number,
-): number {
-  const door = buildingFootprintOf(content, buildingType, tribe)?.door;
+export function workplaceShoreSearchRadius(content: ContentSet, workplace: HouseKey, hy: number): number {
+  const door = houseFootprintOf(content, workplace)?.door;
   const offset = door === undefined ? 0 : Math.abs(footprintCellDx(hy, door)) + Math.abs(door.dy);
   return Math.max(0, FISH_SHORE_SEARCH_RADIUS - offset);
 }

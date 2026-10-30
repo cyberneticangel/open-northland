@@ -34,6 +34,7 @@ import {
   isAggressiveAnimal,
   isAnimalTribe,
   isFighterJob,
+  isWallBuilding,
   mayAttack,
   mayHunt,
 } from '../readviews/index.js';
@@ -238,7 +239,7 @@ export function isValidTarget(
   if (world.get(t, Health).hitpoints <= 0) return false;
   // A wall is never picked on sight: only a player's order, or a walk the walls bar, takes one on
   // (`palisades/breach.ts`), so a fighter left to itself walks through a gap rather than chopping every post.
-  if (world.has(t, Palisade)) return false;
+  if (world.has(t, Palisade) || isWallBuilding(world, ctx, t)) return false;
   const building = world.tryGet(t, Building);
   if (building !== undefined) {
     // Only a player's own units besiege buildings - an animal never turns on a structure.
@@ -281,13 +282,15 @@ export function isValidOrderedTarget(
   t: Entity,
 ): boolean {
   if (isValidTarget(world, ctx, self, attacker, t)) return true;
-  const wall = world.tryGet(t, Palisade);
-  if (wall !== undefined) {
+  const wallTribe = isWallBuilding(world, ctx, t)
+    ? world.get(t, Building).tribe
+    : world.tryGet(t, Palisade)?.tribe;
+  if (wallTribe !== undefined) {
     if (!world.has(self, Owner) || !world.has(t, Health) || !world.has(t, Position)) return false;
     if (world.get(t, Health).hitpoints <= 0) return false;
     // A map's ownerless wall is anyone's to break; an owned one only an enemy's.
     return (
-      !world.has(t, Owner) || mayTarget(world, ctx, self, attacker.tribe, attacker.jobType, t, wall.tribe)
+      !world.has(t, Owner) || mayTarget(world, ctx, self, attacker.tribe, attacker.jobType, t, wallTribe)
     );
   }
   if (!world.has(self, Owner) || !isWildlife(world, t) || world.has(t, Owner)) return false;

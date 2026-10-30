@@ -261,11 +261,27 @@ describe('WebAudioEngine music', () => {
     const first = ctx.sources[0] as FakeSource;
     const NOW_S = 5;
     ctx.currentTime = NOW_S;
-    engine.transitionMusic('atPassEnd');
+    engine.transitionMusic('afterFight');
     const endsAt = NOW_S + CALM_RETURN_MAX_WAIT_S;
     expect(first.stoppedAt).toBe(endsAt);
     expect(gainOf(first).gain.events).toContainEqual({ kind: 'set', value: 1, time: endsAt - FADE_S });
     expect(gainOf(first).gain.ramps.at(-1)).toEqual({ value: 0, time: endsAt });
+  });
+
+  it('holds a mood handover outside a fight to the pass boundary, however far', async () => {
+    const LONG_PASS_S = 100;
+    const { engine, ctx } = makeEngine({ trackS: 2 * LONG_PASS_S });
+    await engine.resume();
+    const long = musicTrack('mission_viking1_standard', {
+      loopStartS: LONG_PASS_S,
+      loopEndS: 2 * LONG_PASS_S,
+    });
+    engine.setMusic(cues([long, TRACK]));
+    await flush();
+    const NOW_S = 5;
+    ctx.currentTime = NOW_S;
+    engine.transitionMusic('atPassEnd');
+    expect((ctx.sources[0] as FakeSource).stoppedAt).toBe(LONG_PASS_S);
   });
 
   it('leaves a cue alone when its own end is the nearest boundary', async () => {

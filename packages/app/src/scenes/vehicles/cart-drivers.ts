@@ -5,6 +5,7 @@ import {
   constructionBillForType,
   type Entity,
   fx,
+  nodeOfPosition,
   playerCommand,
   type Simulation,
   systems,
@@ -22,12 +23,14 @@ import {
 import { CIVILIZATIONS } from '../civilizations.js';
 import type { SceneDefinition } from '../types.js';
 
-const { Building, Health, Settler, Stockpile, UnderConstruction, WALK_DIRECTION } = components;
+const { Building, HaulingCart, Health, Position, Settler, Stockpile, UnderConstruction, WALK_DIRECTION } =
+  components;
 
-/** Each row's two carts, their commander one cell behind, each driving east to its own goal. */
+/** Each row's two carts, their driver one cell behind, each going east to its own goal: the trader pulls
+ *  its handcart as its tool, the carrier, posted nowhere, commands the ox cart from inside. */
 const DRIVES = [
-  { type: VEHICLE_HANDCART, commander: JOB_TRADER, fromX: 3, toX: 7 },
-  { type: VEHICLE_OXCART, commander: JOB_CARRIER, fromX: 10, toX: 15 },
+  { type: VEHICLE_HANDCART, driver: JOB_TRADER, pulls: true, fromX: 3, toX: 7 },
+  { type: VEHICLE_OXCART, driver: JOB_CARRIER, pulls: false, fromX: 10, toX: 15 },
 ] as const;
 const COMMANDER_OFFSET_X = -1;
 /** Each row ends in its civilization's catapult yard, part built: a site draws its frame revealed up
@@ -40,6 +43,8 @@ const MAP_W = 22;
 const MAP_H = MARGIN_Y * 2 + SPACING_Y * CIVILIZATIONS.length;
 /** Ticks before the drive orders, so each cart rolls only once its commander is aboard. */
 const DRIVE_ORDER_TICK = 6;
+/** Ticks before the pull orders, so each trader has walked to its cart's door and taken it up. */
+const PULL_ORDER_TICK = 60;
 /** Claims positions no session transport hands out for that tick. */
 const DRIVE_SEQUENCE = 1_000_000;
 
@@ -64,40 +69,59 @@ function build(sim: Simulation): void {
         facing: WALK_DIRECTION.E,
       });
       const node = cellAnchorNode(drive.fromX + COMMANDER_OFFSET_X, y);
-      const commander: Entity | null = systems.createSettler(
+      const driver: Entity | null = systems.createSettler(
         sim.world,
         sim.content,
         sim.rng,
-        { tribe, jobType: drive.commander, owner: HUMAN_PLAYER, x: node.hx, y: node.hy },
+        { tribe, jobType: drive.driver, owner: HUMAN_PLAYER, x: node.hx, y: node.hy },
         sim.names,
       );
-      if (commander === null) throw new Error('cart-drivers: missing commander job');
-      sim.enqueue(playerCommand(HUMAN_PLAYER, { kind: 'attachToVehicle', entity: commander, vehicle }));
+      if (driver === null) throw new Error('cart-drivers: missing driver job');
+      sim.enqueue(playerCommand(HUMAN_PLAYER, { kind: 'attachToVehicle', entity: driver, vehicle }));
       const goal = cellAnchorNode(drive.toX, y);
       sim.enqueueAt(
-        playerCommand(HUMAN_PLAYER, { kind: 'moveVehicle', vehicle, x: goal.hx, y: goal.hy }),
-        DRIVE_ORDER_TICK,
+        drive.pulls
+          ? playerCommand(HUMAN_PLAYER, { kind: 'moveUnit', entity: driver, x: goal.hx, y: goal.hy })
+          : playerCommand(HUMAN_PLAYER, { kind: 'moveVehicle', vehicle, x: goal.hx, y: goal.hy }),
+        drive.pulls ? PULL_ORDER_TICK : DRIVE_ORDER_TICK,
         sequence++,
       );
     }
   }
 }
 
-/** Every cart carries its own civilization's commander inside and has rolled east off its spawn node. */
+/** Whether `at` lies east of the drive's start on its own row, whose stagger moves the start node half a
+ *  cell on the odd rows. */
+function wentEast(drive: (typeof DRIVES)[number], at: { readonly hx: number; readonly hy: number }): boolean {
+  return at.hx > cellAnchorNode(drive.fromX, cellOfNode(at.hx, at.hy).cy).hx;
+}
+
+/** Every cart is in its own civilization's hands, the handcart pulled by its trader and the ox cart with
+ *  its commander inside, and has gone east off its spawn node. */
 function everyCartDrivenByItsTribe(sim: Simulation): boolean {
   const views = sim.vehiclesOf(HUMAN_PLAYER);
   return (
     views.length === CIVILIZATIONS.length * DRIVES.length &&
     views.every((view) => {
       const drive = DRIVES.find((d) => d.type === view.vehicleType);
+      if (drive === undefined) return false;
+      if (drive.pulls) {
+        const puller = view.hauler;
+        const pos = puller === null ? undefined : sim.world.tryGet(puller, Position);
+        return (
+          puller !== null &&
+          sim.world.tryGet(puller, HaulingCart)?.taken === true &&
+          sim.world.get(puller, Settler).tribe === view.tribe &&
+          pos !== undefined &&
+          wentEast(drive, nodeOfPosition(pos.x, pos.y))
+        );
+      }
       const rider = view.passengers[0];
       return (
-        drive !== undefined &&
         rider?.inside === true &&
         sim.world.get(rider.entity, Settler).tribe === view.tribe &&
         view.at !== null &&
-        // Each cart keeps its row, whose stagger moves its spawn node half a cell on the odd rows.
-        view.at.hx > cellAnchorNode(drive.fromX, cellOfNode(view.at.hx, view.at.hy).cy).hx
+        wentEast(drive, view.at)
       );
     })
   );
@@ -114,7 +138,7 @@ function yardPerTribe(sim: Simulation): boolean {
 }
 
 /**
- * A trader driving a handcart and a carrier driving an ox cart for each civilization, in rows: viking,
+ * A trader pulling a handcart and a carrier driving an ox cart for each civilization, in rows: viking,
  * frank, byzantine, saracen, egyptian. The browser view is the check that every driver wears his own
  * civilization's head, standing and driving, that every cart's wheels turn, and that each row's
  * catapult yard draws a catapult, not a cart.

@@ -8,9 +8,9 @@ import { sceneAcceptance } from '../scene-case.js';
 
 sceneAcceptance(vehicleOxScene, import.meta.url);
 
-it('refuses a trader until the cow arrives, then accepts the same trader', () => {
+it('refuses a trader until the cow arrives, then hands the same trader the cart to pull', () => {
   const sim = createSceneSim(vehicleOxScene);
-  const { Position, Rider, Vehicle, VehicleDrive } = components;
+  const { HaulingCart, Position, Rider, Vehicle, VehicleDrive } = components;
   const trader = spawnSettlerDirect(sim, JOB_TRADER, 7, 7);
   const [cart] = sim.world.query(Vehicle);
   if (cart === undefined) throw new Error('missing cart');
@@ -34,5 +34,5 @@ it('refuses a trader until the cow arrives, then accepts the same trader', () =>
   expect(sim.canAttachToVehicle(trader, cart)).toBe(true);
   sim.enqueue(attach);
   sim.step();
-  expect(sim.world.get(trader, Rider).vehicle).toBe(cart);
+  expect(sim.world.get(trader, HaulingCart).vehicle).toBe(cart);
 });

@@ -7,7 +7,7 @@ import {
   setSlotColor,
   setVacantMode,
   vacantOffers,
-  wornByAnother,
+  wearerOf,
 } from '../../../../src/entries/main-menu/lobby/roster-state.js';
 
 describe('roster state', () => {
@@ -128,7 +128,7 @@ describe('roster state', () => {
       },
     ] as const;
     const state = initialRosterState(dupes);
-    expect(wornByAnother(state, 1, 0)).toBe(true); // slot 0 also wears blue…
+    expect(wearerOf(state, 1, 0)).toBe(0); // slot 0 also wears blue…
     expect(setSlotColor(state, 1, 0)).not.toBeNull(); // …but re-picking your own blue is a no-op accept
     expect(setSlotColor(state, 2, 0)).toBeNull(); // a third slot cannot newly join the duplicate
     expect(setSlotColor(state, 1, 3)).not.toBeNull(); // moving off the duplicate is free

@@ -1,51 +1,69 @@
 import type { DiplomacyState } from '@open-northland/sim';
-import { lerp } from '../math.js';
+import type { MusicVariants } from './catalog.js';
 import type { MusicManifest, MusicTrack } from './manifest.js';
 import { ownCalmStem, ownTenseStem } from './mood.js';
-import type { MapMusic, MusicIntensity } from './pools.js';
+import { type MusicIntensity, type MusicPools, stemsByIntensity } from './pools.js';
 import type { MusicCue, MusicSequence } from './sequence.js';
 
 /**
- * A map's in-game soundtrack: a rotation over its culture's pools instead of one loop region forever.
- * Calm stretches open on the map's own stem, then alternate silence with shuffle-bag picks from the
- * calm pool, returning to the own stem every second or third cue. Over a long session the silences
- * grow and the own stem comes back less often, so the score thins out instead of wearing on the
- * listener. A fight cuts in at once with the map's own tense stem, or its culture's first one, which
- * the player keeps decoded ahead, and holds each tense stem for several passes; calm returns at a
- * pass boundary within {@link CALM_RETURN_MAX_WAIT_S}.
- * The whole rotation is a design choice of this reimplementation (the original rings one segment per
- * map), and every number below is an approximation to tune by ear.
+ * A game's soundtrack, from one of two sources the player picks. The map's own music loops its
+ * segment without a break and switches between the segment's mood variants, the way the original
+ * does. The nation's music shuffles the player's culture's calm stems back to back and cuts to its
+ * tense stems for a fight. The nation soundtrack and every number below are this reimplementation's
+ * choices, tuned by ear.
  */
 
-/** Passes a calm cue plays, drawn per cue: one or two passes of a 50-127 s loop region. */
+/** Where a game's music comes from. */
+export type MusicSource = 'map' | 'nation';
+
+/** The choices in the order a settings page lists them. */
+export const MUSIC_SOURCES: readonly MusicSource[] = ['map', 'nation'];
+
+export const DEFAULT_MUSIC_SOURCE: MusicSource = 'map';
+
+/** A stored choice read back: a known source, else the default. */
+export function parseMusicSource(value: unknown): MusicSource {
+  return MUSIC_SOURCES.find((source) => source === value) ?? DEFAULT_MUSIC_SOURCE;
+}
+
+/** What a playlist plays: a map's own stems, or a nation's pools. */
+export type PlaylistMusic =
+  | { readonly source: 'map'; readonly variants: MusicVariants }
+  | { readonly source: 'nation'; readonly pools: MusicPools };
+
+/** The music `source` asks for, or the other source when that one has nothing: a map without music
+ *  plays the nation's, a seat without a nation plays the map's. Null when neither has any. */
+export function choosePlaylistMusic(
+  source: MusicSource,
+  mapVariants: MusicVariants | null,
+  nationPools: MusicPools | null,
+): PlaylistMusic | null {
+  const map: PlaylistMusic | null = mapVariants === null ? null : { source: 'map', variants: mapVariants };
+  const nation: PlaylistMusic | null =
+    nationPools === null || nationPools.calm.length + nationPools.tense.length === 0
+      ? null
+      : { source: 'nation', pools: nationPools };
+  return source === 'map' ? (map ?? nation) : (nation ?? map);
+}
+
+/** Passes a map's stem plays: so many that it loops unbroken until a mood change ends it at a pass end. */
+export const MAP_PASSES = 1000;
+/** Passes a nation's calm cue plays, drawn per cue: one or two passes of a 50-127 s loop region. */
 export const CALM_PASSES_MIN = 1;
 export const CALM_PASSES_MAX = 2;
-/** Seconds a calm cue fades out over before its silence. */
-export const CALM_FADE_S = 2.5;
-/** Seconds a calm cue rises over from silence, so a rendered file's first downbeat does not punch in. */
-export const CALM_FADE_IN_S = 1.5;
-/** Silence before each calm cue after the first, drawn per cue, as a session starts. */
-export const CALM_SILENCE_MIN_S = 20;
-export const CALM_SILENCE_MAX_S = 60;
-/** The map's own calm stem comes back every this many calm cues, drawn per return, as a session starts. */
-export const OWN_STEM_EVERY_MIN = 2;
-export const OWN_STEM_EVERY_MAX = 3;
-/** Seconds of a session over which the silences and the own stem's spacing grow, linearly, from their
- *  opening ranges to their long-session ones, which then hold. */
-export const LONG_SESSION_S = 30 * 60;
-/** Silence before each calm cue once a session has run {@link LONG_SESSION_S}. */
-export const LONG_SESSION_SILENCE_MIN_S = 60;
-export const LONG_SESSION_SILENCE_MAX_S = 180;
-/** How many calm cues apart the own stem comes back once a session has run {@link LONG_SESSION_S}. */
-export const LONG_SESSION_OWN_STEM_EVERY_MIN = 3;
-export const LONG_SESSION_OWN_STEM_EVERY_MAX = 5;
 /** Passes a tense stem holds before the fight rotates to another one. */
 export const TENSE_PASSES = 3;
-/** Seconds a tense cue fades out over when it hands over to the next tense stem. */
+/** Seconds a calm cue fades out over before the next one. */
+export const CALM_FADE_S = 2.5;
+/** Seconds a calm cue rises over, so a rendered file's first downbeat does not punch in. */
+export const CALM_FADE_IN_S = 1.5;
+/** Seconds a tense cue fades out over when it hands over to the next one. */
 export const TENSE_FADE_S = 1.5;
 /** Seconds a tense cue rises over: it cuts in under the outgoing cue's fade, so it lands fast but not
  *  as a click. */
 export const TENSE_FADE_IN_S = 0.3;
+/** Silence between two cues: none, the fades make the handover. */
+export const CUE_GAP_S = 0;
 /** The longest a fight's music plays on once the mood has calmed: the handover waits for a pass end,
  *  but a pass can run two minutes, so past this it fades out wherever it is. */
 export const CALM_RETURN_MAX_WAIT_S = 25;
@@ -53,15 +71,12 @@ export const CALM_RETURN_MAX_WAIT_S = 25;
 /** A uniform draw in `[0, 1)`. */
 export type MusicRandom = () => number;
 
-/** Seconds the session has run. */
-export type MusicClock = () => number;
-
 /**
  * What a change of mood asks the player to do with the cue it is playing: nothing, cut over to the
- * next cue now, keep a cue that already fits the fight (calling off a pending pass-end handover), or
- * hand over at the next pass end.
+ * next cue now, keep a cue that already fits (calling off a pending pass-end handover), hand over at
+ * the next pass end, or, as a fight ends, at a pass end within {@link CALM_RETURN_MAX_WAIT_S}.
  */
-export type MusicTransition = 'none' | 'now' | 'keep' | 'atPassEnd';
+export type MusicTransition = 'none' | 'now' | 'keep' | 'atPassEnd' | 'afterFight';
 
 /** The frame's mood as the playlist reads it. */
 export interface PlaylistMood {
@@ -69,6 +84,8 @@ export interface PlaylistMood {
   readonly stance: DiplomacyState;
   readonly wealthy: boolean;
 }
+
+const CALM: PlaylistMood = { intensity: 'calm', stance: 'neutral', wealthy: false };
 
 function randomInt(min: number, max: number, random: MusicRandom): number {
   return min + Math.floor(random() * (max - min + 1));
@@ -89,48 +106,41 @@ function shuffled<T>(items: readonly T[], random: MusicRandom): T[] {
 }
 
 export class MusicPlaylist implements MusicSequence {
-  private mood: PlaylistMood = { intensity: 'calm', stance: 'neutral', wealthy: false };
-  /** False until the first cue, which opens on the own stem without silence. */
-  private started = false;
-  /** Calm cues since the own stem last played, and how many make it due again. */
-  private sinceOwn = 0;
-  private ownEvery: number;
-  /** Set on entering a fight, so its first cue is the map's own tense stem. */
-  private freshFight = false;
-  /** Audio digest and mood of the last cue handed out, so no stem follows itself. */
+  private mood: PlaylistMood = CALM;
+  /** Audio digest and mood of the last cue handed out. */
   private lastAudio: string | null = null;
   private lastIntensity: MusicIntensity = 'calm';
-  /** Each pool's shuffle bag: stems still to play this round, drawn from the end. */
+  /** A pass-end handover was asked for and the next cue has not been handed out yet. */
+  private handoverPending = false;
+  /** Each nation pool's shuffle bag: stems still to play this round, drawn from the end. */
   private readonly bags: Record<MusicIntensity, string[]> = { calm: [], tense: [] };
+  /** Each nation pool's next stem, drawn ahead so the player can decode it: the tense one is what a
+   *  fight cuts in on, the calm one what follows the playing calm cue. */
+  private readonly ahead: Record<MusicIntensity, string | null> = { calm: null, tense: null };
   private readonly dropped = new Set<string>();
 
   constructor(
-    private readonly music: MapMusic,
+    readonly music: PlaylistMusic,
     private readonly manifest: MusicManifest,
     private readonly random: MusicRandom,
-    private readonly sessionS: MusicClock,
-  ) {
-    this.ownEvery = this.drawOwnEvery();
-  }
+  ) {}
 
-  /**
-   * Take the frame's mood. Turning tense cuts in now on the own tense stem, unless the last cue
-   * already fits a fight (a tense cue still running out its pass, or the own tense stem itself), which
-   * is kept; calming waits for the playing pass to end, at most {@link CALM_RETURN_MAX_WAIT_S}.
-   */
+  /** Take the frame's mood and say how the playing cue should give way to it. */
   update(mood: PlaylistMood): MusicTransition {
-    const previous = this.mood.intensity;
+    const previous = this.mood;
     this.mood = mood;
-    if (mood.intensity === previous) return 'none';
-    if (mood.intensity === 'calm') return 'atPassEnd';
-    const ownTense = ownTenseStem(this.music.variants);
-    const lastFits =
-      this.lastIntensity === 'tense' || (ownTense !== null && this.audioOf(ownTense) === this.lastAudio);
-    this.freshFight = !lastFits;
-    return lastFits ? 'keep' : 'now';
+    return this.music.source === 'map' ? this.mapTransition(previous) : this.nationTransition(previous);
   }
 
   next(): MusicCue | null {
+    this.handoverPending = false;
+    if (this.music.source === 'map') {
+      const stem = this.mapStem();
+      if (stem === null) return null;
+      return this.mood.intensity === 'tense'
+        ? this.cue(stem, 'tense', MAP_PASSES, TENSE_FADE_IN_S, TENSE_FADE_S)
+        : this.cue(stem, 'calm', MAP_PASSES, CALM_FADE_IN_S, CALM_FADE_S);
+    }
     return (this.mood.intensity === 'tense' ? this.tenseCue() : null) ?? this.calmCue();
   }
 
@@ -138,80 +148,111 @@ export class MusicPlaylist implements MusicSequence {
     this.dropped.add(file);
   }
 
-  /** The stem a fight opens on, kept decoded so the cut-in does not wait on a fetch. */
+  /** The stem a fight cuts in on, kept decoded so the cut-in does not wait on a fetch. */
   standby(): MusicTrack | null {
-    const opener = this.fightOpener();
-    return opener === null ? null : (this.manifest.tracks[opener] ?? null);
+    return this.trackOf(this.music.source === 'map' ? this.mapTenseStem() : this.peek('tense'));
   }
 
-  /** The map's own tense stem, or for a map without one the first of its culture's tense pool. */
-  private fightOpener(): string | null {
+  /** The stem the next cue plays in the current mood: the nation's next draw, or the map's stem
+   *  once a mood change has moved it off the playing one. */
+  upcoming(): MusicTrack | null {
+    if (this.music.source === 'nation') return this.trackOf(this.peek(this.mood.intensity));
+    const stem = this.mapStem();
+    return stem === null || this.audioOf(stem) === this.lastAudio ? null : this.trackOf(stem);
+  }
+
+  private trackOf(stem: string | null): MusicTrack | null {
+    return stem === null ? null : (this.manifest.tracks[stem] ?? null);
+  }
+
+  /** A map's stem changes when a fight starts or ends, or the standing picks another calm variant.
+   *  A fight cuts in at once; anything else waits for the playing pass to end. */
+  private mapTransition(previous: PlaylistMood): MusicTransition {
+    const stem = this.mapStem();
+    if (stem === null) return 'none';
+    if (this.audioOf(stem) === this.lastAudio) {
+      const pending = this.handoverPending;
+      this.handoverPending = false;
+      return pending ? 'keep' : 'none';
+    }
+    if (this.mood.intensity === 'tense' && previous.intensity === 'calm') return 'now';
+    if (this.handoverPending) return 'none';
+    this.handoverPending = true;
+    return previous.intensity === 'tense' ? 'afterFight' : 'atPassEnd';
+  }
+
+  /** Only a turn between calm and tense moves the nation's music: a fight cuts in at once unless a
+   *  tense cue still plays, calm waits for the pass end. */
+  private nationTransition(previous: PlaylistMood): MusicTransition {
+    if (this.mood.intensity === previous.intensity) return 'none';
+    if (this.mood.intensity === 'calm') return this.lastIntensity === 'tense' ? 'afterFight' : 'none';
+    if (this.lastIntensity === 'tense') return 'keep';
+    return this.peek('tense') === null ? 'none' : 'now';
+  }
+
+  /** The map's stem for the mood: its tense stem in a fight when it authored one, else the calm
+   *  variant for the standing, else any calm stem it rendered. */
+  private mapStem(): string | null {
+    if (this.music.source !== 'map') return null;
+    const { variants } = this.music;
+    const tense = this.mood.intensity === 'tense' ? this.mapTenseStem() : null;
+    if (tense !== null) return tense;
+    const preferred = ownCalmStem(variants, this.mood.stance, this.mood.wealthy);
+    if (this.playable(preferred)) return preferred;
+    const { calm, tense: tenseStems } = stemsByIntensity(variants);
+    return [...calm, ...tenseStems].find((stem) => this.playable(stem)) ?? null;
+  }
+
+  private mapTenseStem(): string | null {
+    if (this.music.source !== 'map') return null;
     const own = ownTenseStem(this.music.variants);
-    if (own !== null && this.playable(own)) return own;
-    return this.music.pools.tense.find((stem) => this.playable(stem)) ?? null;
+    return own !== null && this.playable(own) ? own : null;
+  }
+
+  /** The pool's next stem, drawn now if none is waiting or the waiting one was dropped. */
+  private peek(intensity: MusicIntensity): string | null {
+    const waiting = this.ahead[intensity];
+    if (waiting === null || !this.playable(waiting)) this.ahead[intensity] = this.draw(intensity);
+    return this.ahead[intensity];
+  }
+
+  private take(intensity: MusicIntensity): string | null {
+    const stem = this.peek(intensity);
+    this.ahead[intensity] = null;
+    return stem;
   }
 
   private tenseCue(): MusicCue | null {
-    const opener = this.freshFight ? this.fightOpener() : null;
-    this.freshFight = false;
-    const openerFits = opener !== null && this.audioOf(opener) !== this.lastAudio;
-    const stem = (openerFits ? opener : null) ?? this.draw('tense', null);
-    return stem === null ? null : this.cue(stem, 'tense', TENSE_PASSES, 0, TENSE_FADE_IN_S, TENSE_FADE_S);
+    const stem = this.take('tense');
+    return stem === null ? null : this.cue(stem, 'tense', TENSE_PASSES, TENSE_FADE_IN_S, TENSE_FADE_S);
   }
 
   private calmCue(): MusicCue | null {
-    const own = ownCalmStem(this.music.variants, this.mood.stance, this.mood.wealthy);
-    const ownPlayable = this.playable(own);
-    const ownDue = !this.started || this.sinceOwn + 1 >= this.ownEvery;
-    const ownFresh = ownPlayable && this.audioOf(own) !== this.lastAudio;
-    let stem: string | null = ownDue && ownFresh ? own : this.draw('calm', ownPlayable ? own : null);
-    if (stem === null && ownPlayable) stem = own;
+    const stem = this.take('calm');
     if (stem === null) return null;
-    if (stem === own) {
-      this.sinceOwn = 0;
-      this.ownEvery = this.drawOwnEvery();
-    } else {
-      this.sinceOwn++;
-    }
-    const grown = this.sessionGrowth();
-    const silenceMinS = lerp(CALM_SILENCE_MIN_S, LONG_SESSION_SILENCE_MIN_S, grown);
-    const silenceMaxS = lerp(CALM_SILENCE_MAX_S, LONG_SESSION_SILENCE_MAX_S, grown);
-    const gapS = this.started ? silenceMinS + this.random() * (silenceMaxS - silenceMinS) : 0;
-    return this.cue(
-      stem,
-      'calm',
-      randomInt(CALM_PASSES_MIN, CALM_PASSES_MAX, this.random),
-      gapS,
-      CALM_FADE_IN_S,
-      CALM_FADE_S,
-    );
+    const passes = randomInt(CALM_PASSES_MIN, CALM_PASSES_MAX, this.random);
+    return this.cue(stem, 'calm', passes, CALM_FADE_IN_S, CALM_FADE_S);
   }
 
   private cue(
     stem: string,
     intensity: MusicIntensity,
     passes: number,
-    gapBeforeS: number,
     fadeInS: number,
     fadeS: number,
   ): MusicCue | null {
     const track = this.manifest.tracks[stem];
     if (track === undefined) return null;
-    this.started = true;
     this.lastAudio = track.segmentSha256;
     this.lastIntensity = intensity;
-    return { track, passes, gapBeforeS, fadeInS, fadeS };
+    return { track, passes, gapBeforeS: CUE_GAP_S, fadeInS, fadeS };
   }
 
-  /**
-   * The next stem from the pool's shuffle bag, never `except`'s audio and never the last cue's when
-   * another is left; the bag refills reshuffled once it runs dry.
-   */
-  private draw(intensity: MusicIntensity, except: string | null): string | null {
-    const exceptAudio = except === null ? null : this.audioOf(except);
-    const pool = this.music.pools[intensity].filter(
-      (stem) => this.playable(stem) && this.audioOf(stem) !== exceptAudio,
-    );
+  /** The next stem from a nation pool's shuffle bag, never the last cue's audio when another is left;
+   *  the bag refills reshuffled once it runs dry. */
+  private draw(intensity: MusicIntensity): string | null {
+    if (this.music.source !== 'nation') return null;
+    const pool = this.music.pools[intensity].filter((stem) => this.playable(stem));
     if (pool.length === 0) return null;
     const fresh = (stem: string) => this.audioOf(stem) !== this.lastAudio;
     let bag = this.bags[intensity].filter((stem) => pool.includes(stem));
@@ -230,19 +271,5 @@ export class MusicPlaylist implements MusicSequence {
 
   private audioOf(stem: string): string | undefined {
     return this.manifest.tracks[stem]?.segmentSha256;
-  }
-
-  private drawOwnEvery(): number {
-    const grown = this.sessionGrowth();
-    return randomInt(
-      Math.round(lerp(OWN_STEM_EVERY_MIN, LONG_SESSION_OWN_STEM_EVERY_MIN, grown)),
-      Math.round(lerp(OWN_STEM_EVERY_MAX, LONG_SESSION_OWN_STEM_EVERY_MAX, grown)),
-      this.random,
-    );
-  }
-
-  /** How far the session has grown toward its long-session spacing, 0 at its start to 1. */
-  private sessionGrowth(): number {
-    return Math.min(1, Math.max(0, this.sessionS() / LONG_SESSION_S));
   }
 }

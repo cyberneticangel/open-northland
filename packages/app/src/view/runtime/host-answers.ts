@@ -75,6 +75,8 @@ export interface HostAnswers {
     player?: number,
   ) => UnlockStatus | undefined;
   readonly canChooseJob: (entity: number, jobType: number) => boolean;
+  /** `canChooseJob`, undefined while unanswered rather than refused. */
+  readonly jobChoiceAnswer: (entity: number, jobType: number) => boolean | undefined;
   readonly askCanChooseJob: (entity: number, jobType: number) => Promise<boolean>;
   /** Versioned with the job choices, since the residents filter asks both of one row. */
   readonly hasEarnedGood: (entity: number, goodType: number) => boolean;
@@ -91,6 +93,9 @@ export interface HostAnswers {
   /** The pick highlights' rules, read off one answer per unit rather than one per building. */
   readonly canAttachTradeHouse: (trader: number, house: number) => boolean;
   readonly canAttachToVehicle: (settler: number, vehicle: number) => boolean;
+  /** The two attach rules, undefined while unanswered rather than refused. */
+  readonly tradeHouseAttachAnswer: (trader: number, house: number) => boolean | undefined;
+  readonly vehicleAttachAnswer: (settler: number, vehicle: number) => boolean | undefined;
   readonly askAttachTradeHouse: (trader: number, house: number) => Promise<boolean>;
   readonly askAttachToVehicle: (settler: number, vehicle: number) => Promise<boolean>;
   readonly papers: (player: number) => readonly Paper[];
@@ -168,6 +173,12 @@ export function createHostAnswers(host: SessionHost, tribeOf: (player: number) =
     host.tradeHousesAttachableBy(trader as Entity).then((ids) => new Set(ids));
   const vehiclesOf = (settler: number) => (): Promise<ReadonlySet<number>> =>
     host.vehiclesAttachableBy(settler as Entity).then((ids) => new Set(ids));
+  const jobChoiceAnswer = (entity: number, jobType: number): boolean | undefined =>
+    perTick(jobChoices, `${entity}:${jobType}`, () => host.canChooseJob(entity as Entity, jobType));
+  const tradeHouseAttachAnswer = (trader: number, house: number): boolean | undefined =>
+    perTick(tradeHouses, `${trader}`, tradeHousesOf(trader))?.has(house);
+  const vehicleAttachAnswer = (settler: number, vehicle: number): boolean | undefined =>
+    perTick(vehicles, `${settler}`, vehiclesOf(settler))?.has(vehicle);
 
   return {
     signpostReach: (player) =>
@@ -193,9 +204,8 @@ export function createHostAnswers(host: SessionHost, tribeOf: (player: number) =
       perTick(statuses, `${kind}:${typeId}:${tribe}:${player ?? ''}`, () =>
         host.unlockStatus(kind, typeId, tribe, player),
       ),
-    canChooseJob: (entity, jobType) =>
-      perTick(jobChoices, `${entity}:${jobType}`, () => host.canChooseJob(entity as Entity, jobType)) ===
-      true,
+    canChooseJob: (entity, jobType) => jobChoiceAnswer(entity, jobType) === true,
+    jobChoiceAnswer,
     hasEarnedGood: (entity, goodType) =>
       perTick(jobChoices, `good:${entity}:${goodType}`, () =>
         host.hasEarnedGood(entity as Entity, goodType),
@@ -224,10 +234,10 @@ export function createHostAnswers(host: SessionHost, tribeOf: (player: number) =
     traderView: (trader) => perTick(traders, `${trader}`, () => host.traderView(trader as Entity)),
     tradeOffersAt: (house) =>
       perTick(offersAt, `${house}`, () => host.tradeOffersAt(house as Entity)) ?? NO_OFFERS,
-    canAttachTradeHouse: (trader, house) =>
-      perTick(tradeHouses, `${trader}`, tradeHousesOf(trader))?.has(house) === true,
-    canAttachToVehicle: (settler, vehicle) =>
-      perTick(vehicles, `${settler}`, vehiclesOf(settler))?.has(vehicle) === true,
+    canAttachTradeHouse: (trader, house) => tradeHouseAttachAnswer(trader, house) === true,
+    canAttachToVehicle: (settler, vehicle) => vehicleAttachAnswer(settler, vehicle) === true,
+    tradeHouseAttachAnswer,
+    vehicleAttachAnswer,
     askAttachTradeHouse: (trader, house) =>
       tradeHouses
         .fresh(`${trader}`, tradeHousesOf(trader), NO_INPUTS, PER_TICK)

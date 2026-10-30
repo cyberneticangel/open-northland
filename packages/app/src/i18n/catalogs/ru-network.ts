@@ -16,6 +16,8 @@ export const ruNetwork = {
   source: 'Источник игры',
   server: 'Адрес сервера',
   nick: 'Псевдоним',
+  flag: 'Флаг',
+  noFlag: 'Без флага',
   connect: 'Подключиться',
   disconnect: 'Отключиться',
   connecting: 'Подключение…',

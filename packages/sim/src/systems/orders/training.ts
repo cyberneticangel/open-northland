@@ -33,7 +33,7 @@ export function trainSoldier(
   command: Extract<Command, { kind: 'trainSoldier' }>,
 ): void {
   if (!mayDrillAt(world, ctx, command.entity, command.house)) return;
-  startDrill(world, command.entity, command.house, BARRACKS_DRILL_TICKS);
+  startDrill(world, ctx, command.entity, command.house, BARRACKS_DRILL_TICKS);
 }
 
 /**
@@ -57,9 +57,21 @@ export function mayWalkToDrill(world: World, ctx: SystemContext, e: Entity, hous
 }
 
 /** Stamp the drill errand and drop what it supersedes, the accepting half of {@link trainSoldier} once
- *  {@link mayDrillAt} passed. `drillTicks` is the caller's serving length. */
-export function startDrill(world: World, e: Entity, house: Entity, drillTicks: number): void {
-  world.add(e, TrainingOrder, { house, drillTicksLeft: drillTicks });
+ *  {@link mayDrillAt} passed. `drillTicks` is the caller's serving length. A new course at the same house
+ *  keeps the settler's place on its list. */
+export function startDrill(
+  world: World,
+  ctx: SystemContext,
+  e: Entity,
+  house: Entity,
+  drillTicks: number,
+): void {
+  const pending = world.tryGet(e, TrainingOrder);
+  const place =
+    pending?.house === house
+      ? { enrolled: pending.enrolled, seated: pending.seated }
+      : { enrolled: ctx.tick, seated: false };
+  world.add(e, TrainingOrder, { house, drillTicksLeft: drillTicks, ...place });
   world.remove(e, GraduateWait); // a new course ends the wait by the last school
   wakeIdle(world, e); // an assistant-booked drill is walked this pass, like an ordered one
   removeCurrentAtomic(world, e);

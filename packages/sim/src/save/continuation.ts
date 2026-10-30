@@ -14,5 +14,6 @@ export function withSaveContinuation(save: SaveGame, commands: readonly SavedCom
           }
         : section,
     ),
+    presentation: save.presentation,
   };
 }

@@ -286,7 +286,7 @@ function pushHalf(
       batch.brightnessUVs.push(weighted(cornerLaneUVs, 2, w, 0), weighted(cornerLaneUVs, 2, w, 1));
       // The road is land paint: no wave and no water shading.
       batch.waves.push(0);
-      batch.water.push(0, 0);
+      batch.water.push(0, 0, 0);
     }
   }
   batch.uvs.push(...uvs);

@@ -32,6 +32,7 @@ export type RelayReason =
   | { readonly code: 'seatTaken'; readonly player: number; readonly nick: string }
   | { readonly code: 'seatModeUnavailable'; readonly player: number; readonly mode: VacantSeatMode }
   | { readonly code: 'seatTribeUnavailable'; readonly player: number }
+  | { readonly code: 'colorTaken'; readonly player: number; readonly wearer: number }
   | { readonly code: 'seatDifficultyUnavailable'; readonly player: number }
   | { readonly code: 'seatRequired' }
   | { readonly code: 'notMember'; readonly nick: string }

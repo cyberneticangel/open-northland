@@ -9,6 +9,7 @@ import {
   Position,
   Resource,
 } from '../../../../src/components/index.js';
+import type { AtomicEffect } from '../../../../src/core/atomic-effect.js';
 import type { Entity } from '../../../../src/ecs/world.js';
 import { fx, Simulation } from '../../../../src/index.js';
 import {
@@ -118,18 +119,19 @@ function cuesOverSwing(
   jobType: number,
   atomicId: number,
   duration = CHOP_LENGTH,
+  effect: AtomicEffect = { kind: 'idle' },
 ): { tick: number; soundType: number }[] {
   const sim = new Simulation({ seed: 1, content: cueContent() });
   const e: Entity = settlerAt(sim, { jobType });
   addCurrentAtomic(sim.world, e, {
     atomicId,
     duration,
-    effect: { kind: 'idle' },
+    effect,
     targetEntity: null,
     targetTile: null,
   });
   const fired: { tick: number; soundType: number }[] = [];
-  for (let tick = 1; tick <= CHOP_LENGTH; tick++) {
+  for (let tick = 1; tick <= Math.max(duration, CHOP_LENGTH); tick++) {
     sim.events.clear();
     atomicSystem(sim.world, nextTickCtxOf(sim));
     for (const ev of sim.events.current()) {
@@ -169,6 +171,14 @@ describe('atomicSystem - authored sound cues', () => {
     // so the bound clip's frames belong to an animation this atomic is not playing.
     expect(cuesOverSwing(COLLECTOR_JOB, CHOP_ATOMIC, CHOP_LENGTH - 1)).toEqual([]);
     expect(cuesOverSwing(COLLECTOR_JOB, CHOP_ATOMIC)).toHaveLength(1); // same clip, its own clock
+  });
+
+  it("places a cart lift's cues on its clip shortened or stretched over the lift", () => {
+    const lift: AtomicEffect = { kind: 'tradeUnload', store: null, goodType: 1 };
+    const half = CHOP_LENGTH / 2;
+    const double = CHOP_LENGTH * 2;
+    expect(cuesOverSwing(COLLECTOR_JOB, CHOP_ATOMIC, half, lift)).toEqual([{ tick: 3, soundType: AXE }]);
+    expect(cuesOverSwing(COLLECTOR_JOB, CHOP_ATOMIC, double, lift)).toEqual([{ tick: 10, soundType: AXE }]);
   });
 
   it('sounds a clip a trade inherits from the civilist body', () => {

@@ -35,9 +35,9 @@ describe('tradeHousePick', () => {
     const takes = new Set([OWN_WAREHOUSE, TRADING_POST]);
 
     expect(tradeHousePick.highlight(snap, [TRADER], (_trader, h) => takes.has(h))).toEqual([
-      { id: OWN_WAREHOUSE, ok: true },
-      { id: ON_ROUTE, ok: false },
-      { id: TRADING_POST, ok: true },
+      { id: OWN_WAREHOUSE, tone: 'candidate' },
+      { id: ON_ROUTE, tone: 'refused' },
+      { id: TRADING_POST, tone: 'candidate' },
     ]);
     expect(tradeHousePick.onRoute(snap, ON_ROUTE, TRADER)).toBe(true);
   });

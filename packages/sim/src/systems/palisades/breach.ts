@@ -1,5 +1,6 @@
 import {
   AttackOrder,
+  Building,
   Engagement,
   Owner,
   Palisade,
@@ -17,11 +18,12 @@ import { type NodeId, StepBuffer, type TerrainGraph } from '../../nav/terrain/in
 import { isValidOrderedTarget } from '../conflict/targeting.js';
 import { attackerWeapon, wallBlowDamage } from '../conflict/weapons.js';
 import type { SystemContext } from '../context.js';
+import { buildingWalkBodyOf } from '../footprint/blocked.js';
 import { translatedCells } from '../footprint/geometry.js';
 import { attackMoveBlocks, routeStructureBlocks } from '../movement/attack-move-blocks.js';
 import { clearNavState } from '../movement/nav-state.js';
 import { structureRouteSealed } from '../movement/structure-route.js';
-import { ARMOR_MATERIAL, weaponDamageVsMaterial } from '../readviews/index.js';
+import { ARMOR_MATERIAL, isWallBuilding, weaponDamageVsMaterial } from '../readviews/index.js';
 import { manhattan } from '../spatial/metric.js';
 import { canonicalById } from '../spatial/nodes.js';
 
@@ -84,12 +86,13 @@ export function breakThroughWall(
  * within {@link BREACH_SPREAD} joints, the stretch one squad spreads along; a siege further along the line
  * or elsewhere chops on, and a fallen wall that blocked nothing releases none. An ordered attack returns to
  * its target; a march resumes and finds the next wall itself if the gap does not open the way; a fighter's
- * own breach picks its enemy again. Costs the standing attack orders, plus the standing walls when a breach
- * is among them, once per fallen wall.
+ * own breach picks its enemy again. Costs the standing attack orders, plus the standing walls and buildings
+ * when a breach is among them, once per fallen wall.
  */
 export function releaseWallBreaches(world: World, ctx: SystemContext, fallen: Entity): void {
   const terrain = ctx.terrain;
-  if (terrain === undefined || !world.has(fallen, PalisadeBlocking)) return;
+  if (terrain === undefined || !(world.has(fallen, PalisadeBlocking) || isWallBuilding(world, ctx, fallen)))
+    return;
   const breaches: { e: Entity; wall: Entity; resume: Entity | null }[] = [];
   for (const e of world.query(AttackOrder)) {
     const order = world.get(e, AttackOrder);
@@ -98,7 +101,7 @@ export function releaseWallBreaches(world: World, ctx: SystemContext, fallen: En
   if (breaches.length === 0) return;
   // Marching breakers treat open gates as part of the wall. Their passage must join the run
   // when either the gate itself or a neighbouring segment falls, including retained outer posts.
-  const wallAt = standingWallAt(world, terrain, () => true, { includeGatePassages: true });
+  const wallAt = standingWallAt(world, ctx, terrain, () => true, { includeGatePassages: true });
   const line = joinedWalls(terrain, wallAt, wallCellsOf(wallAt), fallen);
   for (const { e, wall, resume } of breaches) {
     if (!line.has(wall)) continue;
@@ -152,6 +155,7 @@ export function palisadeBarring(
       : attackMoveBlocks(world, ctx, terrain, player);
   const wallAt = standingWallAt(
     world,
+    ctx,
     terrain,
     (wall) =>
       (walls === 'attackable' || world.has(wall, Owner)) &&
@@ -186,9 +190,10 @@ export function palisadeBarring(
   return spreadAlongLine(world, line, e);
 }
 
-/** The admitted wall bodies, each cell assigned to its lowest-id wall. */
+/** The admitted wall bodies, palisades and wall buildings, each cell assigned to its lowest-id wall. */
 function standingWallAt(
   world: World,
+  ctx: SystemContext,
   terrain: TerrainGraph,
   admits: (wall: Entity) => boolean,
   options: {
@@ -205,6 +210,13 @@ function standingWallAt(
     const cells = options.includeGatePassages && body.gate !== null ? body.placementWalk : body.walk;
     for (const cell of translatedCells(terrain, cells, hx, hy)) {
       if (!wallAt.has(cell)) wallAt.set(cell, wall);
+    }
+  }
+  for (const wall of world.query(Building, Position)) {
+    if (!isWallBuilding(world, ctx, wall) || !admits(wall)) continue;
+    for (const cell of buildingWalkBodyOf(world, ctx, terrain, wall)?.body ?? []) {
+      const prior = wallAt.get(cell);
+      if (prior === undefined || wall < prior) wallAt.set(cell, wall);
     }
   }
   for (const [cell, wall] of options.projected ?? []) {

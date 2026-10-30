@@ -1,5 +1,7 @@
 import {
   BUS_PREVIEWS,
+  MUSIC_SOURCES,
+  type MusicSource,
   type SoundBus,
   UNIT_RESPONSE_MODES,
   type UnitResponses,
@@ -44,6 +46,8 @@ export interface SettingsPageStore {
   effectiveUiScaleFor(factor: number): number;
   /** True when boot-owned graphics and language are being edited from a running game. */
   readonly bootOwnedChangesDeferred?: boolean;
+  /** The page edits a running game's settings, which adds the choices only a game has: its music. */
+  readonly inGame?: boolean;
   /** Play the clip that previews a bus's slider; absent, the sliders have no test button. */
   readonly previewBus?: (bus: SoundBus) => void;
 }
@@ -257,6 +261,18 @@ export function createSettingsPage(opts: {
         },
       );
       markSegment(responses.root, 'unit-responses');
+      const musicRow = (): HTMLDivElement => {
+        const music = segControl<MusicSource>(
+          MUSIC_SOURCES.map((source) => ({ id: source, label: text.musicSources[source] })),
+          settings.musicSource,
+          (musicSource) => {
+            void opts.settings.update({ musicSource });
+            music.setActive(musicSource);
+          },
+        );
+        markSegment(music.root, 'music-source');
+        return settingRow(text.musicSource, music.root, { tip: text.musicSourceTip });
+      };
       const quality = segControl<SoundQuality>(
         SOUND_QUALITIES.map((id) => ({ id, label: text.soundQualities[id] })),
         settings.soundQuality,
@@ -277,6 +293,7 @@ export function createSettingsPage(opts: {
         choice('monoSound', 'mono-sound', text.monoSoundTip),
         choice('jinglesEnabled', 'jingles', text.jinglesEnabledTip),
         settingRow(text.unitResponses, responses.root, { tip: text.unitResponsesTip }),
+        ...(opts.settings.inGame === true ? [musicRow()] : []),
         settingRow(text.soundQuality, quality.root, { tip: qualityTip }),
         settingsHeading(text.volumeHeading),
         ...VOLUME_CHANNELS.map(volumeRow),

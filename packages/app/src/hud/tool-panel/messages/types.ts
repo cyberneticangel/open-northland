@@ -14,7 +14,8 @@ import type { MessageText } from './text.js';
  * area each, and has a worker report each product it failed to make where `productionStalled` reports
  * the workshop once, with the reason, and raises no word about a building site short of a material
  * (`constructionStarved`) and gives scouts no landmass-wide sweep to report the end of
- * (`explorationFinished`). `workerRefused` says why a worker order seated nobody.
+ * (`explorationFinished`). `workerRefused` says why a worker order seated nobody, and `tradeRefused` why
+ * a trader's route took no house of another tribe.
  * `settingsNeedRestart` reports the player's own settings change that waits for the map's next start, not
  * anything in the world.
  */
@@ -26,7 +27,6 @@ export const USER_MESSAGE_TYPE = {
   vehicleSiteOccupied: 0x0a,
   nothingToDo: 0x0b,
   storageFull: 0x0d,
-  noVehicleForWork: 0x0f,
   experienceUnlocks: 0x12,
   canProduceNewGood: 0x13,
   canDoNewJob: 0x14,
@@ -61,6 +61,7 @@ export const USER_MESSAGE_TYPE = {
   explorationFinished: 0x85,
   settingsNeedRestart: 0x86,
   workerRefused: 0x87,
+  tradeRefused: 0x88,
 } as const;
 
 export type UserMessageTypeName = keyof typeof USER_MESSAGE_TYPE;

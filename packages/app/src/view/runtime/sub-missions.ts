@@ -24,6 +24,8 @@ export interface SubMissionDeps {
   readonly captureSave?: (options: ExportSaveOptions) => SaveGame | Promise<SaveGame>;
   /** The view the parent save keeps, so the player's groups return with them. */
   readonly viewState?: () => SavedView | null;
+  /** The presentation memory the parent save keeps, so the fog's memory returns with the groups. */
+  readonly presentation?: () => string | null;
   readonly worldToken: string | null;
   readonly params: URLSearchParams;
   readonly parent?: SaveGame;
@@ -53,6 +55,7 @@ export function createSubMissions(deps: SubMissionDeps): {
         mapId: deps.worldToken,
         entry: `?${deps.params}`,
         ...(deps.viewState !== undefined ? { view: deps.viewState() } : {}),
+        ...(deps.presentation !== undefined ? { presentation: deps.presentation() } : {}),
         ...(deps.parent !== undefined ? { parent: deps.parent } : {}),
       });
       const target = parseSaveGame(await deps.prepare(event.transition, current));

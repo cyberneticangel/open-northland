@@ -13,7 +13,7 @@ import { createUnitOrderController } from '../../../../src/view/unit-controls/or
 import { createOrderFeedback } from '../../../../src/view/unit-controls/orders/feedback.js';
 import { createOverviewOrders } from '../../../../src/view/unit-controls/orders/overview.js';
 import { createPendingGroundOrders } from '../../../../src/view/unit-controls/orders/pending-ground.js';
-import type { UnitTargets } from '../../../../src/view/unit-controls/unit-targets.js';
+import { withPointHits } from '../../../support/point-hits.js';
 import { snapshotOf } from '../../../support/snapshot.js';
 
 function harness(count = 4, refuse?: (movers: readonly number[]) => void) {
@@ -33,7 +33,7 @@ function harness(count = 4, refuse?: (movers: readonly number[]) => void) {
     resolve: (groups: readonly FormationSlotGroup[] | null) => void;
     reject: () => void;
   }[] = [];
-  const targets: UnitTargets = {
+  const targets = withPointHits({
     owned: () => [],
     buildings: () => [],
     flags: () => [],
@@ -45,7 +45,7 @@ function harness(count = 4, refuse?: (movers: readonly number[]) => void) {
     claimableLivestock: () => [],
     enemies: () => [],
     ownedSettlersIn: (ids) => units.filter(({ ref }) => ids.has(ref)),
-  };
+  });
   const submit = (command: PlayerCommand) => pending.submit(command, (order) => issued.push(order));
   const orders = createUnitOrderController({
     answered: createAnsweredOrders(),

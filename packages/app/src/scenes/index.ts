@@ -17,6 +17,7 @@ import { barracksExitScene } from './army/barracks-exit.js';
 import { battleScene } from './army/battle.js';
 import { battleWearyScene } from './army/battle-weary.js';
 import { collisionScene } from './army/collision.js';
+import { defenceWallScene } from './army/defence-wall.js';
 import { hitAlarmScene } from './army/hit-alarm.js';
 import { meleeFrontScene } from './army/melee-front.js';
 import { openGateAttackScene } from './army/open-gate-attack.js';
@@ -42,6 +43,7 @@ import { buildingDemolitionScene } from './construction/building-demolition.js';
 import { constructionScene } from './construction/construction.js';
 import { farmConstructionScene } from './construction/farm-construction.js';
 import { frankConstructionScene } from './construction/frank-construction.js';
+import { homeRoofsScene } from './construction/home-roofs.js';
 import { nationFootprintsScene } from './construction/nation-footprints.js';
 import { palisadeScene } from './construction/palisade.js';
 import { repairScene } from './construction/repair.js';
@@ -69,7 +71,9 @@ import { storageMinimumPorterScene } from './economy/storage-minimum-porter.js';
 import { storeReachScene } from './economy/store-reach.js';
 import { technologyScene } from './economy/technology.js';
 import { tradeScene } from './economy/trade.js';
+import { tradeBreadScene } from './economy/trade-bread.js';
 import { tradeDomesticScene } from './economy/trade-domestic.js';
+import { tradeOnFootScene } from './economy/trade-on-foot.js';
 import { warehouseScene } from './economy/warehouse.js';
 import { workshopProductsScene } from './economy/workshop-products.js';
 import { berriesScene } from './gathering/berries.js';
@@ -104,6 +108,7 @@ import { movementContinuityScene } from './settlers/movement-continuity.js';
 import { personalNamesScene } from './settlers/personal-names.js';
 import { schoolScene } from './settlers/school.js';
 import { schoolGraduatesScene } from './settlers/school-graduates.js';
+import { schoolQueueScene } from './settlers/school-queue.js';
 import { scoutClaimScene } from './settlers/scout-claim.js';
 import { scoutExploreScene } from './settlers/scout-explore.js';
 import { templeAuraScene } from './settlers/temple-aura.js';
@@ -117,6 +122,7 @@ import { vehicleCargoScene } from './vehicles/vehicle-cargo.js';
 import { vehicleCatapultScene } from './vehicles/vehicle-catapult.js';
 import { vehicleCatapultSpreadScene } from './vehicles/vehicle-catapult-spread.js';
 import { vehicleCatapultWallScene } from './vehicles/vehicle-catapult-wall.js';
+import { vehicleDockFleetScene } from './vehicles/vehicle-dock-fleet.js';
 import { vehicleOxScene } from './vehicles/vehicle-ox.js';
 import { vehicleOxYardScene } from './vehicles/vehicle-ox-yard.js';
 import { vehicleShipColumnScene } from './vehicles/vehicle-ship-column.js';
@@ -150,6 +156,7 @@ export const SCENES: readonly SceneDefinition[] = [
   personalNamesScene,
   battleWearyScene,
   siegeScene,
+  defenceWallScene,
   buildingDemolitionScene,
   buildingDamageScene,
   buildingDamageVariantsScene,
@@ -226,6 +233,7 @@ export const SCENES: readonly SceneDefinition[] = [
   armorScene,
   towerGarrisonScene,
   towerFinialsScene,
+  homeRoofsScene,
   aiDefenceScene,
   aiSiegeMarchScene,
   aiSiegeChargeScene,
@@ -235,6 +243,8 @@ export const SCENES: readonly SceneDefinition[] = [
   closingBriefingScene,
   tradeScene,
   tradeDomesticScene,
+  tradeBreadScene,
+  tradeOnFootScene,
   tributeScene,
   presentationScene,
   terrainEditsScene,
@@ -242,6 +252,7 @@ export const SCENES: readonly SceneDefinition[] = [
   schoolScene,
   learningFoundationsScene,
   schoolGraduatesScene,
+  schoolQueueScene,
   gathererFlagFollowScene,
   porterFlagScene,
   fieldPostFlagsScene,
@@ -256,6 +267,7 @@ export const SCENES: readonly SceneDefinition[] = [
   vehicleShipsScene,
   vehicleShipColumnScene,
   vehicleShipVoyageScene,
+  vehicleDockFleetScene,
   shipWakesScene,
   vehicleShipyardScene,
   vehicleCargoScene,

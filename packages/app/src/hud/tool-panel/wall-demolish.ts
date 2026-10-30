@@ -1,5 +1,5 @@
 import type { UiCue } from '@open-northland/audio';
-import type { BuildingHighlightItem } from '@open-northland/render';
+import type { TargetMark } from '@open-northland/render';
 import { messages } from '../../i18n/index.js';
 import type { PlacementStrip } from '../dom/placement-strip.js';
 import type { HeldMode } from './input.js';
@@ -29,12 +29,12 @@ export interface WallDemolishDeps {
  */
 export interface WallDemolishBrush extends HeldMode {
   enter(): void;
-  /** The wall the next press would tear down, tinted red; an empty list off every wall, null while the
-   *  brush is not held. */
-  highlight(pointer: ClientPoint | null): readonly BuildingHighlightItem[] | null;
+  /** The wall the next press would tear down, marked doomed; an empty list off every wall, null while
+   *  the brush is not held. */
+  highlight(pointer: ClientPoint | null): readonly TargetMark[] | null;
 }
 
-const NO_HIGHLIGHT: readonly BuildingHighlightItem[] = [];
+const NO_HIGHLIGHT: readonly TargetMark[] = [];
 
 export function createWallDemolishBrush(deps: WallDemolishDeps): WallDemolishBrush {
   let active = false;
@@ -42,7 +42,7 @@ export function createWallDemolishBrush(deps: WallDemolishDeps): WallDemolishBru
    *  them again, so one a relay refused over its per-tick input budget falls to the next pass. */
   const ordered = new Set<number>();
   let stroke: { last: ClientPoint; hits: number } | null = null;
-  let shown: readonly BuildingHighlightItem[] = NO_HIGHLIGHT;
+  let shown: readonly TargetMark[] = NO_HIGHLIGHT;
 
   const tearDown = (points: readonly ClientPoint[]): void => {
     if (stroke === null) return;
@@ -101,11 +101,11 @@ export function createWallDemolishBrush(deps: WallDemolishDeps): WallDemolishBru
       if (stroke.hits === 0) deps.cue('fail');
       stroke = null;
     },
-    highlight: (pointer): readonly BuildingHighlightItem[] | null => {
+    highlight: (pointer): readonly TargetMark[] | null => {
       if (!active) return null;
       const wall = pointer === null ? null : (deps.wallsAt([pointer])[0] ?? null);
       if (wall === null || ordered.has(wall)) shown = NO_HIGHLIGHT;
-      else if (shown[0]?.id !== wall) shown = [{ id: wall, ok: false }];
+      else if (shown[0]?.id !== wall) shown = [{ id: wall, tone: 'doomed' }];
       return shown;
     },
   };

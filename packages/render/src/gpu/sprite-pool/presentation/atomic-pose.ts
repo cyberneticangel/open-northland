@@ -74,6 +74,7 @@ export function atomicPose(item: DrawItem, tick: number, track: AtomicPoseTrack)
       atomicId: last.atomicId,
       elapsed: last.elapsed + 1,
       ...(last.atomicDuration === undefined ? {} : { atomicDuration: last.atomicDuration }),
+      ...(last.atomicStretched === undefined ? {} : { atomicStretched: last.atomicStretched }),
       ...(last.facing === undefined ? {} : { facing: last.facing }),
     };
   }

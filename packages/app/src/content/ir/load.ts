@@ -11,6 +11,7 @@ import {
 import { Texture, type TextureSource } from 'pixi.js';
 import { loadAtlasSheet } from '../atlas-sheet/index.js';
 import { loadServedBobAtlas } from '../bob-atlases.js';
+import { withAddedHousePalettes } from '../building-gfx/added-palettes.js';
 import { fetchImageData, fetchJsonOrNull } from '../net.js';
 import { atlasImagePath } from '../url.js';
 import { BODY_IMAGELIB, type BobSeqRow, type ContentIr } from './rows.js';
@@ -166,6 +167,7 @@ async function loadBuildTimeSheet(url: string): Promise<BuildTimeSheet | undefin
 }
 
 let contentIrPromise: Promise<unknown> | null = null;
+const graphicsViews = new WeakMap<object, ContentIr>();
 
 /**
  * Fetch and parse the served `content/ir.json` once per page - memoized, because it is multi-MB and every
@@ -181,12 +183,19 @@ export function loadIrRaw(): Promise<unknown> {
 }
 
 /**
- * The graphics/atlas view of the served IR, cast at the I/O boundary. `null` when the document is absent;
- * each consumer then falls back per-lane.
+ * The graphics/atlas view of the served IR, cast at the I/O boundary, with the house palettes the catalog
+ * adds. `null` when the document is absent; each consumer then falls back per-lane.
  */
 export async function loadIr(): Promise<ContentIr | null> {
   const raw = await loadIrRaw();
-  return raw === null ? null : (raw as ContentIr);
+  if (raw === null) return null;
+  // One view per fetched document, so consumers keyed on the IR's identity keep their caches.
+  let ir = graphicsViews.get(raw as object);
+  if (ir === undefined) {
+    ir = withAddedHousePalettes(raw as ContentIr);
+    graphicsViews.set(raw as object, ir);
+  }
+  return ir;
 }
 
 /**

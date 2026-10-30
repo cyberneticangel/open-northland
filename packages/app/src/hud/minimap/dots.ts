@@ -1,4 +1,12 @@
-import { fogTileVisible, ONE, tileToScreenX, tileToScreenY, type WorldBounds } from '@open-northland/render';
+import {
+  type FogGhost,
+  fogTileVisible,
+  ONE,
+  type RememberedMarkers,
+  tileToScreenX,
+  tileToScreenY,
+  type WorldBounds,
+} from '@open-northland/render';
 import {
   type DiplomacyState,
   type EntitySnapshot,
@@ -29,6 +37,8 @@ export const ROAD_SITE_DOT_COLOUR = 0x9a8a6a;
 
 export interface MinimapDotContext {
   readonly fog: FogView | null;
+  /** The world view's remembered statics on explored ground, which the minimap shows as the map does. */
+  readonly memory?: RememberedMarkers | undefined;
   readonly bounds: WorldBounds;
   /** Raster px per projected world px. */
   readonly scale: number;
@@ -139,7 +149,17 @@ export function readMinimapIndexes(snapshot: WorldSnapshot): void {
 
 /** The carrier walks of a plot, bottom to top; a walk that ends a layer stamps it. The signpost layer
  *  walks the posts, then the gatherers' own flags, then the flags posted workers took. */
-const WALKS = ['roadSites', 'signposts', 'flags', 'postFlags', 'buildings', 'settlers', 'vehicles'] as const;
+const WALKS = [
+  'roadSites',
+  'signposts',
+  'flags',
+  'postFlags',
+  'buildingMemory',
+  'buildings',
+  'settlers',
+  'vehicleMemory',
+  'vehicles',
+] as const;
 type Walk = (typeof WALKS)[number];
 /** One stage of a plot: a carrier walk, one part of a held group sent to the sink, or the end of a layer,
  *  which clears its groups and moves its hostile markers to the pass after every layer. */
@@ -153,10 +173,20 @@ const ENDS_LAYER: Readonly<Record<Walk, boolean>> = {
   signposts: false,
   flags: false,
   postFlags: true,
+  buildingMemory: false,
   buildings: true,
   settlers: true,
+  vehicleMemory: false,
   vehicles: true,
 };
+
+/** The walks over the remembered statics, and the ghost kind each plots. */
+const MEMORY_KIND = { buildingMemory: 'building', vehicleMemory: 'vehicle' } as const;
+type MemoryWalk = keyof typeof MEMORY_KIND;
+
+function isMemoryWalk(walk: Walk): walk is MemoryWalk {
+  return walk in MEMORY_KIND;
+}
 
 /** The first index of ascending `ids` holding an id of at least `id`. */
 function firstIdFrom(ids: readonly number[], id: number): number {
@@ -172,8 +202,9 @@ function firstIdFrom(ids: readonly number[], id: number): number {
 
 /**
  * Plots the enabled layers in the ground raster's px, bottom to top: road sites, signposts and flags,
- * buildings, animals and people, vehicles. Each layer walks only its own component index, so a plot costs
- * the plotted entities, never the whole entity list. Laid roads are the road layer's. Within a layer
+ * buildings, animals and people, vehicles. Each layer walks only its own component index, and buildings
+ * and vehicles also the world view's memory of them on explored ground, so a plot costs the plotted
+ * entities, never the whole entity list. Laid roads are the road layer's. Within a layer
  * soldiers stamp after civilians, and a layer's rims all go under its fills, so a crowd reads as one
  * rimmed blob while a later layer's rims still part it from the one below. Hostile owners' markers leave
  * the layers and stamp after all of them, rims then fills, so an intruder keeps its own rim on top of the
@@ -196,6 +227,8 @@ export class MinimapDotPlot {
   private readonly stances = new Map<number, DiplomacyState>();
   private readonly colours = new Map<number, number>();
   private readonly roles = new Map<number, SettlerMark>();
+  /** The remembered statics as the plot started, walked by index. */
+  private readonly remembered: FogGhost[] = [];
   private ctx: MinimapDotContext | null = null;
   private stages: readonly PlotStage[] = [];
   /** The stage under way, and where in it the next step resumes: the least id a walk has yet to read,
@@ -212,6 +245,8 @@ export class MinimapDotPlot {
     this.stances.clear();
     this.colours.clear();
     this.roles.clear();
+    this.remembered.length = 0;
+    if (ctx.fog !== null) ctx.memory?.markers(this.remembered);
     for (const group of [
       this.plain,
       this.soldiers,
@@ -252,6 +287,7 @@ export class MinimapDotPlot {
     }
     this.allHostiles.clear();
     this.heroes.clear();
+    this.remembered.length = 0;
     this.ctx = null;
     return true;
   }
@@ -288,10 +324,12 @@ export class MinimapDotPlot {
       case 'flags':
       case 'postFlags':
         return layers.signposts;
+      case 'buildingMemory':
       case 'buildings':
         return layers.buildings;
       case 'settlers':
         return layers.civilians || layers.soldiers || layers.heroes || layers.animals;
+      case 'vehicleMemory':
       case 'vehicles':
         return layers.vehicles;
     }
@@ -300,6 +338,18 @@ export class MinimapDotPlot {
   /** Visit `walk`'s carriers from the least unread id on; false when the deadline cut it. */
   private walkOn(ctx: MinimapDotContext, walk: Walk, snapshot: WorldSnapshot, deadline: number): boolean {
     const timed = deadline !== Number.POSITIVE_INFINITY;
+    if (isMemoryWalk(walk)) {
+      // Walked by index: the memory is no snapshot index, and the list holds still for the plot.
+      for (let at = this.resumeAt, n = 0; at < this.remembered.length; at++, n++) {
+        if (timed && n % DEADLINE_STRIDE === 0 && n > 0 && performance.now() > deadline) {
+          this.resumeAt = at;
+          return false;
+        }
+        const ghost = this.remembered[at] as FogGhost;
+        if (ghost.kind === MEMORY_KIND[walk]) this.visitMemory(ctx, ghost);
+      }
+      return true;
+    }
     if (walk === 'vehicles') {
       const vehicles = entitiesWith(snapshot, 'Vehicle');
       const from = indexOfEntity(vehicles, this.resumeAt);
@@ -385,6 +435,14 @@ export class MinimapDotPlot {
     }
   }
 
+  /** A remembered static stands on explored ground, where no live marker plots, so it skips the fog. */
+  private visitMemory(ctx: MinimapDotContext, ghost: FogGhost): void {
+    const owner = ghost.owner;
+    if (owner === undefined || !this.admits(ctx, owner)) return;
+    const mark = ghost.kind === 'vehicle' ? 'vehicle' : 'building';
+    this.hold(ctx, ghost.tileX, ghost.tileY, mark, this.colourOf(ctx, owner), this.groupOf(ctx, owner, mark));
+  }
+
   private stanceToward(ctx: MinimapDotContext, owner: number): DiplomacyState {
     let stance = this.stances.get(owner);
     if (stance === undefined) {
@@ -435,13 +493,24 @@ export class MinimapDotPlot {
     colour: number,
     group: HeldMarks,
   ): void {
-    const { fog, bounds, scale } = ctx;
     // Read in place rather than through positionOf, which allocates a point per dot.
     const at = e.components.Position as { x?: unknown; y?: unknown } | undefined;
     if (typeof at?.x !== 'number' || typeof at.y !== 'number') return;
     const col = at.x / ONE;
     const row = at.y / ONE;
-    if (fog !== null && !fogTileVisible(fog, col, row)) return;
+    if (ctx.fog !== null && !fogTileVisible(ctx.fog, col, row)) return;
+    this.hold(ctx, col, row, mark, colour, group);
+  }
+
+  private hold(
+    ctx: MinimapDotContext,
+    col: number,
+    row: number,
+    mark: MinimapMark,
+    colour: number,
+    group: HeldMarks,
+  ): void {
+    const { bounds, scale } = ctx;
     group.hold(
       (tileToScreenX(col, row) - bounds.minX) * scale,
       (tileToScreenY(row) - bounds.minY) * scale,
@@ -457,20 +526,18 @@ export class MinimapDotPlot {
     mark: MinimapMark,
     colour: number,
   ): void {
+    this.place(ctx, e, mark, colour, this.groupOf(ctx, owner, mark));
+  }
+
+  private groupOf(ctx: MinimapDotContext, owner: number, mark: MinimapMark): HeldMarks {
     const soldier = mark === 'soldier';
-    const group = this.hostile(ctx, owner)
-      ? soldier
-        ? this.hostileSoldiers
-        : this.hostiles
-      : soldier
-        ? this.soldiers
-        : this.plain;
-    this.place(ctx, e, mark, colour, group);
+    if (this.hostile(ctx, owner)) return soldier ? this.hostileSoldiers : this.hostiles;
+    return soldier ? this.soldiers : this.plain;
   }
 }
 
 /** The component each id walk reads its carriers from. */
-const CARRIER: Readonly<Record<Exclude<Walk, 'vehicles'>, (typeof PLOTTED)[number]>> = {
+const CARRIER: Readonly<Record<Exclude<Walk, 'vehicles' | MemoryWalk>, (typeof PLOTTED)[number]>> = {
   roadSites: 'RoadSite',
   signposts: 'Signpost',
   flags: 'WorkFlag',

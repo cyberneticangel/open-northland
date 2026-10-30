@@ -115,7 +115,11 @@ export function createDiplomacyWindow(deps: DiplomacyWindowDeps): DiplomacyWindo
     deps.cue('confirm');
     orders.pay(row, slot);
   });
-  const offers = createOffers(deps.paintGood);
+  const offers = createOffers(deps.paintGood, () => {
+    if (row === undefined) return;
+    deps.cue('confirm');
+    orders.declare(row, 'friend');
+  });
   const stanceArt = createNoticeArt();
   const stanceButtons = new Map(
     STANCES.map((state) => {
@@ -250,7 +254,17 @@ export function createDiplomacyWindow(deps: DiplomacyWindowDeps): DiplomacyWindo
     setHidden(blocked, row.blocked === undefined);
     setHidden(warning, row.towardYou !== 'enemy' || orders.stance(row) === 'enemy');
     tributeList.update(row.tributes, (slot) => orders.paying(slot), row.blocked === 'observer');
-    offers.update(row.tradeOffers, row.yourStance === 'friend');
+    offers.update(
+      row.tradeOffers,
+      row.yourStance === 'friend' && row.towardYou === 'friend'
+        ? null
+        : {
+            yours: row.yourStance,
+            theirs: row.towardYou,
+            canBefriend: row.canDeclare,
+            befriending: orders.declaring(row.player) || orders.stance(row) === 'friend',
+          },
+    );
     write(tally, row.goodsTraded === undefined ? '' : formatMessage(copy.traded, { count: row.goodsTraded }));
     setHidden(tally, row.goodsTraded === undefined);
     if (paintedPlayer !== selected) {

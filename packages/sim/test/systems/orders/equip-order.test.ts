@@ -879,7 +879,7 @@ describe('enlisting - a fighter trade keeps no tool', () => {
     const e = ownedSettler(sim, 2, 2);
     const house = armouryAt(sim, 12, 2); // any house will do - the order only stores its id
     pileAt(sim, 12, 2, TOOL_WOODEN, 1);
-    sim.world.add(e, TrainingOrder, { house, drillTicksLeft: 100 });
+    sim.world.add(e, TrainingOrder, { house, drillTicksLeft: 100, enrolled: 0, seated: true });
 
     sim.enqueueSetup(equip(e, TOOL_WOODEN, 'tool'));
     sim.step();

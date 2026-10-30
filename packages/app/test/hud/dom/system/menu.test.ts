@@ -40,6 +40,7 @@ function mount(
     canLoad?: boolean;
     paused?: boolean;
     onNetwork?: () => void;
+    onRestart?: () => void;
     previewBus?: (bus: SoundBus) => void;
     onSettingsLeft?: (opened: MenuSettings, closed: MenuSettings) => void;
   } = {},
@@ -71,6 +72,7 @@ function mount(
     current: () => current,
     pinnedUiScale: null,
     bootOwnedChangesDeferred: true,
+    inGame: true,
     effectiveUiScaleFor: (factor) => factor,
     update: async (patch) => {
       current = { ...current, ...patch };
@@ -199,6 +201,26 @@ describe('system menu navigation', () => {
     expect(onQuit).toHaveBeenCalledOnce();
   });
 
+  it('restarts the map only after its confirmation, and offers no restart without a replay', async () => {
+    const onRestart = vi.fn();
+    const { menu } = mount({ onRestart });
+    menu.toggle();
+    const restart = messages().hud.systemMenuDetails.restartMission;
+    button(restart).click();
+    button(messages().hud.systemMenuDetails.cancel).click();
+    await Promise.resolve();
+    expect(onRestart).not.toHaveBeenCalled();
+    button(restart).click();
+    const question = document.querySelector('[role="alertdialog"]');
+    if (question === null) throw new Error('Missing confirmation');
+    button(restart, question).click();
+    await Promise.resolve();
+    expect(onRestart).toHaveBeenCalledOnce();
+    menu.dispose();
+    mount().menu.toggle();
+    expect(document.querySelector('.on-system-menu')?.textContent).not.toContain(restart);
+  });
+
   it('refuses loading in multiplayer and releases the menu before opening Network', () => {
     const onNetwork = vi.fn();
     const { menu, saveLoad } = mount({ canLoad: false, onNetwork });
@@ -255,6 +277,8 @@ describe('system menu navigation', () => {
     for (const channel of VOLUME_CHANNELS) {
       expect(document.querySelector(`[data-settings-focus="${channel}-volume"]`)).not.toBeNull();
     }
+    document.querySelector<HTMLButtonElement>('[data-settings-focus="music-source:1"]')?.click();
+    expect(settings.current().musicSource).toBe('nation');
     const input = document.querySelector<HTMLInputElement>('[data-settings-focus="world-volume"]');
     if (input === null) throw new Error('Missing volume slider');
     input.value = '23';

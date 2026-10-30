@@ -38,6 +38,7 @@ import { CIVILIST_JOB } from '../lifecycle/ageclass.js';
 import { mayBearChild } from '../orders/family.js';
 import { mayChangeTrade } from '../orders/guards.js';
 import { mayDrillAt, mayWalkToDrill, startDrill } from '../orders/training.js';
+import { hasUnclaimedSeat } from '../orders/training-seats.js';
 import { baseSoldierJobType, isBarracks, isSoldierJob } from '../readviews/index.js';
 import { anotherSystemOwns } from '../settlers/action-owner.js';
 import { atomicHoldsSettler } from '../settlers/atomics/busy.js';
@@ -291,11 +292,14 @@ function dispatchTraining(
     if (budget <= 0) return;
     const intent = nextWantedIntent(wanted, remaining, turn);
     if (intent === null) return;
-    const house = houses.find((h) => mayDrillAt(world, ctx, e, h));
+    // A barracks with a seat to spare first, so a full one does not queue men another could take now.
+    const house =
+      houses.find((h) => hasUnclaimedSeat(world, ctx, h) && mayDrillAt(world, ctx, e, h)) ??
+      houses.find((h) => mayDrillAt(world, ctx, e, h));
     if (house === undefined) continue;
     // Every recruit serves the one standard drill and exits unarmed; the arming pass dresses the class
     // recruits later.
-    startDrill(world, e, house, BARRACKS_DRILL_TICKS);
+    startDrill(world, ctx, e, house, BARRACKS_DRILL_TICKS);
     world.add(e, AssistantRecruit, { intent, armed: false, barracks: house });
     remaining.set(intent, (remaining.get(intent) ?? 1) - 1);
     turn += 1;

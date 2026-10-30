@@ -170,11 +170,13 @@ describe('chest contents', () => {
       kind: 'goods',
       goodType: SMALL_FOOD_POTION,
       amount: 1,
+      spillFrom: 'southEast',
     });
     expect(resolveChestReward(content, 'magical', POTION_CHEST)).toEqual({
       kind: 'goods',
       goodType: SMALL_FOOD_POTION,
       amount: 3,
+      spillFrom: 'southEast',
     });
     expect(resolveChestReward(content, 'wooden', ANY_HOUSE_CHEST)).toEqual({
       kind: 'paper',
@@ -222,6 +224,11 @@ describe('the openChest order', () => {
     expect(sim.world.has(opener, OpenChestOrder)).toBe(false);
     expect(blockedCells(sim)).toBe(0); // the cell is free again
     expect(looseGoods(sim, SIMPLE_FOOD)).toBe(30);
+    const heapNodes = [...sim.world.query(Stockpile, Position)].map((e) => {
+      const at = sim.world.get(e, Position);
+      return nodeOfPosition(at.x, at.y);
+    });
+    expect(heapNodes).not.toContainEqual({ hx: 16, hy: 16 }); // beside the open chest, not on it
     expect(events.find((e) => e.kind === 'chestOpened')).toEqual({
       kind: 'chestOpened',
       chest,
@@ -510,6 +517,11 @@ describe('the openChest order', () => {
     stepUntilOpened(sim, second);
     expect([...sim.world.query(Chest)]).toEqual([]);
     expect(looseGoods(sim, SIMPLE_FOOD)).toBe(30);
+    const heapNodes = [...sim.world.query(Stockpile, Position)].map((e) => {
+      const at = sim.world.get(e, Position);
+      return nodeOfPosition(at.x, at.y);
+    });
+    expect(heapNodes).not.toContainEqual({ hx: 16, hy: 16 }); // beside the open chest, not on it
     expect(looseGoods(sim, SHOES)).toBe(12); // the taken chest's and the second's
     expect(sim.world.has(opener, OrderQueue)).toBe(false);
     expect(sim.checkInvariants()).toEqual([]);

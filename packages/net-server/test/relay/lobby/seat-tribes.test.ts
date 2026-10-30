@@ -53,17 +53,31 @@ describe('seat tribes in the lobby', () => {
     expect(readiness()).toEqual([true, true, false, false]);
   });
 
-  it('lets a seated member set its own seat’s tribe alone, and nothing else', () => {
+  it('lets a seated member set its own seat’s tribe and colour, and nothing else', () => {
     const { b, c, seat } = lobby();
-    b.send({ kind: 'setSeat', player: 1, tribe: BYZANTINE });
-    expect(seat(1)?.tribe).toBe(BYZANTINE);
-    b.send({ kind: 'setSeat', player: 0, tribe: BYZANTINE });
+    b.send({ kind: 'setSeat', player: 1, tribe: BYZANTINE, color: 5 });
+    expect(seat(1)).toMatchObject({ tribe: BYZANTINE, color: 5 });
+    b.send({ kind: 'setSeat', player: 0, color: 6 });
     expect(b.last('rejected')?.reason).toEqual({ code: 'creatorOnly' });
-    b.send({ kind: 'setSeat', player: 1, tribe: VIKING, color: 5 });
+    b.send({ kind: 'setSeat', player: 1, color: 6, mode: 'computer' });
     expect(b.last('rejected')?.reason).toEqual({ code: 'creatorOnly' });
     c.send({ kind: 'setSeat', player: 1, tribe: VIKING });
     expect(c.last('rejected')?.reason).toEqual({ code: 'creatorOnly' });
-    expect(seat(1)).toMatchObject({ tribe: BYZANTINE, color: 1 });
+    expect(seat(1)).toMatchObject({ tribe: BYZANTINE, color: 5 });
+  });
+
+  it('refuses a colour another seat wears, but keeps a map’s duplicate until it changes', () => {
+    const { a, b, seat } = lobby([
+      ...TRIBE_SEATS.slice(0, 2),
+      { player: 2, mode: 'computer', claimable: true, offers: ['computer'], color: 1 },
+    ]);
+    b.send({ kind: 'setSeat', player: 1, color: 0 });
+    expect(b.last('rejected')?.reason).toEqual({ code: 'colorTaken', player: 1, wearer: 0 });
+    a.send({ kind: 'setSeat', player: 2, color: 1 });
+    expect(seat(2)?.color).toBe(1);
+    b.send({ kind: 'setSeat', player: 1, color: 4 });
+    a.send({ kind: 'setSeat', player: 2, color: 4 });
+    expect(a.last('rejected')?.reason).toEqual({ code: 'colorTaken', player: 2, wearer: 1 });
   });
 
   it('refuses a tribe on a seat that names none, without applying the rest of the change', () => {

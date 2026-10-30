@@ -288,6 +288,7 @@ function seatPayloads(t: Targets): { readonly [K in PlayerCommand['kind']]: read
     dockVehicle: [
       { vehicle: t.ship, ...node },
       { vehicle: t.ship, ...node, queued: true },
+      { vehicle: t.ship, ...node, dock: { x: node.x + 4, y: node.y } },
     ],
     renameSettler: [{ entity: t.worker, name: 'Ragna' }],
     openChest: [
@@ -316,6 +317,8 @@ function seatPayloads(t: Targets): { readonly [K in PlayerCommand['kind']]: read
     setAssistantPostGraduates: [{ player: SEAT, enabled: true }],
     setAssistantMoveFlags: [{ player: SEAT, enabled: true }],
     setAssistantWeaponVeto: [{ player: SEAT, goodType: SWORD, vetoed: true }],
+    setAssistantWeaponOrder: [{ player: SEAT, intent: 'trainSword', order: [SWORD] }],
+    setAssistantArmorOrder: [{ player: SEAT, intent: 'trainBow', order: [SHOES, WOOD], off: [WOOD] }],
     setProductionGoods: [{ entity: t.worker, goods: [WOOD] }],
     setProductionCount: [{ entity: t.worker, goodType: WOOD, count: 3 }],
     setDefenceMode: [{ building: t.hq, enabled: true }],
@@ -337,7 +340,7 @@ function seatPayloads(t: Targets): { readonly [K in PlayerCommand['kind']]: read
       { entity: t.worker, house: t.hq, queued: true },
     ],
     unassignHouse: [{ entity: t.worker }],
-    unloadPeople: [{ vehicle: t.ship }],
+    unloadPeople: [{ vehicle: t.ship }, { vehicle: t.ship, queued: true, mooring: node }],
     unassignWorker: [{ entity: t.worker }],
     unequipGood: [{ entity: t.worker, group: 'boots', slot: 0 }],
     upgradeBuilding: [{ building: t.hq }],

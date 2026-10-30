@@ -8,7 +8,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import {
   canClaimSeat,
-  canSetSeatTribe,
+  canSetSeatLook,
   roomPermissions,
   savedSeatHint,
   seatCivilization,
@@ -190,18 +190,18 @@ describe('network room tribes', () => {
 
   it('lets the creator choose any seat’s tribe and a member its own, until a save or the start fixes them', () => {
     const view = room();
-    for (const target of view.seats) expect(canSetSeatTribe(view, target, 'Ania', true)).toBe(true);
-    expect(canSetSeatTribe(view, seat(1), 'Bartek', true)).toBe(true);
-    expect(canSetSeatTribe(view, seat(0), 'Bartek', true)).toBe(false);
-    expect(canSetSeatTribe(view, seat(2), 'Bartek', true)).toBe(false);
-    expect(canSetSeatTribe(view, seat(1), 'Bartek', false)).toBe(false);
-    expect(canSetSeatTribe({ ...view, state: 'running' }, seat(1), 'Bartek', true)).toBe(false);
+    for (const target of view.seats) expect(canSetSeatLook(view, target, 'Ania', true)).toBe(true);
+    expect(canSetSeatLook(view, seat(1), 'Bartek', true)).toBe(true);
+    expect(canSetSeatLook(view, seat(0), 'Bartek', true)).toBe(false);
+    expect(canSetSeatLook(view, seat(2), 'Bartek', true)).toBe(false);
+    expect(canSetSeatLook(view, seat(1), 'Bartek', false)).toBe(false);
+    expect(canSetSeatLook({ ...view, state: 'running' }, seat(1), 'Bartek', true)).toBe(false);
     const saved = {
       ...view,
       settings: { ...view.settings, initialSave: { fingerprint: 'd'.repeat(64), tick: 20 } },
     };
-    expect(canSetSeatTribe(saved, seat(0), 'Ania', true)).toBe(false);
-    expect(canSetSeatTribe(saved, seat(1), 'Bartek', true)).toBe(false);
+    expect(canSetSeatLook(saved, seat(0), 'Ania', true)).toBe(false);
+    expect(canSetSeatLook(saved, seat(1), 'Bartek', true)).toBe(false);
   });
 });
 

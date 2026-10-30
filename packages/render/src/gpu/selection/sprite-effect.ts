@@ -7,6 +7,18 @@ import { SELECTION_OUTLINE } from '../world-batch/shader.js';
 export class SelectionSprite extends BloodSurfaceSprite {
   private effect = 0;
   private blood = 0;
+  private night = 0;
+
+  /** The packed `aNight` value of `world-batch/shader.ts`: how lit the layer shows in the night's mask. */
+  get nightLit(): number {
+    return this.night;
+  }
+
+  set nightLit(packed: number) {
+    if (packed === this.night) return;
+    this.night = packed;
+    this.onViewUpdate();
+  }
 
   get bloodEffect(): number {
     return this.blood;
@@ -82,6 +94,10 @@ export function spriteSelectionEffect(sprite: object | null): number {
 /** The outline quad an element draws, or null for any other element. */
 export function outlineOf(sprite: object | null): OutlineSprite | null {
   return sprite instanceof OutlineSprite ? sprite : null;
+}
+
+export function spriteNightLit(sprite: object | null): number {
+  return sprite instanceof SelectionSprite ? sprite.nightLit : 0;
 }
 
 export function spriteBloodEffect(sprite: object | null): number {

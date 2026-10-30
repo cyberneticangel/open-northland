@@ -91,7 +91,13 @@ function siegeContent(opts: { meleeRange?: { min: number; max: number } } = {}):
     ],
     buildings: [
       { typeId: HEADQUARTERS, id: 'headquarters', kind: 'storage', hitpoints: 1000 },
-      { typeId: TOWER, id: 'watchtower', kind: 'tower', hitpoints: 1000 },
+      {
+        typeId: TOWER,
+        id: 'watchtower',
+        kind: 'tower',
+        hitpoints: 1000,
+        workers: [{ jobType: ARCHER, count: 1 }],
+      },
       {
         typeId: HOME,
         id: 'home',
@@ -104,6 +110,7 @@ function siegeContent(opts: { meleeRange?: { min: number; max: number } } = {}):
         id: 'fort',
         kind: 'tower',
         hitpoints: 1000,
+        workers: [{ jobType: ARCHER, count: 1 }],
         footprint: {
           blocked: [
             { dx: 0, dy: 0 },

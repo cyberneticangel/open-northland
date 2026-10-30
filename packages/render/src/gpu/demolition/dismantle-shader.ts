@@ -33,7 +33,9 @@ uniform vec4 uFrame;
 uniform vec2 uMaskOrigin;
 // Progress, magnifier mode, introduced backing opacity, material shade.
 uniform vec4 uDismantle;
-out vec4 finalColor;
+layout(location = 0) out vec4 finalColor;
+// The night's lit mask (see world-batch/shader.ts): a dismantled house shows unlit.
+layout(location = 1) out vec4 nightLit;
 
 vec4 dismantleTexel(ivec2 px) {
   ivec2 local = px - ivec2(uFrame.xy);
@@ -63,5 +65,6 @@ void main() {
       + magnifyBilinear(p + vec2(d.x, -d.y)) + magnifyBilinear(p + vec2(-d.x, d.y)));
   }
   finalColor = colour * vColour * uDismantle.z;
+  nightLit = vec4(0.0, 0.0, 0.0, finalColor.a);
 }`,
 };

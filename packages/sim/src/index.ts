@@ -1,4 +1,8 @@
-export type { AssistantCounterValues } from './components/assistant.js';
+export type {
+  AssistantArmingIntent,
+  AssistantArmorOrder,
+  AssistantCounterValues,
+} from './components/assistant.js';
 export { CHEST_KINDS, CHEST_LANDSCAPE_SLUG, type ChestKind } from './components/chest.js';
 export {
   PRODUCTION_COUNT_MAX,

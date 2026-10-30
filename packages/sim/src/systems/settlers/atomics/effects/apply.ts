@@ -17,12 +17,11 @@ import { wearWornTool } from '../../../equipment/index.js';
 import {
   grantCarryExperience,
   grantProfessionExperience,
-  grantScoutExperience,
   grantWorkExperience,
 } from '../../../progression/index.js';
 import { isStrokeCountedAtomic } from '../../../readviews/index.js';
 import { erectSignpost } from '../../../signposts/index.js';
-import { loadCart, unloadCart } from '../../../trade/index.js';
+import { loadTraderHold, unloadTraderHold } from '../../../trade/index.js';
 import { loadHaulingCart, unloadHaulingCart } from '../../../vehicles/hauling-cart.js';
 import { serveDrillRepetition } from '../../drives/training.js';
 import {
@@ -84,11 +83,11 @@ export function applyEffect(
     case 'pileup':
       if (pileupIntoStore(world, ctx, settler, effect.store) > 0) grantCarryExperience(world, ctx, settler);
       return;
-    case 'cartLoad':
-      loadCart(world, ctx, settler, effect.from, effect.goodType);
+    case 'tradeLoad':
+      loadTraderHold(world, ctx, settler, effect.from, effect.goodType);
       return;
-    case 'cartUnload':
-      unloadCart(world, ctx, settler, effect.store, effect.goodType);
+    case 'tradeUnload':
+      unloadTraderHold(world, ctx, settler, effect.store, effect.goodType);
       return;
     case 'haulLoad':
       loadHaulingCart(world, ctx, settler, effect.from, effect.goodType);
@@ -120,8 +119,7 @@ export function applyEffect(
       const terrain = ctx.terrain;
       const player = ownerOf(world, settler);
       if (terrain === undefined || player === undefined) return;
-      const post = erectSignpost(world, ctx, terrain, terrain.nodeAt(effect.x, effect.y), player);
-      if (post !== null) grantScoutExperience(world, ctx.content, settler);
+      erectSignpost(world, ctx, terrain, terrain.nodeAt(effect.x, effect.y), player);
       return;
     }
     case 'openChest':

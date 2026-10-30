@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION } from '@open-northland/net-protocol';
 import { describe, expect, it } from 'vitest';
 import { HALL_CHAT_BURST } from '../../../src/relay/hall/hall.js';
 import { HALL_RECORD_VERSION } from '../../../src/relay/hall/record.js';
@@ -90,6 +91,35 @@ describe('relay hall', () => {
     b.send({ kind: 'leaveRoom' });
     s.advance(HALL_ARRIVAL_MS);
     expect(b.last('hallChatHistory')).toEqual({ kind: 'hallChatHistory', lines: [line], replaces: false });
+  });
+
+  it('shows the flag a player said hello with beside their nick, in the hall and in a room', () => {
+    const s = stage();
+    const a = s.peer();
+    a.send({ kind: 'hello', protocol: PROTOCOL_VERSION, token: TOKEN_A, nick: 'Ania', flag: 'PL' });
+    s.advance(1);
+    expect(a.last('presence')?.online).toEqual([{ nick: 'Ania', flag: 'PL', room: null }]);
+    a.send({ kind: 'hallChat', text: 'cześć' });
+    expect(a.last('hallChat')).toMatchObject({ from: 'Ania', flag: 'PL' });
+    a.send({ kind: 'createRoom', settings: SETTINGS, seats: SEATS });
+    expect(a.last('room')?.room.members).toMatchObject([{ nick: 'Ania', flag: 'PL' }]);
+    a.send({ kind: 'chat', text: 'gotowi?' });
+    expect(a.last('chat')).toMatchObject({ from: 'Ania', flag: 'PL' });
+  });
+
+  it('keeps the flag a member joined its game with, none included, when it returns with another', () => {
+    const s = startedRoom();
+    const watcher = s.introduce(TOKEN_C, 'Celina');
+    s.relay.disconnect(s.a.handle);
+    const back = s.peer();
+    back.send({ kind: 'hello', protocol: PROTOCOL_VERSION, token: TOKEN_A, nick: 'Ania', flag: 'PL' });
+    s.advance(HALL_REFRESH_MS);
+    expect(back.last('room')?.room.members.find((member) => member.nick === 'Ania')).not.toHaveProperty(
+      'flag',
+    );
+    expect(watcher.last('presence')?.online.find((player) => player.nick === 'Ania')).not.toHaveProperty(
+      'flag',
+    );
   });
 
   it('replays to a player back from a room only what changed while they were away', () => {

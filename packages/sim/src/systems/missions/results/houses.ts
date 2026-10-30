@@ -15,7 +15,7 @@ import { clearUpgradeGround } from '../../economy/upgrade-ground.js';
 import { placementProbe } from '../../footprint/index.js';
 import { removeBuildingSilently } from '../../lifecycle/cleanup.js';
 import type { MissionPass } from '../pass.js';
-import type { MissionResultOp } from '../script.js';
+import type { MissionHouseRef, MissionResultOp } from '../script.js';
 import { missionHouses } from '../targets.js';
 
 /** How far from its point a `SetHouse` looks for ground its footprint fits (reading). */
@@ -35,12 +35,12 @@ export function placeScriptedHouse(
   op: Extract<MissionResultOp, { opcode: 'SetHouse' }>,
 ): void {
   const { world, ctx } = pass;
-  const { typeId, tribe } = op.houseName;
+  const { typeId, tribe, record } = op.houseName;
   if (!contentIndex(ctx.content).commandBuildings.has(typeId)) {
     pass.reportFailed(mission, op.opcode); // the map named a house its own content does not declare
     return;
   }
-  const spot = nearestBuildableSpot(world, ctx, typeId, tribe, op.point);
+  const spot = nearestBuildableSpot(world, ctx, op.houseName, op.point);
   if (spot === null) {
     pass.reportFailed(mission, op.opcode);
     return;
@@ -55,6 +55,7 @@ export function placeScriptedHouse(
     underConstruction: !op.built,
     force: true,
     missionId: op.objectId,
+    ...(record !== undefined ? { record } : {}),
   });
 }
 
@@ -114,7 +115,7 @@ function rebuildAtLevel(
 ): void {
   const type = contentIndex(ctx.content).commandBuildings.get(typeId);
   if (type === undefined) return;
-  const { tribe } = world.get(e, Building);
+  const { tribe, record } = world.get(e, Building);
   const anchor = world.get(e, Position);
   const { hx, hy } = nodeOfPosition(anchor.x, anchor.y);
   const owner = ownerOf(world, e);
@@ -130,6 +131,7 @@ function rebuildAtLevel(
     y: hy,
     underConstruction: false,
     fillStock: false,
+    record,
   });
   world.mut(rebuilt, Building).level = level;
 }
@@ -139,13 +141,12 @@ function rebuildAtLevel(
 function nearestBuildableSpot(
   world: World,
   ctx: SystemContext,
-  buildingType: number,
-  tribe: number,
+  house: MissionHouseRef,
   point: HalfCellNode,
 ): HalfCellNode | null {
   const terrain = ctx.terrain;
   if (terrain === undefined) return point;
-  const probe = placementProbe(world, ctx.content, terrain, buildingType, tribe);
+  const probe = placementProbe(world, ctx.content, terrain, house.typeId, house.tribe, house.record);
   let best: HalfCellNode | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   // A column step never costs less than a row step, so every node in range fits this square.

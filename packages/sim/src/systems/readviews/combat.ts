@@ -85,3 +85,53 @@ export function armorMaterialForGood(content: ContentSet, goodType: number): num
 export function weaponKey(weapon: Pick<WeaponType, 'tribeType' | 'typeId'>): string {
   return `${weapon.tribeType ?? ''}:${weapon.typeId}`;
 }
+
+const protectionOrders = new WeakMap<ContentSet, readonly number[]>();
+
+/**
+ * Every armor good, the best protection first: the least damage summed over every weapon's column for
+ * its material, the good id breaking a tie. Approximation: each weapon counts once, however often it is
+ * met. The list is shared: read it, never edit it.
+ */
+export function armorGoodsByProtection(content: ContentSet): readonly number[] {
+  const held = protectionOrders.get(content);
+  if (held !== undefined) return held;
+  const taken = new Map<number, number>();
+  for (const armor of content.armor) {
+    if (armor.goodType === undefined || taken.has(armor.goodType)) continue;
+    const material = materialOfRecord(armor);
+    let sum = 0;
+    for (const weapon of content.weapons) sum += weaponDamageVsMaterial(weapon, material);
+    taken.set(armor.goodType, sum);
+  }
+  const order = [...taken.keys()].sort((a, b) => (taken.get(a) ?? 0) - (taken.get(b) ?? 0) || a - b);
+  protectionOrders.set(content, order);
+  return order;
+}
+
+const strengthOrders = new WeakMap<ContentSet, Map<number, readonly number[]>>();
+
+/**
+ * Every weapon good of class `mainType` that arms someone (a row with a `jobtype`), across all tribes,
+ * strongest first: the best bare-target damage any of its rows deals, the good id breaking a tie. The
+ * list is shared: read it, never edit it.
+ */
+export function weaponGoodsByStrength(content: ContentSet, mainType: number): readonly number[] {
+  let byClass = strengthOrders.get(content);
+  if (byClass === undefined) {
+    byClass = new Map();
+    strengthOrders.set(content, byClass);
+  }
+  const held = byClass.get(mainType);
+  if (held !== undefined) return held;
+  const best = new Map<number, number>();
+  for (const weapon of content.weapons) {
+    if (weapon.mainType !== mainType || weapon.goodType === undefined || weapon.jobType === undefined)
+      continue;
+    const damage = weaponDamageVsMaterial(weapon, ARMOR_MATERIAL.NONE);
+    best.set(weapon.goodType, Math.max(best.get(weapon.goodType) ?? 0, damage));
+  }
+  const order = [...best.keys()].sort((a, b) => (best.get(b) ?? 0) - (best.get(a) ?? 0) || a - b);
+  byClass.set(mainType, order);
+  return order;
+}

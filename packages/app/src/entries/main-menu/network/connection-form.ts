@@ -3,11 +3,14 @@ import { quietTextField } from '../../../hud/dom/parts/text-field.js';
 import { messages } from '../../../i18n/index.js';
 import { patchStoredSettings, readStoredSettings } from '../../../view/settings/store.js';
 import { node } from '../dom.js';
+import { flagPicker } from './flags/picker.js';
 import { relayAddress } from './model.js';
 import { button, field } from './parts.js';
 import { regionPicker } from './server/picker.js';
 import { pingRelay, type RelayPing } from './server/ping.js';
 import { DEFAULT_RELAY_REGION, relayRegionAt } from './server/regions.js';
+
+const NICK_INPUT_ID = 'network-menu-nick';
 
 export function connectionForm(
   initialAddress: string | null,
@@ -59,6 +62,7 @@ export function connectionForm(
   nick.maxLength = MAX_NICK_LENGTH;
   nick.required = true;
   nick.setAttribute('autocomplete', 'nickname');
+  const flag = flagPicker();
   const form = node('form', 'network-menu__connection');
   describeServer();
   const intro = node('div', 'network-menu__intro');
@@ -82,7 +86,16 @@ export function connectionForm(
   // Not a <label>: a label around the region buttons would click the first one.
   const region = node('div', 'network-menu__field');
   region.append(node('span', '', copy.serverRegion), picker.element);
-  form.append(intro, region, field(copy.nick, nick), connect, advanced);
+  // The flag sits after the nick on its line. Only the nick takes the <label>, which would otherwise
+  // open the flag list on a click of its caption.
+  nick.id = NICK_INPUT_ID;
+  const nickField = node('div', 'network-menu__field');
+  const nickCaption = node('label', '', copy.nick);
+  nickCaption.htmlFor = NICK_INPUT_ID;
+  const nickLine = node('div', 'network-menu__nick-line');
+  nickLine.append(nick, flag.element);
+  nickField.append(nickCaption, nickLine);
+  form.append(intro, region, nickField, connect, advanced);
   account.append(accountName, disconnect);
   return {
     form,
@@ -90,6 +103,7 @@ export function connectionForm(
     accountName,
     address,
     nick,
+    flag,
     advanced,
     resetServer,
     connect,

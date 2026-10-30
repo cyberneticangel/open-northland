@@ -23,6 +23,9 @@ import { createMeterRow } from './parts/meter-row.js';
 
 /** Design px between the cursor and the card's near corner, so the card never covers what is pointed at. */
 const CURSOR_GAP_PX = 16;
+/** Design px from the cursor down to a card below it, which leaves the right-click label hanging under
+ *  the pointer its own line. */
+const CURSOR_GAP_BELOW_PX = 40;
 /** Design px kept between the card and the screen edges when it is pushed back inside. */
 const EDGE_MARGIN_PX = 6;
 /** Lines one column carries before the card opens another; three hold a warehouse's whole store. */
@@ -239,9 +242,9 @@ export function createHoverCard(deps: HoverCardDeps): HoverCard {
       const y = clientY / scale;
       // Below-right of the cursor, flipped to the other side when that corner would run off screen.
       const flipX = x + CURSOR_GAP_PX + box.w + EDGE_MARGIN_PX > screen.w;
-      const flipY = y + CURSOR_GAP_PX + box.h + EDGE_MARGIN_PX > screen.h;
+      const flipY = y + CURSOR_GAP_BELOW_PX + box.h + EDGE_MARGIN_PX > screen.h;
       const left = clamp(flipX ? x - CURSOR_GAP_PX - box.w : x + CURSOR_GAP_PX, screen.w - box.w);
-      const top = clamp(flipY ? y - CURSOR_GAP_PX - box.h : y + CURSOR_GAP_PX, screen.h - box.h);
+      const top = clamp(flipY ? y - CURSOR_GAP_PX - box.h : y + CURSOR_GAP_BELOW_PX, screen.h - box.h);
       const at = `${left},${top}`;
       if (at === placed) return;
       placed = at;

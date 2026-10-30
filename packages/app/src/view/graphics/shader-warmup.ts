@@ -1,6 +1,5 @@
 import {
   forgetShaderLinks,
-  resolveBackingDensity,
   type ShaderWarmup,
   startBackgroundShaderWarmup,
   startShaderWarmup,
@@ -8,7 +7,7 @@ import {
   type WarmupSettings,
 } from '@open-northland/render';
 import { diag } from '../../diag/log.js';
-import { type MenuSettings, readStoredSettings } from '../settings/store.js';
+import { readStoredSettings } from '../settings/store.js';
 
 /** The warm-up for the settings last asked about; a change of a setting that picks programs starts
  *  another, which shares the programs the two have in common. A warm-up that stopped waiting for a
@@ -23,28 +22,13 @@ function settingsKey(settings: WarmupSettings): string {
     settings.environmentMotion,
     settings.weather,
     settings.blood,
-    settings.backingDensity,
   ].join('/');
-}
-
-/** The programs to warm are those of the density this window will draw at, not of the stored choice. Read
- *  through `globalThis`: the warm-up also starts where no window exists (tests), and a missing ratio counts as 1. */
-function warmupSettingsOf(stored: MenuSettings): WarmupSettings {
-  return {
-    ...stored,
-    backingDensity: resolveBackingDensity(
-      stored.backingDensity,
-      globalThis.devicePixelRatio,
-      stored.renderScale,
-      stored.enhancedSampling,
-    ),
-  };
 }
 
 function sharedWarmup<W extends ShaderWarmup | null>(
   start: (settings: WarmupSettings) => W,
 ): ShaderWarmup | W {
-  const settings = warmupSettingsOf(readStoredSettings());
+  const settings = readStoredSettings();
   const key = settingsKey(settings);
   if (current?.key === key && !current.stalled) return current.warmup;
   const startedAt = performance.now();

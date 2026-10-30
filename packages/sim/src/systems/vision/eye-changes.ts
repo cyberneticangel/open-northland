@@ -3,7 +3,6 @@ import {
   Owner,
   Position,
   Settler,
-  SettlerProgress,
   UnderConstruction,
   Upgrading,
   Vehicle,
@@ -20,9 +19,8 @@ const EYE_MEMBERSHIP: readonly Component<unknown>[] = [
   Position,
   UnderConstruction,
   Upgrading,
-  SettlerProgress,
 ];
-const EYE_VALUES: readonly Component<unknown>[] = [Settler, Building, Vehicle, Owner, SettlerProgress];
+const EYE_VALUES: readonly Component<unknown>[] = [Settler, Building, Vehicle, Owner];
 
 /**
  * The entities whose eye footprint may have changed since the last vision rebuild: a node move, or a

@@ -20,7 +20,7 @@ import { canonicalById, entityNode, NodeBuckets } from '../../../src/systems/spa
 import { testContent } from '../../fixtures/content.js';
 import { ctxOf } from '../../fixtures/context.js';
 import { grassCellMap } from '../../fixtures/terrain.js';
-import { combatantAtNode, P0, P1, VIKING } from './stances/support.js';
+import { combatantAtNode, P0, P1, VIKING, WOODCUTTER } from './stances/support.js';
 
 /**
  * The combat index answers a nearest-target query by scanning the members of the coarse cells its box
@@ -84,12 +84,20 @@ function indexContent(): ContentSet {
     ...base,
     buildings: [
       ...base.buildings,
-      { typeId: KEEP, id: 'keep', kind: 'tower', hitpoints: KEEP_HP, footprint: { blocked: KEEP_WALLS } },
+      {
+        typeId: KEEP,
+        id: 'keep',
+        kind: 'tower',
+        hitpoints: KEEP_HP,
+        workers: [{ jobType: WOODCUTTER, count: 1 }],
+        footprint: { blocked: KEEP_WALLS },
+      },
       {
         typeId: LONG_KEEP,
         id: 'long_keep',
         kind: 'tower',
         hitpoints: KEEP_HP,
+        workers: [{ jobType: WOODCUTTER, count: 1 }],
         footprint: { blocked: LONG_KEEP_WALLS },
       },
     ],

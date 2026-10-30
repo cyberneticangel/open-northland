@@ -1,9 +1,11 @@
 import { type ContentSet, parseContentSet } from '@open-northland/data';
 import { describe, expect, it } from 'vitest';
 import {
+  AssistantArmorOrders,
   AssistantChildOrder,
   AssistantCounters,
   AssistantRecruit,
+  AssistantWeaponOrders,
   AssistantWeaponVetoes,
   addPerson,
   Building,
@@ -274,6 +276,14 @@ function vetoWeapon(sim: Simulation, goodType: number, vetoed: boolean): void {
   sim.enqueueSetup({ kind: 'setAssistantWeaponVeto', player: PLAYER, goodType, vetoed });
 }
 
+function setArmorOrder(sim: Simulation, order: readonly number[], off: readonly number[]): void {
+  sim.enqueueSetup({ kind: 'setAssistantArmorOrder', player: PLAYER, intent: 'trainSword', order, off });
+}
+
+function setWeaponOrder(sim: Simulation, order: readonly number[]): void {
+  sim.enqueueSetup({ kind: 'setAssistantWeaponOrder', player: PLAYER, intent: 'trainSword', order });
+}
+
 function setCounter(
   sim: Simulation,
   counter: 'extraWomen' | 'extraMen' | 'trainSoldiers' | 'trainSword' | 'trainSpear' | 'trainBow',
@@ -348,6 +358,52 @@ describe('setAssistantWeaponVeto - command and carrier lifecycle', () => {
     sim.step();
     expect(sim.assistantWeaponVetoes(PLAYER)).toEqual([]);
     expect([...sim.world.query(AssistantWeaponVetoes)].length).toBe(0);
+  });
+});
+
+describe('setAssistantArmorOrder - command and carrier lifecycle', () => {
+  it('keeps a class choice, skips a list that is not every armor once, and drops the carrier at default', () => {
+    const sim = trainSim();
+    const byDefault = sim.assistantArmorOrder(PLAYER, 'trainSword');
+    expect([...byDefault.order].sort((a, b) => a - b)).toEqual([ARMOR_WOOL_GOOD, ARMOR_CHAIN_GOOD]);
+    const reversed = [...byDefault.order].reverse();
+
+    setArmorOrder(sim, [ARMOR_WOOL_GOOD], []); // not every armor
+    setArmorOrder(sim, reversed, [SWORD_LONG_GOOD]); // off names a good outside the order
+    sim.step();
+    expect([...sim.world.query(AssistantArmorOrders)].length).toBe(0);
+
+    setArmorOrder(sim, reversed, [ARMOR_CHAIN_GOOD]);
+    sim.step();
+    expect(sim.assistantArmorOrder(PLAYER, 'trainSword')).toEqual({
+      order: reversed,
+      off: [ARMOR_CHAIN_GOOD],
+    });
+    expect(sim.assistantArmorOrder(PLAYER, 'trainBow')).toEqual(byDefault);
+
+    setArmorOrder(sim, byDefault.order, []);
+    sim.step();
+    expect([...sim.world.query(AssistantArmorOrders)].length).toBe(0);
+  });
+});
+
+describe('setAssistantWeaponOrder - command and carrier lifecycle', () => {
+  it('keeps a class order, skips a list that is not every class weapon once, and drops the carrier at default', () => {
+    const sim = trainSim();
+    expect(sim.assistantWeaponOrder(PLAYER, 'trainSword')).toEqual([SWORD_LONG_GOOD, SWORD_SHORT_GOOD]);
+
+    setWeaponOrder(sim, [SWORD_SHORT_GOOD]);
+    setWeaponOrder(sim, [SWORD_SHORT_GOOD, ARMOR_WOOL_GOOD]);
+    sim.step();
+    expect([...sim.world.query(AssistantWeaponOrders)].length).toBe(0);
+
+    setWeaponOrder(sim, [SWORD_SHORT_GOOD, SWORD_LONG_GOOD]);
+    sim.step();
+    expect(sim.assistantWeaponOrder(PLAYER, 'trainSword')).toEqual([SWORD_SHORT_GOOD, SWORD_LONG_GOOD]);
+
+    setWeaponOrder(sim, [SWORD_LONG_GOOD, SWORD_SHORT_GOOD]);
+    sim.step();
+    expect([...sim.world.query(AssistantWeaponOrders)].length).toBe(0);
   });
 });
 
@@ -483,7 +539,7 @@ describe('the training queue', () => {
     // instead of walking home in between - the chain shows as the live order flipping groups.
     runUntil(sim, () => sim.world.tryGet(recruit, EquipOrder)?.group === 'armor', 30, 'chained');
 
-    // The armor leg: the heavy tier outranks the light one.
+    // The armor leg: the default order puts the best protection first.
     runUntil(sim, () => (sim.world.tryGet(recruit, Equipment)?.armor ?? null) !== null, 2000, 'armor');
     expect(sim.world.tryGet(recruit, Equipment)?.armor?.goodType).toBe(ARMOR_CHAIN_GOOD);
     // Dressed, he walks back from the store to the barracks he drilled at, still booked on the way; the
@@ -510,6 +566,46 @@ describe('the training queue', () => {
     runUntil(sim, () => sim.world.get(recruit, Settler).jobType === SWORDSMAN_LONG, 3000, 'swordsman');
     runUntil(sim, () => !sim.world.has(recruit, EquipOrder), 2000, 'arming errand released');
     expect(nodeOf(sim, recruit)).toBe(pile);
+  });
+
+  it("arms a recruit with the first weapon of his class's order, the weaker one put first", () => {
+    const sim = trainSim();
+    barracksAt(sim, 6, 3);
+    const recruit = settlerAt(sim, CIVILIST, 3, 3);
+    pileAt(
+      sim,
+      9,
+      3,
+      new Map([
+        [SWORD_SHORT_GOOD, 1],
+        [SWORD_LONG_GOOD, 1],
+      ]),
+    );
+
+    setWeaponOrder(sim, [SWORD_SHORT_GOOD, SWORD_LONG_GOOD]);
+    setCounter(sim, 'trainSword', 1);
+    runUntil(sim, () => sim.world.get(recruit, Settler).jobType === SWORDSMAN_SHORT, 3000, 'short swordsman');
+  });
+
+  it("dresses a recruit in the first armor of his class's order that is not off", () => {
+    const sim = trainSim();
+    barracksAt(sim, 6, 3);
+    const recruit = settlerAt(sim, CIVILIST, 3, 3);
+    pileAt(
+      sim,
+      9,
+      3,
+      new Map([
+        [SWORD_LONG_GOOD, 1],
+        [ARMOR_WOOL_GOOD, 1],
+        [ARMOR_CHAIN_GOOD, 1],
+      ]),
+    );
+
+    setArmorOrder(sim, [ARMOR_CHAIN_GOOD, ARMOR_WOOL_GOOD], [ARMOR_CHAIN_GOOD]);
+    setCounter(sim, 'trainSword', 1);
+    runUntil(sim, () => (sim.world.tryGet(recruit, Equipment)?.armor ?? null) !== null, 5000, 'armor');
+    expect(sim.world.tryGet(recruit, Equipment)?.armor?.goodType).toBe(ARMOR_WOOL_GOOD);
   });
 
   it('releases a recruit unarmored when no armor is in store, once its weapon landed', () => {

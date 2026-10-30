@@ -9,6 +9,7 @@ import {
   SiteAssignment,
   Stockpile,
   sameSideAs,
+  TrainingOrder,
   UnderConstruction,
   WorkFlag,
 } from '../../../../components/index.js';
@@ -58,6 +59,7 @@ export type DeliveryRule =
     };
 
 export const DELIVERY_RULES: readonly DeliveryRule[] = [
+  { kind: 'bound', resolve: toTrainingFoundation },
   { kind: 'bound', resolve: toOwnVehicleSite },
   { kind: 'bound', resolve: toConsumingWorkplace },
   { kind: 'bound', resolve: toOwnDeliveryFlag },
@@ -86,6 +88,17 @@ export function deliverySearchArea(plan: PlannerContext): DeliverySearchArea {
     avoid,
     avoidSite: unreachableSiteStand(world, ctx, terrain, targets.yard.blocked, here, avoid),
   };
+}
+
+/** A settler enrolled at a school or barracks still going up carries the site's material there, ahead of
+ *  its own workplace and storage, so a unit fetched for the site never goes back to the store it left. */
+function toTrainingFoundation(plan: PlannerContext, goodType: number): DeliveryVerdict {
+  const { world, ctx, entity, owner, supply } = plan;
+  const house = world.tryGet(entity, TrainingOrder)?.house;
+  if (house === undefined || !constructionSiteNeeds(world, ctx, house, owner, goodType, supply, entity)) {
+    return null;
+  }
+  return constructionSiteCanReceive(plan, house) ? house : null;
 }
 
 /** A workshop worker crewing a vehicle site (`drives/economy/vehicle-yard`) carries the bill's goods to

@@ -34,7 +34,7 @@ export type RandomPaletteRecipe = z.infer<typeof RandomPaletteRecipe>;
 
 /** The recipes a player's humans receive at creation, by sex. */
 export const PlayerPaletteRecipes = z.strictObject({
-  /** Player slot, 0..15. */
+  /** Player colour id. */
   player: z.number().int().min(0),
   /** `player_NN` for the original's ten colours; a pipeline-synthesized recipe for the others. */
   male: z.string(),

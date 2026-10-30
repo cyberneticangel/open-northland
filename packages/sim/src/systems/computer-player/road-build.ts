@@ -8,7 +8,7 @@ import { COMPUTER_DECISION_INTERVAL_TICKS } from '../ai-shared/cadence.js';
 import { isBuilt, ownedBuildings } from '../ai-shared/seat-roster.js';
 import type { SystemContext } from '../context.js';
 import { dynamicBlockOverlay } from '../footprint/blocked.js';
-import { buildingFootprintOf, doorNodeOf } from '../footprint/geometry.js';
+import { doorNodeOf, houseFootprintOf } from '../footprint/geometry.js';
 import { ownedRoadSites, roadSitesByNode } from '../roads/site-index.js';
 import { roadSitePlacementProbe } from '../roads/sites.js';
 import { networkLimitAt } from '../signposts/network.js';
@@ -246,16 +246,11 @@ function entranceOf(
   blocked: BlockOverlay,
   building: Entity,
 ): NodeId | null {
-  const { buildingType, tribe } = world.get(building, Building);
+  const house = world.get(building, Building);
   const at = world.tryGet(building, Position);
   if (at === undefined) return null;
   const anchor = nodeOfPosition(at.x, at.y);
-  const door = doorNodeOf(
-    terrain,
-    buildingFootprintOf(ctx.content, buildingType, tribe),
-    anchor.hx,
-    anchor.hy,
-  );
+  const door = doorNodeOf(terrain, houseFootprintOf(ctx.content, house), anchor.hx, anchor.hy);
   if (door !== null && terrain.isWalkable(door) && !blocked.has(door)) return door;
   return walkSeedNear(terrain, blocked, anchor, DOORLESS_ENTRANCE_RADIUS);
 }

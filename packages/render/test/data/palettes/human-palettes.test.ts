@@ -295,6 +295,24 @@ describe('composing a human palette', () => {
       expect(band(out.body, APRON)).toEqual(BROWN);
     });
 
+    describe('on a body that draws the load in a band of its own', () => {
+      const LOAD = 12;
+      const WOMAN: CharacterPalette = { ...PLAIN, load: { band: LOAD, from: DRESS } };
+
+      it("paints the load band what the good's recipe paints the dress band, the dress kept", () => {
+        const out = compose(goodBook(), identity(WOMAN, { carried: FURNITURE, female: true }));
+        expect(band(out.body, LOAD)).toEqual(BROWN);
+        expect(band(out.body, DRESS)).toEqual(BLUE);
+        expect(band(out.body, APRON)).toEqual(BROWN);
+      });
+
+      it("keeps a load without a recipe in the dress band's base colours, not the team's", () => {
+        const out = compose(goodBook(), identity(WOMAN, { carried: STONE, female: true }));
+        expect(band(out.body, LOAD)).toEqual(grey(DRESS * 16));
+        expect(band(out.body, DRESS)).toEqual(BLUE);
+      });
+    });
+
     it('leaves a good without a recipe in the human palette as it is', () => {
       const b = goodBook();
       expect(compose(b, identity(PLAIN, { carried: STONE }))).toEqual(compose(b, identity(PLAIN)));

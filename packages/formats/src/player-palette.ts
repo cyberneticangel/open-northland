@@ -1,33 +1,46 @@
 /**
  * Player (team) colours. The original gives a player's humans the `player_NN` (male) or `woman_NN`
  * (female) `randompalette.ini` recipe of its colour, which patch the `Player NN` ramps (colour ranges
- * of a `playerNN.pcx`) onto clothing bands. The original ships 10 player colours; the extra six are
- * hue-rotated approximations with no original equivalent.
+ * of a `playerNN.pcx`) onto clothing bands. The original ships 10 player colours; the other 14 are
+ * toned approximations of player 0's with no original equivalent.
  */
 
 import { assertPaletteBytes, PALETTE_RGB_BYTES } from './image.js';
 
-/** First index of the source `Player NN` ramp inside a `playerNN.pcx` (colour-range 1 = indices 16–31). */
-const PLAYER_RAMP_START = 16;
-/** Length of a 16-colour `[GfxPalette16]` ramp. */
+/** Length of a 16-colour `[GfxPalette16]` ramp; colour range `n` holds indices `16n..16n+15`. */
 const RAMP_LENGTH = 16;
+/**
+ * The colour ranges that carry the team colour in a `playerNN.pcx`: the ten shipped files differ in
+ * ranges 1, 2, 14 and 15 (range 4 and index 112 vary too, but stay gold and black in every file).
+ */
+const TEAM_COLOR_RANGES: readonly number[] = [1, 2, 14, 15];
 /** RGB bytes per palette entry. */
 const RGB_BYTES = 3;
+
+/**
+ * A synthetic colour's tone over a reference ramp: every entry takes `hue` (degrees), its saturation is
+ * scaled by `saturation`, and `shade` darkens toward black (negative) or lifts toward white (positive).
+ */
+export interface PlayerTone {
+  readonly hue: number;
+  readonly saturation?: number;
+  readonly shade?: number;
+}
 
 export interface PlayerColorDef {
   readonly id: number;
   readonly name: string;
   /**
-   * `pcx` reads the band from a shipped `playerNN.pcx`; `synthetic` hue-rotates the reference ramp to
-   * `hue` degrees, an approximation with no original equivalent.
+   * `pcx` reads the band from a shipped `playerNN.pcx`; `synthetic` tones the reference ramps, an
+   * approximation with no original equivalent.
    */
   readonly source:
     | { readonly kind: 'pcx'; readonly file: string }
-    | { readonly kind: 'synthetic'; readonly hue: number };
+    | ({ readonly kind: 'synthetic' } & PlayerTone);
 }
 
 /**
- * The 16 player colours, slot order = player id. Ids 0–9 follow the original's `TPlayerColorId` order
+ * The 24 player colours, slot order = player id. Ids 0–9 follow the original's `TPlayerColorId` order
  * (`logicdefines.inc`) and read their `pcx` files from `Data/engine2d/bin/palettes/creatures/`.
  */
 export const PLAYER_COLORS: readonly PlayerColorDef[] = [
@@ -48,6 +61,15 @@ export const PLAYER_COLORS: readonly PlayerColorDef[] = [
   { id: 13, name: 'indigo', source: { kind: 'synthetic', hue: 250 } },
   { id: 14, name: 'magenta', source: { kind: 'synthetic', hue: 312 } },
   { id: 15, name: 'pink', source: { kind: 'synthetic', hue: 336 } },
+  // Darker and lighter tones, apart from the hues above by brightness as well.
+  { id: 16, name: 'maroon', source: { kind: 'synthetic', hue: 350, shade: -0.5 } },
+  { id: 17, name: 'navy', source: { kind: 'synthetic', hue: 225, shade: -0.5 } },
+  { id: 18, name: 'olive', source: { kind: 'synthetic', hue: 58, saturation: 0.85, shade: -0.45 } },
+  { id: 19, name: 'brown', source: { kind: 'synthetic', hue: 25, saturation: 0.8, shade: -0.5 } },
+  { id: 20, name: 'forest', source: { kind: 'synthetic', hue: 125, saturation: 0.9, shade: -0.5 } },
+  { id: 21, name: 'plum', source: { kind: 'synthetic', hue: 295, saturation: 0.75, shade: -0.45 } },
+  { id: 22, name: 'white', source: { kind: 'synthetic', hue: 0, saturation: 0, shade: 0.6 } },
+  { id: 23, name: 'lavender', source: { kind: 'synthetic', hue: 265, saturation: 0.45, shade: 0.35 } },
 ];
 
 /**
@@ -99,28 +121,29 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
 }
 
 /**
- * Hue-rotates every entry of `ramp` (RGB triples) to `hueDeg` degrees, keeping each entry's saturation
- * and value so a synthesised colour shades like a shipped one; near-grey entries stay neutral. Returns
- * a detached copy.
+ * Tones every entry of `ramp` (RGB triples) by {@link PlayerTone}, keeping each entry's place in the
+ * shading so a synthesised colour shades like a shipped one; near-grey entries stay neutral. Returns a
+ * detached copy.
  */
-export function hueRotateRamp(ramp: Uint8Array, hueDeg: number): Uint8Array {
+export function toneRamp(ramp: Uint8Array, tone: PlayerTone): Uint8Array {
+  const saturation = tone.saturation ?? 1;
+  const shade = tone.shade ?? 0;
   const out = new Uint8Array(ramp.length);
   for (let o = 0; o + RGB_BYTES <= ramp.length; o += RGB_BYTES) {
     const [, s, v] = rgbToHsv(ramp[o] ?? 0, ramp[o + 1] ?? 0, ramp[o + 2] ?? 0);
-    out.set(hsvToRgb(hueDeg, s, v), o);
+    const value = shade < 0 ? v * (1 + shade) : v + (1 - v) * shade;
+    out.set(hsvToRgb(tone.hue, Math.min(1, s * saturation), value), o);
   }
   return out;
 }
 
-/**
- * Builds a synthetic player source palette: `reference` with its `Player NN` ramp (colour range 1)
- * hue-rotated to `hueDeg` by {@link hueRotateRamp}.
- */
-export function synthesizePlayerSource(reference: Uint8Array, hueDeg: number): Uint8Array {
+/** Builds a synthetic player source palette: `reference` with its team-colour ranges toned by {@link toneRamp}. */
+export function synthesizePlayerSource(reference: Uint8Array, tone: PlayerTone): Uint8Array {
   assertPaletteBytes(reference, 'player-palette', 'reference palette');
   const out = copyPalette(reference);
-  const start = PLAYER_RAMP_START * RGB_BYTES;
-  const end = start + RAMP_LENGTH * RGB_BYTES;
-  out.set(hueRotateRamp(reference.subarray(start, end), hueDeg), start);
+  for (const range of TEAM_COLOR_RANGES) {
+    const start = range * RAMP_LENGTH * RGB_BYTES;
+    out.set(toneRamp(reference.subarray(start, start + RAMP_LENGTH * RGB_BYTES), tone), start);
+  }
   return out;
 }

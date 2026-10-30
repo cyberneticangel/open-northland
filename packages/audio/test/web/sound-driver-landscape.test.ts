@@ -33,6 +33,7 @@ const index: SoundIndex = {
     [TREE_RECORD, { name: 'Trees', weight: 1, pools: [{ files: BIRDS, weight: 1, chance: SURE_CHANCE }] }],
   ]),
   murmurByTribe: new Map(),
+  musicCultureByTribe: new Map(),
   poolGains: new Map(),
   wavGains: new Map(),
 };

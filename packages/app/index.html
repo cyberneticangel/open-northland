@@ -18,28 +18,40 @@
         const ID_BYTES = 16;
         const HEX = 16;
         const HEX_DIGITS = 2;
-        let stored = [];
-        try {
-          const read = JSON.parse(localStorage.getItem(KEY) ?? '[]');
-          if (Array.isArray(read)) stored = read.slice(-MAX_STORED_FAULTS);
-        } catch {}
+        // Other pages' faults, the newest few: a page that never came up, or one still booting.
+        const othersStored = (ownIds) => {
+          try {
+            const read = JSON.parse(localStorage.getItem(KEY) ?? '[]');
+            return Array.isArray(read)
+              ? read.filter((fault) => !ownIds.has(fault?.id)).slice(-MAX_STORED_FAULTS)
+              : [];
+          } catch {
+            return [];
+          }
+        };
         const faults = [];
+        const faultIds = new Set();
+        // The page is going away: what fails as it tears down a boot is no fault of the game.
+        let leaving = false;
         const id = () =>
           Array.from(crypto.getRandomValues(new Uint8Array(ID_BYTES)), (byte) =>
             byte.toString(HEX).padStart(HEX_DIGITS, '0'),
           ).join('');
         const keep = (name, message, stack, source) => {
-          if (faults.length >= MAX_FAULTS) return;
-          faults.push({
+          if (leaving || faults.length >= MAX_FAULTS) return;
+          const fault = {
             id: id(),
             at: new Date().toISOString(),
             name: String(name),
             message: String(message).slice(0, MESSAGE_CHARS),
             stack: typeof stack === 'string' ? stack.slice(0, STACK_CHARS) : undefined,
             source,
-          });
+          };
+          faults.push(fault);
+          faultIds.add(fault.id);
           try {
-            localStorage.setItem(KEY, JSON.stringify(stored.concat(faults).slice(-MAX_STORED_FAULTS)));
+            const kept = othersStored(faultIds).concat(faults).slice(-MAX_STORED_FAULTS);
+            localStorage.setItem(KEY, JSON.stringify(kept));
           } catch {}
         };
         // No game fault, as `diag/capture/foreign-error.ts` rules: a ResizeObserver notice, or an
@@ -79,21 +91,32 @@
         };
         const onRejection = (event) => {
           const reason = event.reason;
-          if (elsewhere(reason)) return;
+          const top = topFrameUrl(reason);
+          if (top !== null && !own(top)) return;
           const isError = reason instanceof Error;
           keep(isError ? reason.name : 'Error', isError ? reason.message : String(reason), isError ? reason.stack : undefined);
         };
         addEventListener('error', onError, true);
         addEventListener('unhandledrejection', onRejection);
+        addEventListener('pagehide', () => {
+          leaving = true;
+        });
+        // Back from the back-forward cache, the boot goes on.
+        addEventListener('pageshow', (event) => {
+          if (event.persisted) leaving = false;
+        });
         window.__onBootFaults = {
-          stored,
           faults,
+          // Read when the app takes over, not at the page's start: a tab that booted meanwhile has
+          // taken its own faults back and reported them itself.
           stop: () => {
             removeEventListener('error', onError, true);
             removeEventListener('unhandledrejection', onRejection);
+            const stored = othersStored(faultIds);
             try {
               localStorage.removeItem(KEY);
             } catch {}
+            return stored;
           },
         };
       })();

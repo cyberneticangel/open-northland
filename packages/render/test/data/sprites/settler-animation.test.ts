@@ -502,3 +502,28 @@ describe('missing prayer artwork', () => {
     expect(resolveSettlerBobId({ ...binding, byAtomic: { 12: 30 } }, prayer, 500)).toBe(30);
   });
 });
+
+describe('a cart lift clip', () => {
+  it('plays once over the whole lift instead of replaying at its own clip length', () => {
+    const CLIP_TICKS = 4;
+    const LIFT_TICKS = 6;
+    const lift: FrameListAnim = { start: 0, frameLists: [[0, 1, 2, 3]], ticks: CLIP_TICKS };
+    const binding: SettlerStateBinding = { idle: 99, acting: 99, byAtomic: { 22: lift } };
+    const frames = (stretched: boolean) =>
+      Array.from({ length: LIFT_TICKS }, (_, elapsed) =>
+        resolveSettlerBobId(
+          binding,
+          drawItem('settler', {
+            state: 'acting',
+            atomicId: 22,
+            elapsed,
+            atomicDuration: LIFT_TICKS,
+            ...(stretched ? { atomicStretched: true } : {}),
+          }),
+          elapsed,
+        ),
+      );
+    expect(frames(false)).toEqual([0, 1, 2, 3, 0, 1]);
+    expect(frames(true)).toEqual([0, 0, 1, 2, 2, 3]);
+  });
+});

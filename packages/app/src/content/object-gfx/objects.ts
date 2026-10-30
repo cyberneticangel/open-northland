@@ -104,6 +104,16 @@ async function loadStillMarks(
   return frames.length > 0 ? { source: layer.source, frames } : null;
 }
 
+/** The palette the flame records draw with (`fire`, and variants like `fire_incense`): what marks an
+ *  object as an open fire that lights the night. */
+const FIRE_PALETTE = 'fire';
+
+function drawsFlames(record: LandscapeGfxRow): boolean {
+  const palette = record.paletteName?.toLowerCase();
+  if (palette === undefined) return false;
+  return palette === FIRE_PALETTE || palette.startsWith(`${FIRE_PALETTE}_`);
+}
+
 /** The tick a map's placed one-shot stages start their clips on: the map's first. A restored world past
  *  their end draws them resting from its first frame. */
 const MAP_START_TICK = 0;
@@ -190,6 +200,7 @@ export async function loadMapObjects(
     readonly walkFootprint: readonly FootprintCell[];
     /** A built wall whose foot sets into the ground ({@link isGroundedWall}). */
     readonly grounded: boolean;
+    readonly burns: boolean;
   }
   // One ResolvedType per state list of a record; a null entry means that state resolved nothing and the
   // placement falls back to state 0. A record that `playsOnce` keeps every frame for its one-shot clip.
@@ -220,6 +231,7 @@ export async function loadMapObjects(
         shaded: record.logicType === undefined || !unshadedLogicTypes.has(record.logicType),
         walkFootprint,
         grounded: isGroundedWall(record),
+        burns: drawsFlames(record),
       };
     });
   };
@@ -265,6 +277,7 @@ export async function loadMapObjects(
       decor: type.decor,
       ...(type.groundPass ? { groundPass: true } : {}),
       ...(type.grounded ? { grounded: true as const } : {}),
+      ...(type.burns ? { light: 'fire' as const } : {}),
       ...(lift !== 0 ? { lift } : {}),
       // The map stores no per-object phase, so this gradient is invented here: neighbouring half-cells
       // stay within one frame of each other while the surface avoids pulsing as one stamp.

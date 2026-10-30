@@ -130,10 +130,11 @@ export function slotDifficulty(state: RosterState, slot: MapPlayerSlot): Compute
   return state.difficulties.get(slot.player) ?? startingDifficulty(slot);
 }
 
-/** Real maps author duplicate colours freely, so "worn" is always relative to the asking slot. */
-export function wornByAnother(state: RosterState, slot: number, colorId: number): boolean {
-  for (const [other, c] of state.colors) if (other !== slot && c === colorId) return true;
-  return false;
+/** The first slot other than `slot` that wears `colorId`, if any. Real maps author duplicate colours
+ *  freely, so this is relative to the asking slot. */
+export function wearerOf(state: RosterState, slot: number, colorId: number): number | undefined {
+  for (const [other, c] of state.colors) if (other !== slot && c === colorId) return other;
+  return undefined;
 }
 
 /**
@@ -141,7 +142,7 @@ export function wornByAnother(state: RosterState, slot: number, colorId: number)
  * accepted, so authored duplicates survive but new ones cannot be created.
  */
 export function setSlotColor(state: RosterState, slot: number, colorId: number): RosterState | null {
-  if (state.colors.get(slot) !== colorId && wornByAnother(state, slot, colorId)) return null;
+  if (state.colors.get(slot) !== colorId && wearerOf(state, slot, colorId) !== undefined) return null;
   const colors = new Map(state.colors);
   colors.set(slot, colorId);
   return { ...state, colors };

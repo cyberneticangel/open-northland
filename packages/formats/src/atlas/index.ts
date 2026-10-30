@@ -11,6 +11,7 @@ export {
   type AtlasFrame,
   type AtlasManifest,
   type BobAtlas,
+  type FrameEdit,
   type PackBobAtlasOptions,
   packBobAtlas,
   packDisplacementBobAtlas,

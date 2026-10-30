@@ -2,19 +2,19 @@ import { MUSIC_VARIANTS, type MusicVariants } from './catalog.js';
 import type { MusicManifest } from './manifest.js';
 
 /**
- * Which rendered stems can stand in for one another. A map code belongs to the culture its stem names,
- * and the culture's calm and tense pools gather every stem of every code of that culture, so a map can
- * rotate through its kin's music instead of ringing one loop region. The pools are a design choice of
- * this reimplementation: the original plays one segment per map and only switches its mood.
+ * A nation's music: every stem of every map code its culture authored, split into a calm and a tense
+ * pool. The nation soundtrack is a design choice of this reimplementation: the original plays one
+ * segment per map and only switches its mood.
  */
 
-/** A music culture: the families the segment names group into. */
-export type MusicCulture = 'norse' | 'frank' | 'byzantine' | 'arab' | 'underworld';
+/** A playable nation's music culture: the families the segment names group into. */
+export type MusicCulture = 'norse' | 'frank' | 'byzantine' | 'arab';
 
 /** Whether a stem fits a quiet stretch or a fight. */
 export type MusicIntensity = 'calm' | 'tense';
 
-/** The words segment stems use for each culture, digits stripped (`viking1` reads as `viking`). */
+/** The words segment stems use for each culture, digits stripped (`viking1` reads as `viking`). The
+ *  Underworld stem belongs to no playable nation and stays out of every pool. */
 const CULTURE_BY_STEM_WORD: Readonly<Record<string, MusicCulture>> = {
   viking: 'norse',
   midgard: 'norse',
@@ -23,20 +23,16 @@ const CULTURE_BY_STEM_WORD: Readonly<Record<string, MusicCulture>> = {
   franken: 'frank',
   byzanz: 'byzantine',
   arabs: 'arab',
-  underworld: 'underworld',
 };
 
-/** How a culture with too little music of its own fills its pools from a kin culture. */
-interface Borrowing {
-  readonly from: MusicCulture;
-  /** Calm stems taken, quietest first, so the borrowed music keeps the lender's softest mood. */
-  readonly quietestCalm: number;
-}
-
-/** Underworld authored one calm stem and no tense one; the Norse are its kin. Approximation: the two
- *  quietest Norse calm stems are the Nordland and Asgard add-on tracks, the closest in colour. */
-const BORROWINGS: Readonly<Partial<Record<MusicCulture, Borrowing>>> = {
-  underworld: { from: 'norse', quietestCalm: 2 },
+/** Tribe slug to the culture whose music it plays. Egypt authored no music; the Arab score is its
+ *  nearest kin, the way it borrows Saracen voices. Approximation. */
+const CULTURE_BY_TRIBE: Readonly<Record<string, MusicCulture>> = {
+  viking: 'norse',
+  frank: 'frank',
+  byzantine: 'byzantine',
+  saracen: 'arab',
+  egypt: 'arab',
 };
 
 /** A culture's interchangeable stems, each distinct audio, in stem order. */
@@ -45,14 +41,7 @@ export interface MusicPools {
   readonly tense: readonly string[];
 }
 
-/** One map code's music: its culture, the culture's pools, and the stems the code itself authored. */
-export interface MapMusic {
-  readonly culture: MusicCulture;
-  readonly pools: MusicPools;
-  readonly variants: MusicVariants;
-}
-
-/** The culture a stem's words name, or null for a stem outside every culture. */
+/** The culture a stem's words name, or null for a stem outside every nation. */
 export function cultureOfStem(stem: string): MusicCulture | null {
   for (const word of stem.split('_')) {
     const culture = CULTURE_BY_STEM_WORD[word.replace(/\d+$/, '')];
@@ -61,9 +50,16 @@ export function cultureOfStem(stem: string): MusicCulture | null {
   return null;
 }
 
+/** The culture a tribe slug plays, or null for a tribe with no nation music (beasts, monsters). */
+export function cultureOfTribe(slug: string): MusicCulture | null {
+  return CULTURE_BY_TRIBE[slug] ?? null;
+}
+
 /** A code's stems by intensity. A stem a code repeats in a tense slot (a mission with no Danger
  *  segment) stays calm only. */
-function stemsByIntensity(variants: MusicVariants): Readonly<Record<MusicIntensity, readonly string[]>> {
+export function stemsByIntensity(
+  variants: MusicVariants,
+): Readonly<Record<MusicIntensity, readonly string[]>> {
   switch (variants.family) {
     case 'attack':
       return { calm: [], tense: [variants.stem] };
@@ -93,8 +89,8 @@ function distinctRendered(stems: Iterable<string>, manifest: MusicManifest): str
   return kept;
 }
 
-/** Every culture's own pools, before any borrowing. */
-function ownPools(manifest: MusicManifest): Map<MusicCulture, MusicPools> {
+/** Each culture's pools of rendered stems. */
+export function culturePools(manifest: MusicManifest): ReadonlyMap<MusicCulture, MusicPools> {
   const gathered = new Map<MusicCulture, { calm: string[]; tense: string[] }>();
   for (const variants of Object.values(MUSIC_VARIANTS)) {
     const { calm, tense } = stemsByIntensity(variants);
@@ -118,34 +114,11 @@ function ownPools(manifest: MusicManifest): Map<MusicCulture, MusicPools> {
   return pools;
 }
 
-/** Each culture's pools, a borrowing culture's topped up from its lender. */
-export function culturePools(manifest: MusicManifest): ReadonlyMap<MusicCulture, MusicPools> {
-  const pools = ownPools(manifest);
-  for (const [culture, borrowing] of Object.entries(BORROWINGS) as [MusicCulture, Borrowing][]) {
-    const own = pools.get(culture) ?? { calm: [], tense: [] };
-    const lender = pools.get(borrowing.from) ?? { calm: [], tense: [] };
-    const loudness = (stem: string): number =>
-      manifest.tracks[stem]?.loudnessLufs ?? Number.POSITIVE_INFINITY;
-    const quietest = [...lender.calm]
-      .sort((a, b) => loudness(a) - loudness(b))
-      .slice(0, borrowing.quietestCalm);
-    pools.set(culture, {
-      calm: [...own.calm, ...quietest],
-      tense: own.tense.length > 0 ? own.tense : lender.tense,
-    });
-  }
-  return pools;
-}
-
-/** The music a map's `musictype` plays, or null when the code names no segment or no rendered stem. */
-export function mapMusicFor(musicType: number | undefined, manifest: MusicManifest | null): MapMusic | null {
-  if (musicType === undefined || manifest === null) return null;
+/** The stems a map's `musictype` authored, or null when the code names no segment or none was rendered. */
+export function mapVariantsFor(musicType: number | null, manifest: MusicManifest): MusicVariants | null {
+  if (musicType === null) return null;
   const variants = MUSIC_VARIANTS[musicType];
   if (variants === undefined) return null;
   const { calm, tense } = stemsByIntensity(variants);
-  const culture = cultureOfStem(calm[0] ?? tense[0] ?? '');
-  if (culture === null) return null;
-  const pools = culturePools(manifest).get(culture);
-  if (pools === undefined || pools.calm.length + pools.tense.length === 0) return null;
-  return { culture, pools, variants };
+  return [...calm, ...tense].some((stem) => manifest.tracks[stem] !== undefined) ? variants : null;
 }

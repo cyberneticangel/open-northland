@@ -101,8 +101,7 @@ function tierView(orders: BuildingOrdersModel): BuildingOrderView | null {
 }
 
 /** The portrait block: the live building's frame as the centre-view button with its wear under it, and
- *  beside it the order tiles with the status strip along the frame's floor. A house that shelters
- *  civilians carries its alarm bell at the strip's end, since the alarm is a state the strip names. */
+ *  beside it the order tiles with the status strip along the frame's floor. */
 export interface PortraitSection {
   readonly element: HTMLElement;
   /** The frame the renderer paints the live building through. */
@@ -132,14 +131,6 @@ export function createPortraitSection(
   const text = status.lastElementChild;
   if (!(text instanceof HTMLElement)) throw new Error('building portrait: status');
   status.tabIndex = 0;
-  const bell = button('on-status-strip__button', GLYPH.bell);
-  bell.addEventListener('click', () => {
-    const shown = current();
-    const alarm = shown?.orders?.alarm;
-    if (shown === null || alarm == null) return;
-    deps.building.setAlarm(shown.entityId, !alarm.on);
-  });
-  status.append(bell);
   beside.append(orders, status);
   row.append(shot, beside);
 
@@ -230,19 +221,6 @@ export function createPortraitSection(
       setAttribute(status, 'aria-label', statusWords);
       setClass(status, 'on-status-strip--trouble', state.tone === 'trouble');
       setClass(status, 'on-status-strip--neutral', state.tone === 'neutral');
-      const alarm = model.orders?.alarm ?? null;
-      setHidden(bell, alarm === null);
-      if (alarm !== null) {
-        const words = alarm.on ? copy.buildingPanel.alarmOffTooltip : copy.buildingPanel.alarmOnTooltip;
-        setTip(bell, words);
-        setAttribute(
-          bell,
-          'aria-label',
-          alarm.on ? copy.buildingPanel.orders.alarmOff : copy.buildingPanel.orders.alarmOn,
-        );
-        setAttribute(bell, 'aria-pressed', String(alarm.on));
-        setClass(bell, 'on-status-strip__button--on', alarm.on);
-      }
     },
   };
 }

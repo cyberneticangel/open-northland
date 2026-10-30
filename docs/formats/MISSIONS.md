@@ -722,12 +722,12 @@ nearest free archer it can reach for the peace posts and only one within 20 poin
 and reads defence mode per tower as an enemy fighter inside its watch band, the extra men leaving once
 none stands within a further margin (`ai-shared/military/defence/posts.ts`).
 
-The scripted AI also keeps its town (this build: `systems/map-ai/town.ts`, `families.ts` and
-`rebuild.ts`; gates are handled by shared gate control, each pass only while the strategic module owning that concern is off; the
+The scripted AI also keeps its town (this build: `systems/map-ai/town.ts`, `families.ts`, `rebuild.ts`
+and `walls.ts`; gates are handled by shared gate control, each pass only while the strategic module owning that concern is off; the
 gates, which no module owns, always):
 
-- First turn: it remembers the seat's first 100 houses, and the first 50 gates of any player out from
-  the seat's centre, each as it stands, open or shut.
+- First turn: it remembers the seat's first 100 houses, its first 1000 wall points out from the seat's
+  centre, and the first 50 gates of any player out from the centre, each as it stands, open or shut.
 - Every turn: each remembered gate the seat holds is shut while an enemy stands within 40 points and
   opened once none does. It acts only when its remembered state flips: it opens any gate it remembers
   shut, one it found shut on its first turn included, and a gate shut behind its back stays shut until
@@ -736,6 +736,9 @@ gates, which no module owns, always):
   remembered house with no house of its upgrade line within 12 points, on a free spot within 12
   points, when no enemy stands within 40 points and one of the seat's civilians does. A tier without a
   construction cost is never raised.
+- Every sixth turn: a wall site on each remembered wall point standing empty, at most 10 a pass, when
+  no enemy stands within 40 points and one of the seat's people does; builders drawn from within 400
+  points for them.
 - Every sixth turn: 5 written over every stock slot of its finished warehouses, a fuller shelf cut down
   too; one man, the nearest within 80 points and retrained, for the first trade a finished house other
   than a home or tower employs nobody in; builders turned from men within 400 points, a site's full
@@ -765,8 +768,12 @@ This build departs from it here:
   retried.
 - Gates are taken out from the centre in order of distance, ties by entity, not ring by ring, and
   remembered as entities, not points: a gate cut anew where a remembered one fell is not watched.
-- Not run here: the remembered walls raised again, builders for road plans, and the houses a mission
-  result hands the seat joining its list.
+- The seat's own gates join the wall list and are raised again as shut gate sites; the original only
+  mends a gate. A wall goes up again over the deposit or neighbouring segment the map stood it on, but
+  not over a building or wall raised there since. Walls, like gates, are taken out from the centre in
+  order of distance, and a wall site draws one builder.
+- Not run here: builders for road plans, and the houses a mission result hands the seat joining its
+  list.
 
 ## Tributes
 
@@ -827,8 +834,9 @@ A reading of the original's trade agreements and trader work, which the goal `Nu
   foreign trip it unloads everything but the give good, then loads give goods while the cart keeps
   room for the take goods every aboard batch brings back and the house has spare above its minimum;
   at the foreign house it hands one batch over unit by unit, then loads the take goods, then repeats
-  while another batch is aboard. The agreement holds only while the trader's player is `friend`
-  toward the house's owner. Between two own houses the marks decide: a good marked at one house only
+  while another batch is aboard. A foreign house joins the route only while both players hold
+  `friend` toward each other (original behavior); after that the agreement holds while the trader's
+  player is `friend` toward the house's owner. Between two own houses the marks decide: a good marked at one house only
   is carried to it while the other house has stock above its minimum, a good both houses mark is
   balanced toward the house that is shorter of it, and cargo neither house marks is unloaded at the
   first house that stores it. With no mark on either house the original balances every good; this
@@ -857,22 +865,19 @@ A reading of the original's trade agreements and trader work, which the goal `Nu
 - This build registers the rows through the `addTradeAgreement` setup command
   (`components/trade.ts`), resolves the house by its mission object id at use, refuses a house of a
   human seat (a match participant without the `AiControl` marker) when a match is set up, and runs
-  the trader through the planner's trade rung (`systems/trade/`), which sits above the rider rung:
-  the trader moves its cart to within `TRADE_CART_HOUSE_DISTANCE` of each stop (`snapVehicleTarget`
-  over `TRADE_CART_SEARCH_RADIUS`, no house door), rides inside while it drives, steps out when it
-  stops (`traderDisembarkSystem`) and works the stop on foot; a trader on foot with no cart idles,
-  which the HUD reads as `noVehicleForWork`. Approximations: the load and unload clips at the house
-  move the unit straight between the shelf and the hold, where the original carries each unit to the
-  cart's door; the trader's hold write keeps the wanted amount on the actual one whatever crew is
-  attached (`tradeVehicleStock`, see VEHICLES.md "Cargo"); a stop with no standable node within the
-  working distance lets the cart go without the original's detach note, while a stop the cart has no
-  route to parks the trader by its cart for the failed-goal memo's span before it tries again; the
-  cart's move has no walk range, like every vehicle goto (VEHICLES.md "Movement"); a house's minimum
+  the trader through the planner's trade rung (`systems/trade/`). Owner's choices: the trader works
+  the route on foot, a unit in its hands a trip, or with a hauling cart (VEHICLES.md "Hauling cart"),
+  where the original's trader idles without a commanded cart; a hold too small for a whole exchange
+  carries it over several trips, where the original waits for room; a stop the trader cannot reach is
+  waited out for its failed-goal memo's span. Approximations: the load and unload clips at the
+  house move the unit straight between the shelf and the hold, where the original carries each unit
+  to the cart's door; the trader's hold write keeps the wanted amount on the actual one whatever crew
+  is attached (`tradeVehicleStock`, see VEHICLES.md "Cargo"); a house's minimum
   stock is its recipe inputs; the request counters that rank the import-mark candidates are not kept,
   so the lowest good id goes first; nothing is handed over while the house holds fewer take goods than
   a batch pays out, where the original delivers regardless, and at a house that a computer seat
   refills, the trader waits there with the rest of its load for the refill, so one trip sells all of it (owner's choice); at a house with no room for the
-  give good a trader with only give goods aboard waits there too, where driving home would bring the
+  give good a trader with only give goods aboard waits there too, where going home would bring the
   same load back (unread in the original); a shelf that runs out mid-batch starts the batch over on the next
   visit, where the original's trader is still owed the rest; a chosen agreement that stops holding is kept and waited on, where the original's
   merchant drops its choice; for a seat that runs the strategic economy, the handler's refill
@@ -884,8 +889,8 @@ A reading of the original's trade agreements and trader work, which the goal `Nu
   saved with the game; the diplomacy window prints it (`miscwindow` 360) at its foot for a player
   both sides hold as `friend`, the one case the original's window draws the line in (byte-level). Above
   that line the window lists what the selected player's houses trade, each agreement once
-  (`Simulation.tradeOffersOf`), with a reminder that a trader deals only with a friendly tribe while
-  the viewer's stance toward the player is not `friend`; authored, since the original names a
+  (`Simulation.tradeOffersOf`), greyed out under a lock note while either side's stance is not
+  `friend`, with the viewer's own declaration offered in place; authored, since the original names a
   tribe's agreements only in a trader's own window.
 
 ## On-screen info lines

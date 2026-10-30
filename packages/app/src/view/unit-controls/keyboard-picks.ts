@@ -1,6 +1,7 @@
 import { BUILDING_KIND, type ContentSet } from '@open-northland/data';
 import { type Entity, type PlayerCommand, systems, type WorldSnapshot } from '@open-northland/sim';
 import {
+  assistantBarracksOf,
   isBoundByMarriage,
   isMarrying,
   isWildlife,
@@ -50,11 +51,15 @@ function singleWomanTest(content: ContentSet): SettlerTest {
     !isMarrying(ent);
 }
 
-/** A civilian already sent to a school or barracks keeps its trade until the course ends, so the key
- *  skips it: the player assigned it and looks for the next free one. */
+/** A civilian the player sent to a school or barracks keeps its trade until the course ends, so the key
+ *  skips it: the player assigned it and looks for the next free one. A drill the assistant booked does not
+ *  count, so the player can still pick him and send him elsewhere until he enlists. */
 function freeCivilianTest(content: ContentSet): SettlerTest {
   const civilian = kindTest(content, 'civilian');
-  return (snapshot, ent) => civilian(snapshot, ent) && trainingHouseOf(ent) === undefined;
+  return (snapshot, ent) => {
+    const house = trainingHouseOf(ent);
+    return civilian(snapshot, ent) && (house === undefined || house === assistantBarracksOf(ent));
+  };
 }
 
 function scoutTest(content: ContentSet): SettlerTest {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PLAYER_COLOR_COUNT } from '../../../src/catalog/roster.js';
 import { resolveBuildingSignRefs } from '../../../src/content/building-gfx/signs.js';
 import type { ContentIr, LandscapeGfxRow } from '../../../src/content/ir/rows.js';
 
@@ -52,7 +53,7 @@ describe('resolveBuildingSignRefs', () => {
     const ir = irOf([...playerRecords(1, 0), ...playerRecords(2, 10)]);
     const refs = resolveBuildingSignRefs(ir);
 
-    expect(refs).toHaveLength(10);
+    expect(refs).toHaveLength(PLAYER_COLOR_COUNT);
     expect(refs[0]).toEqual({
       stem: 'ls_temp.human_player01',
       bobsByKind: {
@@ -65,7 +66,13 @@ describe('resolveBuildingSignRefs', () => {
       },
     });
     expect(refs[1]?.stem).toBe('ls_temp.human_player02');
-    expect(refs[2]).toBeUndefined(); // player03 not authored in this fixture
+  });
+
+  it("gives a colour without records slot 0's frames from the atlas named after its slot", () => {
+    const refs = resolveBuildingSignRefs(irOf([...playerRecords(1, 0), ...soldierRecords(1, 10)]));
+    const last = PLAYER_COLOR_COUNT - 1;
+
+    expect(refs[last]).toEqual({ ...refs[0], stem: `ls_temp.human_player${last + 1}` });
   });
 
   it("resolves the garrison flag's whole star ladder, each record's full wave loop", () => {
@@ -98,7 +105,7 @@ describe('resolveBuildingSignRefs', () => {
 
   it('leaves a slot undefined when any of its six records is missing, and handles a null IR', () => {
     const partial = playerRecords(1, 0).filter((r) => r.editName !== 'player01 residence sign 02');
-    expect(resolveBuildingSignRefs(irOf(partial))[0]).toBeUndefined();
+    expect(resolveBuildingSignRefs(irOf(partial)).every((slot) => slot === undefined)).toBe(true);
     expect(resolveBuildingSignRefs(null).every((slot) => slot === undefined)).toBe(true);
   });
 });

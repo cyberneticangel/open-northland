@@ -10,6 +10,7 @@ import {
   createCameraController,
   DEBUG_MIN_ZOOM,
   EDGE_SCROLL_MARGIN,
+  HUD_EDGE_SCROLL_REACH,
   MIN_ZOOM,
 } from '../../../src/view/camera/index.js';
 
@@ -80,7 +81,12 @@ const install = (
   userAgent = CHROME_USER_AGENT,
   resolution: () => number = () => 1,
 ) => {
-  const win = eventTarget();
+  // A window smaller than its display unless a test fills the screen, as fullscreen does.
+  const win = Object.assign(eventTarget(), {
+    innerWidth: CANVAS_W,
+    innerHeight: CANVAS_H,
+    screen: { width: CANVAS_W * 2, height: CANVAS_H * 2 },
+  });
   const canvasEvents = eventTarget();
   const bodyClasses = classList();
   const docEvents = eventTarget();
@@ -125,6 +131,9 @@ const install = (
   return {
     ctl,
     win,
+    fillScreen: (): void => {
+      win.screen = { width: CANVAS_W, height: CANVAS_H };
+    },
     canvasEvents,
     lock,
     locked: (): boolean => lock.element === canvas,
@@ -235,10 +244,16 @@ describe('createCameraController edge-scroll arming', () => {
     ctl.dispose();
   });
 
-  it('arms on a mousemove over HUD chrome stacked above the canvas edge', () => {
+  it('narrows the band over HUD chrome without slowing the pan at the screen edge', () => {
     const { ctl, move } = install();
-    move(LEFT_BAND_X, CENTRE_Y, { hudBeam: true });
-    expect(panStep(ctl)).toBeGreaterThan(0);
+    const edgeX = HUD_EDGE_SCROLL_REACH / 2;
+    move(edgeX, CENTRE_Y);
+    const overMap = panStep(ctl);
+    ctl.setPointerGuard(() => true);
+    move(LEFT_BAND_X, CENTRE_Y);
+    expect(panStep(ctl)).toBe(0);
+    move(edgeX, CENTRE_Y);
+    expect(panStep(ctl)).toBeCloseTo(overMap);
     ctl.dispose();
   });
 
@@ -260,15 +275,66 @@ describe('createCameraController edge-scroll arming', () => {
     ctl.dispose();
   });
 
-  it('disarms when the cursor leaves the browser window, not when it crosses onto HUD chrome', () => {
+  it('hit-tests the HUD only for a pointer inside the edge band', () => {
+    const { ctl, move } = install();
+    const guard = vi.fn(() => true);
+    ctl.setPointerGuard(guard);
+    move(CANVAS_W / 2, CENTRE_Y);
+    panStep(ctl);
+    expect(guard).not.toHaveBeenCalled();
+    move(LEFT_BAND_X, CENTRE_Y);
+    panStep(ctl);
+    expect(guard).toHaveBeenCalled();
+    ctl.dispose();
+  });
+
+  it('keeps scrolling at full speed toward the edge the cursor left a fullscreen window through', () => {
+    const { ctl, win, move, fillScreen } = install();
+    fillScreen();
+    move(0, CENTRE_Y);
+    const atEdge = panStep(ctl);
+    // A flick leaves from deeper than the band; the scroll still pins to the nearest edge.
+    move(EDGE_SCROLL_MARGIN * 2, CENTRE_Y);
+    win.emit('mouseout', { relatedTarget: null, clientX: EDGE_SCROLL_MARGIN * 2, clientY: CENTRE_Y });
+    expect(panStep(ctl)).toBeCloseTo(atEdge);
+    expect(panStep(ctl)).toBeCloseTo(atEdge);
+    move(CANVAS_W / 2, CENTRE_Y);
+    expect(panStep(ctl)).toBe(0);
+    ctl.dispose();
+  });
+
+  it('disarms when the cursor leaves a window smaller than its display', () => {
     const { ctl, win, move } = install();
     move(LEFT_BAND_X, CENTRE_Y);
-    win.emit('mouseout', { relatedTarget: { hudBeam: true } });
-    expect(panStep(ctl)).toBeGreaterThan(0);
-    win.emit('mouseout', { relatedTarget: null });
+    win.emit('mouseout', { relatedTarget: null, clientX: -1, clientY: CENTRE_Y });
     expect(panStep(ctl)).toBe(0);
-    move(LEFT_BAND_X, CENTRE_Y);
+    ctl.dispose();
+  });
+
+  it('pins a held-button move from beyond a fullscreen window to the edge it crossed', () => {
+    const { ctl, move, fillScreen } = install();
+    fillScreen();
+    move(-EDGE_SCROLL_MARGIN * 4, CENTRE_Y);
     expect(panStep(ctl)).toBeGreaterThan(0);
+    ctl.dispose();
+  });
+
+  it('stops the out-of-window scroll on blur', () => {
+    const { ctl, win, move, fillScreen } = install();
+    fillScreen();
+    move(CANVAS_W / 2, CENTRE_Y);
+    win.emit('mouseout', { relatedTarget: null, clientX: -1, clientY: CENTRE_Y });
+    expect(panStep(ctl)).toBeGreaterThan(0);
+    win.emit('blur');
+    expect(panStep(ctl)).toBe(0);
+    ctl.dispose();
+  });
+
+  it('keeps the probe where it was when the cursor crosses onto HUD chrome', () => {
+    const { ctl, win, move } = install();
+    move(CANVAS_W / 2, CENTRE_Y);
+    win.emit('mouseout', { relatedTarget: { hudBeam: true }, clientX: CANVAS_W / 2, clientY: CENTRE_Y });
+    expect(panStep(ctl)).toBe(0);
     ctl.dispose();
   });
 
@@ -337,6 +403,13 @@ describe('createCameraController pan bindings', () => {
   it('leaves a numpad key the player bound to another action to that action', () => {
     const { ctl, press } = install({ ...DEFAULT_KEY_BINDINGS, selectHeroes: 'Numpad4' });
     press('Numpad4');
+    expect(panStep(ctl)).toBe(0);
+    ctl.dispose();
+  });
+
+  it('leaves an arrow a focused control already took', () => {
+    const { ctl, press } = install();
+    press('ArrowLeft', { defaultPrevented: true });
     expect(panStep(ctl)).toBe(0);
     ctl.dispose();
   });

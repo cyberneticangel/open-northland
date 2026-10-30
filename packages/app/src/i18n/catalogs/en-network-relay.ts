@@ -39,6 +39,7 @@ export const enNetworkRelay = {
     seatTaken: 'seat {seat} is taken by {nick}',
     seatModeUnavailable: 'seat {seat} cannot be set to {mode}',
     seatTribeUnavailable: 'seat {seat} has no tribe to choose',
+    colorTaken: 'seat {wearer} already wears that colour',
     seatDifficultyUnavailable: 'seat {seat} takes no computer level',
     seatRequired: 'take a seat first',
     notMember: '{nick} is not in the room',

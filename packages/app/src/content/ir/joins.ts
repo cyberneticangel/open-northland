@@ -2,8 +2,10 @@ import { type BuildingFootprint, type GfxInHouseProgram, UNLOADED_GOOD_TYPE } fr
 import type { HolyFireLookup, InHouseProgramLookup, SpriteAtlas } from '@open-northland/render';
 import { ATTACK_ATOMIC } from '../../catalog/atomics.js';
 import { JOB_CIVILIST } from '../../catalog/jobs.js';
+import { PLAYER_COLOR_COUNT } from '../../catalog/roster.js';
 import { canonicalJobType } from '../../game/sandbox/ids/index.js';
 import { CANONICAL_EDIT_NAME } from '../building-gfx/families.js';
+import { playerWallRows } from '../map/palisade-rows.js';
 import type { GoodRef } from '../settler-gfx/index.js';
 import type { BobSeqRow, ContentIr, LandscapeGfxRow } from './rows.js';
 
@@ -16,7 +18,17 @@ export function servedAtlasStem(record: {
   const bmd = record.bmd;
   if (bmd === undefined || bmd.trim() === '') return undefined;
   if (record.paletteName === undefined || record.paletteName.trim() === '') return undefined;
-  return `${bmd.slice(bmd.lastIndexOf('/') + 1).replace(/\.bmd$/i, '')}.${record.paletteName}`;
+  return `${bmdAtlasBase(bmd)}.${record.paletteName}`;
+}
+
+/** The served stem of `bmd` baked through team-colour slot `player`'s full palette (the pipeline's
+ *  `<bmd-basename>.player_NN`), the look of a bob the original draws in its owner's palette. */
+export function playerPaletteAtlasStem(bmd: string, player: number): string {
+  return `${bmdAtlasBase(bmd)}.player_${String(player).padStart(2, '0')}`;
+}
+
+function bmdAtlasBase(bmd: string): string {
+  return bmd.slice(bmd.lastIndexOf('/') + 1).replace(/\.bmd$/i, '');
 }
 
 /** Whether a record draws as flat ground decor, below every entity: it carries no
@@ -115,7 +127,13 @@ export function shadowStemsByAtlasStem(ir: ContentIr | null): Map<string, string
     const shadowStem = servedShadowStem(shadowBmd);
     if (stem !== undefined && shadowStem !== undefined && !map.has(stem)) map.set(stem, shadowStem);
   };
-  for (const row of ir?.landscapeGfx ?? []) put(servedAtlasStem(row), row.shadowBmd);
+  const walls = playerWallRows(ir);
+  for (const row of ir?.landscapeGfx ?? []) {
+    put(servedAtlasStem(row), row.shadowBmd);
+    if (walls.has(row.logicType) && row.bmd !== undefined) {
+      for (let p = 0; p < PLAYER_COLOR_COUNT; p++) put(playerPaletteAtlasStem(row.bmd, p), row.shadowBmd);
+    }
+  }
   for (const row of ir?.buildingBobs ?? []) put(servedAtlasStem(row), row.shadowBmd);
   return map;
 }

@@ -39,6 +39,8 @@ import {
 import { orderViews } from '../../../../src/hud/dom/building-panel/portrait.js';
 import { STAFF_WELLS_MAX, staffWells } from '../../../../src/hud/dom/building-panel/staff.js';
 import { currentLocale, formatMessage, installNameOverlay, messages } from '../../../../src/i18n/index.js';
+import { createSceneSim } from '../../../../src/scenes/index.js';
+import { sandboxScene } from '../../../../src/scenes/sandbox/index.js';
 import { buildingPanelActions, buildingPeers } from '../../../../src/view/unit-controls/panels/building.js';
 import { buildingEntity, snapshotOf as panelSnapshotOf, sandboxCtx } from '../../../support/sandbox.js';
 import { type Ent, idLookupVisits, snapshotOf, visitCountingSnapshot } from '../../../support/snapshot.js';
@@ -621,9 +623,11 @@ describe('building orders', () => {
     const snapshot = panelSnapshotOf([
       buildingEntity(1, BUILDING_HEADQUARTERS),
       buildingEntity(2, BUILDING_HEADQUARTERS, { components: { Owner: { player: 1 } } }),
+      buildingEntity(3, BUILDING_WATCHTOWER),
     ]);
     const actions = buildingPanelActions({
       snapshot: () => snapshot,
+      content: createSceneSim(sandboxScene).content,
       viewer: fixedViewerSeat(HUMAN_PLAYER),
       enqueue: (command) => sent.push(command),
       cue: (cue) => cues.push(cue),
@@ -635,6 +639,8 @@ describe('building orders', () => {
     });
     actions.upgrade(1, BUILDING_HOME_04);
     actions.setAlarm(1, true);
+    actions.setAlarmEverywhere(1, true);
+    actions.setAlarmEverywhere(2, true);
     actions.demolish(2, 'Obca');
     actions.demolish(1, 'Kwatera');
     actions.demolish(1, 'Kwatera');
@@ -650,6 +656,8 @@ describe('building orders', () => {
     expect(sent).toEqual([
       { kind: 'upgradeBuilding', building: 1 as Entity, target: BUILDING_HOME_04 },
       { kind: 'setDefenceMode', building: 1 as Entity, enabled: true },
+      { kind: 'setDefenceMode', building: 1 as Entity, enabled: true },
+      { kind: 'setDefenceMode', building: 3 as Entity, enabled: true },
       { kind: 'setHouseholdGoodUse', player: HUMAN_PLAYER, effect: 'rest', allowed: false },
       { kind: 'setStorageMinimum', player: HUMAN_PLAYER, goodType: GOOD_WOOD, amount: 30 },
       { kind: 'unassignWorker', entity: 6 as Entity },
@@ -660,6 +668,8 @@ describe('building orders', () => {
     expect(cues).toEqual([
       'confirm',
       'confirm',
+      'confirm',
+      'fail',
       'fail',
       'confirm',
       'confirm',

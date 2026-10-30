@@ -10,6 +10,7 @@ import {
   Marriage,
   mapAiEntity,
   Owner,
+  Palisade,
   Position,
   Settler,
   Stockpile,
@@ -17,14 +18,15 @@ import {
   WALK_RANGE_NODES,
 } from '../../../src/components/index.js';
 import { CommandQueue } from '../../../src/core/command-queue.js';
-import type { Command } from '../../../src/core/commands/index.js';
+import { aiCommand, type Command, type PlayerCommand } from '../../../src/core/commands/index.js';
 import { PersonalNames } from '../../../src/core/personal-names.js';
 import type { Entity } from '../../../src/ecs/world.js';
-import { EventBuffer, Rng, Simulation } from '../../../src/index.js';
+import { EventBuffer, Rng, type ScriptLandscapeType, Simulation } from '../../../src/index.js';
 import type { TerrainGraph } from '../../../src/nav/terrain/index.js';
 import { AI_HANDLER_ROUND_TICKS } from '../../../src/systems/ai-shared/cadence.js';
 import { seatRaiders } from '../../../src/systems/ai-shared/military/defence/threat.js';
 import { planSettlementDefence } from '../../../src/systems/ai-shared/military/settlement-defence.js';
+import { ownedSettlers } from '../../../src/systems/ai-shared/seat-roster.js';
 import {
   MAP_AI_DEFENCE_REACH_POINTS,
   MAP_AI_PEACE_ARCHERS_PER_CLASS,
@@ -42,6 +44,7 @@ import {
   rebuildOrders,
 } from '../../../src/systems/map-ai/rebuild.js';
 import { holdTownGoods, TOWN_REPAIR_BUILDERS, townStaffingOrders } from '../../../src/systems/map-ai/town.js';
+import { wallList, wallRebuildOrders } from '../../../src/systems/map-ai/walls.js';
 import { AI_STOCK_REFILL_LEVEL } from '../../../src/systems/trade/partner-stock.js';
 import { aiContent } from '../../fixtures/ai-content.js';
 import { grassNodeMap } from '../../fixtures/terrain.js';
@@ -74,6 +77,35 @@ const OUTPUT_SLOT = 20;
 /** The tower's bow slots in the fixture. */
 const TOWER_BOW_SLOTS = 4;
 
+const WALL_ROW = 691;
+const SHUT_GATE_ROW = 696;
+const OPEN_GATE_ROW = 700;
+const WALL_RECORD = { maxHitpoints: 100, repairPerStrike: 3, construction: [{ goodType: WOOD, amount: 1 }] };
+const WALL: ScriptLandscapeType = {
+  typeId: WALL_ROW,
+  walk: [{ dx: 0, dy: 0 }],
+  build: [],
+  groups: [],
+  wall: WALL_RECORD,
+};
+const GATE_POSTS: ScriptLandscapeType['walk'] = [
+  { dx: -2, dy: 0 },
+  { dx: 2, dy: 0 },
+];
+const SHUT_GATE: ScriptLandscapeType = {
+  typeId: SHUT_GATE_ROW,
+  walk: [...GATE_POSTS, { dx: -1, dy: 0 }, { dx: 0, dy: 0 }, { dx: 1, dy: 0 }],
+  build: [],
+  groups: [],
+  wall: { ...WALL_RECORD, gate: { open: false, counterpartGfxIndex: OPEN_GATE_ROW } },
+};
+const OPEN_GATE: ScriptLandscapeType = {
+  ...SHUT_GATE,
+  typeId: OPEN_GATE_ROW,
+  walk: GATE_POSTS,
+  wall: { ...WALL_RECORD, gate: { open: true, counterpartGfxIndex: SHUT_GATE_ROW } },
+};
+
 const HQ = { x: 24, y: 20 };
 const TOWER_A = { x: 24, y: 60 };
 const TOWER_B = { x: 64, y: 60 };
@@ -94,7 +126,11 @@ function townSim(
     tasks: [],
     ...script,
   };
-  const sim = new Simulation({ seed: 1, content, map: grassNodeMap(128, 96), mapAiScript: [row] });
+  const map = {
+    ...grassNodeMap(128, 96),
+    landscapes: { types: [WALL, SHUT_GATE, OPEN_GATE], placements: [] },
+  };
+  const sim = new Simulation({ seed: 1, content, map, mapAiScript: [row] });
   const off = Object.fromEntries(COMPUTER_MODULE_IDS.map((id) => [id, running.includes(id)]));
   sim.enqueueSetup({ kind: 'setAiControl', player: SEAT, enabled: true, modules: off });
   return sim;
@@ -150,6 +186,10 @@ function place(sim: Simulation, buildingType: number, at: { x: number; y: number
   const placed = [...sim.world.query(Building)].find((e) => !before.has(e));
   if (placed === undefined) throw new Error(`setup: building ${buildingType} was refused`);
   return placed;
+}
+
+function wallAt(gfxIndex: number, at: { x: number; y: number }) {
+  return { kind: 'placePalisade', gfxIndex, x: at.x, y: at.y, tribe: VIKING, owner: SEAT } as const;
 }
 
 function spawn(
@@ -317,6 +357,14 @@ describe('ai program town - posts, homes and stores', () => {
     spawn(sim, 2, { x: HOME.x + 6, y: HOME.y }, CIVILIST);
     const builders = staffing(sim).flatMap((c) => (c.kind === 'setJob' ? [c.jobType] : []));
     expect(builders).toEqual([BUILDER, BUILDER]);
+  });
+
+  it('turns a spare man builder for a wall site', () => {
+    const sim = townSim();
+    sim.enqueueSetup({ ...wallAt(WALL_ROW, HOME), underConstruction: true });
+    spawn(sim, 2, { x: HOME.x + 6, y: HOME.y }, CIVILIST);
+    const builders = staffing(sim).flatMap((c) => (c.kind === 'setJob' ? [c.jobType] : []));
+    expect(builders).toEqual([BUILDER]);
   });
 
   it('keeps a craftsman at his trade when a site wants builders, drawing a plain man instead', () => {
@@ -532,6 +580,117 @@ describe('ai program town - rebuilding', () => {
   it('needs a civilian near the old spot, a soldier there building nothing', () => {
     const sim = townSim();
     expect(rebuilds(sim, razedHome(sim, SPEARMAN))).toEqual([]);
+  });
+
+  /** A wall and an open gate of the seat, remembered and then razed, with a civilian beside them. */
+  function razedWalls(sim: Simulation): ReturnType<typeof wallList> {
+    sim.enqueueSetup({ kind: 'setPlayerPlacementTribes', player: SEAT, tribes: [VIKING] });
+    const gate = { x: HOME.x + 12, y: HOME.y };
+    for (const command of [wallAt(WALL_ROW, HOME), wallAt(OPEN_GATE_ROW, gate)]) {
+      sim.enqueueSetup({ ...command, underConstruction: false });
+    }
+    spawn(sim, 1, { x: HOME.x, y: HOME.y + 8 }, CIVILIST);
+    const walls = wallList(sim.world, ctxOf(sim), terrainOf(sim), SEAT, { hx: HQ.x, hy: HQ.y });
+    for (const e of [...sim.world.query(Palisade)]) sim.world.destroy(e);
+    return walls;
+  }
+
+  function wallRebuilds(sim: Simulation, walls: ReturnType<typeof wallList>): PlayerCommand[] {
+    const ctx = ctxOf(sim);
+    const raiders = seatRaiders(sim.world, ctx, terrainOf(sim), SEAT);
+    return wallRebuildOrders(sim.world, ctx, terrainOf(sim), SEAT, walls, raiders);
+  }
+
+  it('raises a lost wall and gate again where they stood, the gate shut', () => {
+    const sim = townSim();
+    const walls = razedWalls(sim);
+    const orders = wallRebuilds(sim, walls);
+    expect(orders).toEqual([
+      { ...wallAt(WALL_ROW, HOME), underConstruction: true },
+      { ...wallAt(SHUT_GATE_ROW, { x: HOME.x + 12, y: HOME.y }), underConstruction: true },
+    ]);
+    for (const command of orders) sim.enqueue(aiCommand(SEAT, command, 'map-ai'));
+    sim.step();
+    const raised = [...sim.world.query(Palisade)].map((e) => sim.world.get(e, Palisade).gfxIndex);
+    expect(raised).toEqual([WALL_ROW, SHUT_GATE_ROW]);
+    expect(wallRebuilds(sim, walls)).toEqual([]);
+  });
+
+  /** A segment with a gate whose post the map stood on the segment's node, both remembered. */
+  function gateOverSegment(sim: Simulation): {
+    walls: ReturnType<typeof wallList>;
+    gateAt: { x: number; y: number };
+  } {
+    const gateAt = { x: HOME.x + 2, y: HOME.y };
+    sim.enqueueSetup({ kind: 'setPlayerPlacementTribes', player: SEAT, tribes: [VIKING] });
+    sim.enqueueSetup({ ...wallAt(WALL_ROW, HOME), underConstruction: false });
+    sim.enqueueSetup({ ...wallAt(SHUT_GATE_ROW, gateAt), underConstruction: false, force: true });
+    spawn(sim, 1, { x: HOME.x, y: HOME.y + 8 }, CIVILIST);
+    return { walls: wallList(sim.world, ctxOf(sim), terrainOf(sim), SEAT, { hx: HQ.x, hy: HQ.y }), gateAt };
+  }
+
+  function destroyGate(sim: Simulation): void {
+    const gate = [...sim.world.query(Palisade)].find((e) => sim.world.get(e, Palisade).gate !== null);
+    if (gate === undefined) throw new Error('setup: the gate was refused');
+    sim.world.destroy(gate);
+  }
+
+  it('raises a gate again across the segment the map stood its post on, never under a house built since', () => {
+    const sim = townSim();
+    const { walls, gateAt } = gateOverSegment(sim);
+    destroyGate(sim);
+    const orders = wallRebuilds(sim, walls);
+    expect(orders).toEqual([
+      {
+        ...wallAt(SHUT_GATE_ROW, gateAt),
+        underConstruction: true,
+        waivedGround: [{ x: HOME.x, y: HOME.y, obstacle: 0, walls: 1 }],
+      },
+    ]);
+    for (const command of orders) sim.enqueue(aiCommand(SEAT, command, 'map-ai'));
+    sim.step();
+    expect(wallRebuilds(sim, walls)).toEqual([]);
+
+    destroyGate(sim);
+    place(sim, HOME_TYPE, gateAt);
+    expect(wallRebuilds(sim, walls)).toEqual([]);
+  });
+
+  it('keeps a gate out of a passage a wall took since, though the segment under its post is gone', () => {
+    const sim = townSim();
+    const { walls } = gateOverSegment(sim);
+    for (const e of [...sim.world.query(Palisade)]) sim.world.destroy(e);
+    sim.enqueueSetup({ ...wallAt(WALL_ROW, { x: HOME.x + 3, y: HOME.y }), underConstruction: false });
+    sim.step();
+    expect(wallRebuilds(sim, walls).map((c) => (c.kind === 'placePalisade' ? c.gfxIndex : null))).toEqual([
+      WALL_ROW,
+    ]);
+  });
+
+  it('drops a wall site whose ground a house took after the order', () => {
+    const sim = townSim();
+    const walls = razedWalls(sim);
+    const orders = wallRebuilds(sim, walls);
+    place(sim, HOME_TYPE, HOME);
+    for (const command of orders) sim.enqueue(aiCommand(SEAT, command, 'map-ai'));
+    sim.step();
+    const raised = [...sim.world.query(Palisade)].map((e) => sim.world.get(e, Palisade).gfxIndex);
+    expect(raised).toEqual([SHUT_GATE_ROW]);
+  });
+
+  it('raises no wall with an enemy fighter near it', () => {
+    const sim = townSim();
+    const walls = razedWalls(sim);
+    spawn(sim, 1, { x: HOME.x + REBUILD_NEAR_POINTS / 2, y: HOME.y }, SPEARMAN, FOE);
+    expect(wallRebuilds(sim, walls)).toEqual([]);
+  });
+
+  it('raises no wall none of the seat’s people stands near', () => {
+    const sim = townSim();
+    const walls = razedWalls(sim);
+    for (const e of ownedSettlers(sim.world, SEAT)) sim.world.destroy(e);
+    spawn(sim, 1, { x: HOME.x + REBUILD_NEAR_POINTS * 2, y: HOME.y }, CIVILIST);
+    expect(wallRebuilds(sim, walls)).toEqual([]);
   });
 
   it('remembers the seat’s buildings on its first turn and staffs its town on the handler’s round', () => {

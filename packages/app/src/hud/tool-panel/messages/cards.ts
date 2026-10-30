@@ -30,6 +30,7 @@ const GLYPH_BY_TYPE: ReadonlyMap<UserMessageType, NoticeGlyph> = new Map<UserMes
   [USER_MESSAGE_TYPE.playerDied, 'skull'],
   [USER_MESSAGE_TYPE.playerSighted, 'shield'],
   [USER_MESSAGE_TYPE.diplomacyChanged, 'banner'],
+  [USER_MESSAGE_TYPE.tradeRefused, 'banner'],
   [USER_MESSAGE_TYPE.specialItemFound, 'chest'],
 ]);
 
@@ -40,6 +41,7 @@ const SEAT_ROWS: ReadonlySet<UserMessageType> = new Set<UserMessageType>([
   USER_MESSAGE_TYPE.playerSighted,
   USER_MESSAGE_TYPE.diplomacyChanged,
   USER_MESSAGE_TYPE.playerDied,
+  USER_MESSAGE_TYPE.tradeRefused,
 ]);
 
 /** A note that pictures a building type (an unlock) shows its body. A settler subject is drawn, and a

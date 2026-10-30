@@ -2,7 +2,7 @@ import { type FootprintCell, footprintCellDx } from '@open-northland/data';
 import { Building } from '../../../components/index.js';
 import { type HalfCellNode, hexDistance } from '../../../nav/halfcell.js';
 import type { TerrainGraph } from '../../../nav/terrain/index.js';
-import { buildingFootprintOf } from '../../footprint/geometry.js';
+import { houseFootprintOf } from '../../footprint/geometry.js';
 import { placementBlockCells } from '../../landscape/footprint.js';
 import { landscapesWithin, landscapeTypes } from '../../landscape/view.js';
 import { createSpatialMemo } from '../../spatial/memo.js';
@@ -75,7 +75,7 @@ export function exploreObjectAreas(
       if (hexDistance(point, anchor) > range) continue;
       for (const entity of atNode.at(hx, hy)) {
         const building = world.get(entity, Building);
-        const footprint = buildingFootprintOf(ctx.content, building.buildingType, building.tribe);
+        const footprint = houseFootprintOf(ctx.content, building);
         if (footprint !== undefined) reveal(anchor, footprint.reserved);
       }
     }

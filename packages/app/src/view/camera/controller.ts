@@ -1,9 +1,10 @@
-import type { Camera } from '@open-northland/render';
+import type { Camera, WorldBounds } from '@open-northland/render';
 import { isFieldKey } from '../../hud/hotkeys.js';
 import { bindingFromKeyboardEvent, type KeyBindings } from '../../hud/keybindings.js';
 import { createDragCapture } from './drag-capture.js';
 import {
   type CameraTuning,
+  clampCameraToBounds,
   DEBUG_MIN_ZOOM,
   DEFAULT_CAMERA_TUNING,
   edgeExitPoint,
@@ -52,6 +53,11 @@ export interface CameraController {
   camera(): Camera;
   /** Apply camera input preferences immediately, including to an in-flight middle drag. */
   setInputSettings(settings: CameraInputSettings): void;
+  /**
+   * Set the map's projected bounds (render's `WorldBounds`, as the minimap reads them) the view centre
+   * clamps to, and clamp the current camera at once; `null` removes the limit.
+   */
+  setMapBounds(bounds: WorldBounds | null): void;
   /** Apply changed shortcuts immediately and release any key held under the previous mapping. */
   setBindings(bindings: KeyBindings): void;
   /** Apply held-arrow-key panning for a wall-clock delta in ms; call once per frame. */
@@ -108,6 +114,14 @@ export function createCameraController(
   let activeBindings = bindings;
   let activeInputSettings = inputSettings;
   const tuning: CameraTuning = DEFAULT_CAMERA_TUNING;
+  // Null until an entry hands in the map's projected bounds; the clamp then guards every pan, zoom and
+  // jump assignment below. The viewport size in screen px matches the space `onLevel` zooms about.
+  let mapBounds: WorldBounds | null = null;
+  const clampCam = (next: Camera): Camera => {
+    if (mapBounds === null) return next;
+    const res = resolution();
+    return clampCameraToBounds(next, mapBounds, canvas.width / res, canvas.height / res);
+  };
   const panActionFor = (event: KeyboardEvent): PanAction | undefined => {
     const binding = bindingFromKeyboardEvent(event);
     return binding === null ? undefined : PAN_ACTIONS.find((action) => activeBindings[action] === binding);
@@ -192,10 +206,12 @@ export function createCameraController(
     const { sx, sy } = screenScale(canvas, resolution());
     const direction = activeInputSettings.invertDragScroll ? -1 : 1;
     const { dx, dy } = dragCapture.step(e);
-    cam = panCamera(
-      cam,
-      dx * sx * activeInputSettings.dragScrollSpeed * direction,
-      dy * sy * activeInputSettings.dragScrollSpeed * direction,
+    cam = clampCam(
+      panCamera(
+        cam,
+        dx * sx * activeInputSettings.dragScrollSpeed * direction,
+        dy * sy * activeInputSettings.dragScrollSpeed * direction,
+      ),
     );
   };
   const onMouseUp = (e: MouseEvent): void => {
@@ -217,7 +233,7 @@ export function createCameraController(
       lastLevelStepMs = e.timeStamp;
       const scale = cam.scale ?? 1;
       const level = stepZoomLevel(zoomLevels(), scale, e.deltaY < 0 ? 1 : -1);
-      cam = zoomCameraAt(cam, level / scale, x, y, minZoom);
+      cam = clampCam(zoomCameraAt(cam, level / scale, x, y, minZoom));
       targetScale = cam.scale ?? 1;
       return;
     }
@@ -283,15 +299,19 @@ export function createCameraController(
     camera: () => cam,
     setInputSettings: (next) => {
       activeInputSettings = next;
-      cam = onLevel(cam);
+      cam = clampCam(onLevel(cam));
       targetScale = cam.scale ?? 1;
+    },
+    setMapBounds: (bounds) => {
+      mapBounds = bounds;
+      cam = clampCam(cam);
     },
     setBindings: (next) => {
       activeBindings = next;
       held.clear();
     },
     jumpTo: (next) => {
-      cam = onLevel(next);
+      cam = clampCam(onLevel(next));
       // Retargeted, so a jump never carries the old glide into the new view.
       targetScale = cam.scale ?? 1;
     },
@@ -301,8 +321,8 @@ export function createCameraController(
       const scale = cam.scale ?? 1;
       if (scale >= minZoom) return;
       const res = resolution();
-      cam = onLevel(
-        zoomCameraAt(cam, minZoom / scale, canvas.width / res / 2, canvas.height / res / 2, minZoom),
+      cam = clampCam(
+        onLevel(zoomCameraAt(cam, minZoom / scale, canvas.width / res / 2, canvas.height / res / 2, minZoom)),
       );
       targetScale = cam.scale ?? 1;
     },
@@ -325,13 +345,15 @@ export function createCameraController(
       if (suspended) return;
       const dt = Math.min(dtMs, MAX_PAN_STEP_MS);
       // A display or render-scale change moves the device px under a level, so it is checked per frame.
-      const settled = onLevel(cam);
+      const settled = clampCam(onLevel(cam));
       if (settled !== cam) {
         cam = settled;
         targetScale = cam.scale ?? 1;
       }
       if (targetScale !== (cam.scale ?? 1)) {
-        cam = stepZoomToward(cam, targetScale, zoomAnchorX, zoomAnchorY, dt, tuning.zoomGlideRate, minZoom);
+        cam = clampCam(
+          stepZoomToward(cam, targetScale, zoomAnchorX, zoomAnchorY, dt, tuning.zoomGlideRate, minZoom),
+        );
       }
       // Pan velocity in screen px/s, applied directly with no ramp-up or glide-out, so the pan starts
       // and stops with the input. Scroll convention: an input reveals the world in its direction, so
@@ -380,7 +402,7 @@ export function createCameraController(
         }
       }
       if (desiredX !== 0 || desiredY !== 0) {
-        cam = panCamera(cam, (desiredX * dt) / 1000, (desiredY * dt) / 1000);
+        cam = clampCam(panCamera(cam, (desiredX * dt) / 1000, (desiredY * dt) / 1000));
       }
     },
     dispose: () => {

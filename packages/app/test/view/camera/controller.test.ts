@@ -507,6 +507,93 @@ describe('createCameraController suspension', () => {
   });
 });
 
+describe('createCameraController map bounds', () => {
+  /** A map whose projected bounds sit inside the 800x600 view at scale 1. */
+  const BOUNDS = { minX: -100, minY: -100, width: 800, height: 600 };
+  /** The world point the view centres on. */
+  const centreOf = (cam: Camera): { x: number; y: number } => {
+    const scale = cam.scale ?? 1;
+    return { x: (CANVAS_W / 2 - cam.offsetX) / scale, y: (CANVAS_H / 2 - cam.offsetY) / scale };
+  };
+  /** The stored offset is exact at the bound; deriving the centre back out rounds at a non-unit scale. */
+  const CENTRE_EPSILON_PX = 1e-6;
+  const insideBounds = (cam: Camera): boolean => {
+    const { x, y } = centreOf(cam);
+    return (
+      x >= BOUNDS.minX - CENTRE_EPSILON_PX &&
+      x <= BOUNDS.minX + BOUNDS.width + CENTRE_EPSILON_PX &&
+      y >= BOUNDS.minY - CENTRE_EPSILON_PX &&
+      y <= BOUNDS.minY + BOUNDS.height + CENTRE_EPSILON_PX
+    );
+  };
+
+  it('clamps a jump that lands outside the map', () => {
+    const { ctl } = install();
+    ctl.setMapBounds(BOUNDS);
+    ctl.jumpTo({ offsetX: -5000, offsetY: -4000 });
+    expect(insideBounds(ctl.camera())).toBe(true);
+    expect(centreOf(ctl.camera())).toEqual({ x: BOUNDS.minX + BOUNDS.width, y: BOUNDS.minY + BOUNDS.height });
+    ctl.dispose();
+  });
+
+  it('clamps a camera already outside when the bounds arrive', () => {
+    const { ctl } = install();
+    ctl.jumpTo({ offsetX: -5000, offsetY: -4000 });
+    ctl.setMapBounds(BOUNDS);
+    expect(insideBounds(ctl.camera())).toBe(true);
+    ctl.dispose();
+  });
+
+  it('stops edge scrolling at the map edge instead of panning past it', () => {
+    const { ctl, move } = install();
+    ctl.setMapBounds(BOUNDS);
+    move(LEFT_BAND_X, CENTRE_Y);
+    for (let i = 0; i < 120; i++) ctl.update(16);
+    const pinned = ctl.camera();
+    expect(centreOf(pinned).x).toBe(BOUNDS.minX);
+    for (let i = 0; i < 10; i++) ctl.update(16);
+    expect(ctl.camera()).toEqual(pinned);
+    ctl.dispose();
+  });
+
+  it('stops a middle drag at the map edge', () => {
+    const { ctl, move, startMiddleDrag, win } = install();
+    ctl.setMapBounds(BOUNDS);
+    startMiddleDrag(400, 300);
+    // Steps under the drag jump filter's floor, like a hand drag; the total overshoots the map.
+    for (let i = 1; i <= 12; i++) move(400 + i * 200, 300);
+    win.emit('mouseup', { button: 1 });
+    expect(centreOf(ctl.camera()).x).toBe(BOUNDS.minX);
+    ctl.dispose();
+  });
+
+  it('keeps the centre inside a wheel zoom-out about a screen corner', () => {
+    const { ctl, canvasEvents } = install();
+    ctl.setMapBounds(BOUNDS);
+    for (let i = 0; i < WHEEL_OUT_NOTCHES; i++) {
+      canvasEvents.emit('wheel', {
+        clientX: 0,
+        clientY: 0,
+        deltaY: 1,
+        preventDefault: (): void => undefined,
+      });
+    }
+    for (let i = 0; i < GLIDE_FRAMES; i++) ctl.update(FRAME_MS);
+    expect(insideBounds(ctl.camera())).toBe(true);
+    ctl.dispose();
+  });
+
+  it('pans freely again once the bounds are removed', () => {
+    const { ctl, move } = install();
+    ctl.setMapBounds(BOUNDS);
+    move(LEFT_BAND_X, CENTRE_Y);
+    for (let i = 0; i < 120; i++) ctl.update(16);
+    ctl.setMapBounds(null);
+    expect(panStep(ctl)).toBeGreaterThan(0);
+    ctl.dispose();
+  });
+});
+
 describe('createCameraController zoom-out unlock', () => {
   it('lets the wheel pass MIN_ZOOM only while unlocked, down to DEBUG_MIN_ZOOM', () => {
     const { ctl, canvasEvents } = install();

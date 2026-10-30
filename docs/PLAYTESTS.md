@@ -17,7 +17,7 @@ from its parent and takes the parent's row unless it fails on its own.
 | `tutorial_001` | 1) STEROWANIE | 3h/1ai | ok | ok | played in Polish; four-language briefing review; family and signpost text corrections |
 | `tutorial_002` | 2) KAŻDY WIKING JEST UNIKALNY! | 3h/0ai | – | ok | played in Polish, death/retry covered; open: [family goal specificity](tickets/sim/mission-family-goal-specificity.md) |
 | `tutorial_003` | 3) ŁAŃCUCH POKARMOWY | 2h/0ai | ok | ok | played in Polish, no forced step; clay-collector goal text shown, page 1 wording correction; build menu relists under pause; a refused worker order names its reason |
-| `tutorial_004` | 4) TECHNOLOGIE | 1h/0ai | ok | issues | played in Polish, no forced step; handcart goal counts the cart as a vehicle (correction); open: [portrait shows HUD behind](tickets/app/portrait-hole-shows-hud-behind.md), [camera past map edge](tickets/app/camera-stops-at-map-edge.md) |
+| `tutorial_004` | 4) TECHNOLOGIE | 1h/0ai | ok | issues | played in Polish, no forced step; handcart goal counts the cart as a vehicle (correction); open: [portrait shows HUD behind](tickets/app/portrait-hole-shows-hud-behind.md) |
 | `tutorial_005` | 5) HANDEL I STATKI | 2h/2ai | – | – |  |
 | `tutorial_006` | 6) WALKA I SYSTEM DYPLOMACJI  | 2h/3ai | – | – |  |
 | `tutorial_007` | 7) DODATKOWE BRONIE I PRZEDMIOTY | 2h/3ai | – | – |  |

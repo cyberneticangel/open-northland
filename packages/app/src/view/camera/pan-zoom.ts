@@ -1,4 +1,4 @@
-import type { Camera } from '@open-northland/render';
+import type { Camera, WorldBounds } from '@open-northland/render';
 
 /** The pure pan and zoom reducers and their bounds; each takes a {@link Camera} and returns a new one. */
 
@@ -116,6 +116,33 @@ export function stepZoomLevel(levels: readonly number[], scale: number, directio
 /** Pan the camera by a screen-pixel delta, preserving `scale`. */
 export function panCamera(cam: Camera, dx: number, dy: number): Camera {
   return { ...cam, offsetX: cam.offsetX + dx, offsetY: cam.offsetY + dy };
+}
+
+/**
+ * Clamp the camera so the viewport centre stays inside `bounds` — the same projected `WorldBounds` the
+ * minimap reads — whatever pan, zoom or jump produced it. Solved for the offset rather than the centre,
+ * so a camera pinned at an edge is a fixed point instead of hunting the bound by float rounding. Returns
+ * the same object when already inside.
+ *
+ * Approximation: the original's allowance for viewing past the map edge is unrecorded; the limit is the
+ * bounds rectangle with no margin.
+ */
+export function clampCameraToBounds(
+  cam: Camera,
+  bounds: WorldBounds,
+  viewWidth: number,
+  viewHeight: number,
+): Camera {
+  const scale = cam.scale ?? 1;
+  // centre = (view/2 - offset)/scale ∈ [minX, minX + width] solved for the offset.
+  const loX = viewWidth / 2 - (bounds.minX + bounds.width) * scale;
+  const hiX = viewWidth / 2 - bounds.minX * scale;
+  const loY = viewHeight / 2 - (bounds.minY + bounds.height) * scale;
+  const hiY = viewHeight / 2 - bounds.minY * scale;
+  const offsetX = Math.min(Math.max(cam.offsetX, loX), hiX);
+  const offsetY = Math.min(Math.max(cam.offsetY, loY), hiY);
+  if (offsetX === cam.offsetX && offsetY === cam.offsetY) return cam;
+  return { ...cam, offsetX, offsetY };
 }
 
 /**

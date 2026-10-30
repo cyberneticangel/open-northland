@@ -1,6 +1,11 @@
 import { LockstepDriver, LoopbackTransport } from '@open-northland/lockstep';
 import type { TerrainTextureSet } from '@open-northland/render';
-import { buildSpriteScene, createWindowPixiApp, terrainMapToScene } from '@open-northland/render';
+import {
+  buildSpriteScene,
+  createWindowPixiApp,
+  terrainMapToScene,
+  terrainWorldBounds,
+} from '@open-northland/render';
 import { adminCommand, type Simulation } from '@open-northland/sim';
 import { buildingFootprints } from '../../content/ir/joins.js';
 import { loadIr } from '../../content/ir/load.js';
@@ -208,6 +213,7 @@ export async function renderSceneMode(canvas: HTMLCanvasElement, params: URLSear
     cameraSettings.keyBindings,
     cameraSettings,
   );
+  cameraCtl.setMapBounds(terrainWorldBounds(terrainGrid.width, terrainGrid.height));
 
   // Scenes have no authored map roster, so the diplomacy window's roster is read off the first tick's
   // owned spawns instead.

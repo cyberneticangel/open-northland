@@ -7,7 +7,7 @@ import {
   type SessionDriver,
   seatColourOf,
 } from '@open-northland/lockstep';
-import type { Camera } from '@open-northland/render';
+import { type Camera, terrainWorldBounds } from '@open-northland/render';
 import type { SaveGame } from '@open-northland/sim';
 import { campaignForMap, loadCampaigns } from '../../campaign/catalog.js';
 import { soundScenery } from '../../content/audio/scenery.js';
@@ -173,6 +173,7 @@ export async function presentMapWorld(
     cameraSettings.keyBindings,
     cameraSettings,
   );
+  cameraCtl.setMapBounds(terrainWorldBounds(terrainGrid.width, terrainGrid.height));
 
   // Averaged from the real texture pages the map's ground lanes point at: the shipped `minimap.pcx` is
   // map-selection card art, not an overview raster. Null without lanes or textures.
